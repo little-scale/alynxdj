@@ -66,6 +66,7 @@ static unsigned char wave_owner = 0xFF; /* which voice holds the wave bus */
 
 #pragma bss-name (push, "SONG")
 static struct voice voices[NCH];
+static unsigned char play_cnt[NPHRASES];   /* per-phrase pass counts (I/J) */
 #pragma bss-name (pop)
 
 /* ATK/DCY nibble -> per-tick level step. Time-semantic: higher nibble =
@@ -210,6 +211,18 @@ static void exec_cmd(unsigned char ch, unsigned char cmd, unsigned char param)
     case CMD_E:
         v->e_atk = env_rate[param >> 4];
         v->e_dcy = env_rate[param & 0x0F];
+        break;
+    case CMD_T:
+        if (param) {
+            unsigned char t = (unsigned char)(899u / param);
+            unsigned char i;
+            if (t < 1) t = 1;
+            if (t > 15) t = 15;
+            sd.grooves[eng_groove][0] = t;
+            sd.grooves[eng_groove][1] = t;
+            for (i = 2; i < 16; ++i)
+                sd.grooves[eng_groove][i] = 0;
+        }
         break;
     /* CMD_H (table loop / phrase end), CMD_D and CMD_Z live in the peek */
     }
@@ -494,6 +507,9 @@ static void row_start(unsigned char ch)
     if (!w->active)
         return;
     s = &sd.phrases[w->phrase][w->prow];
+    if (w->prow == PHRASE_ROWS - 1)             /* last row: this pass is
+                                                   done — count it (I/J) */
+        ++play_cnt[w->phrase];
     if (!s->note && !s->cmd)
         return;
     n = 0;
@@ -504,6 +520,16 @@ static void row_start(unsigned char ch)
     }
     if (s->cmd == CMD_Z && n && rand8() >= s->param)
         n = 0;                                  /* the roll failed */
+    if (s->cmd == CMD_I && n
+        && !(s->param & (1 << (play_cnt[w->phrase] & 7))))
+        n = 0;                                  /* not this pass */
+    if (s->cmd == CMD_J && n
+        && (s->param & (1 << (play_cnt[w->phrase] & 3)))) {
+        unsigned char x = s->param >> 4;
+        int jn = (int)n + ((x < 8) ? (int)x : (int)x - 16);
+        if (jn >= NOTE_MIN && jn <= NOTE_MAX)
+            n = (unsigned char)jn;
+    }
     if (s->cmd == CMD_D && s->param) {          /* delayed trigger */
         if (n) {
             v->dly_in = s->param;
@@ -521,7 +547,8 @@ static void row_start(unsigned char ch)
         v->slide_rate = s->param ? s->param : 1;
     } else if (s->cmd == CMD_H) {
         w->prow = PHRASE_ROWS - 1;              /* phrase ends after this row */
-    } else if (s->cmd && s->cmd != CMD_D && s->cmd != CMD_Z)
+    } else if (s->cmd && s->cmd != CMD_D && s->cmd != CMD_Z
+               && s->cmd != CMD_I && s->cmd != CMD_J)
         exec_cmd(ch, s->cmd, s->param);
 }
 
@@ -547,6 +574,7 @@ void engine_stop(void)
 
 static void play_common(void)
 {
+    memset(play_cnt, 0, sizeof(play_cnt));  /* I/J counts reset (ported) */
     eng_tick = 0;
     eng_gpos = 0;
     eng_groove = 0;

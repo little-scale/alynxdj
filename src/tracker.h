@@ -38,7 +38,13 @@
 #define CMD_Z    17     /* Z xx  probability: note plays if rand8 < xx */
 #define CMD_E    18     /* E xy  re-slope the envelope live: ATK x, DCY y
                                  nibbles (current stage + level untouched) */
-#define NCMDS    19
+#define CMD_T    19     /* T xx  tempo: set the active groove flat to the
+                                 hex BPM (flattens swing by design) */
+#define CMD_I    20     /* I xx  iteration: play this note only on phrase
+                                 passes whose bit (count mod 8) is set */
+#define CMD_J    21     /* J xy  variation: transpose x (signed nibble) on
+                                 passes whose bit (count mod 4) is set in y */
+#define NCMDS    22
 
 #define IT_TONE  0
 #define IT_NOISE 1

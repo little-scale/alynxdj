@@ -252,6 +252,20 @@ static void song_demo(void)
     sd.phrases[15][0].note = N(4,0);
     sd.phrases[15][4].cmd = CMD_H;
 
+    /* T/I/J rigs (song rows 26-28) */
+    for (i = 16; i <= 18; ++i) {
+        sd.chains[i][0].phrase = i;
+        sd.chains[i][0].tsp = 0;
+        sd.song[26 + (i - 16)][0] = i;
+    }
+    sd.phrases[16][0].cmd = CMD_T; sd.phrases[16][0].param = 0x78;
+    for (i = 0; i < 16; i += 2)
+        sd.phrases[16][i].note = N(4,0);
+    sd.phrases[17][0].note = N(4,0); sd.phrases[17][0].instr = 0;
+    sd.phrases[17][0].cmd = CMD_I;  sd.phrases[17][0].param = 0x55;
+    sd.phrases[18][0].note = N(4,0); sd.phrases[18][0].instr = 5;
+    sd.phrases[18][0].cmd = CMD_J;  sd.phrases[18][0].param = 0x71;
+
     /* table 0: a demo arp macro (0/+4/+7 at tick rate, H-looped) */
     sd.tables[0][0].tsp = 0;
     sd.tables[0][1].tsp = 4;

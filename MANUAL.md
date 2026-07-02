@@ -133,8 +133,13 @@ the point.
 | `Z xx` | chance | the note plays if an 8-bit roll < xx (`Z80` ≈ 50/50) |
 
 | `E xy` | envelope | re-slope live: attack x, decay y (times, like the INSTR fields; current stage and level untouched) |
+| `T xx` | tempo | set the active groove flat to hex BPM xx (flattens swing — that's the point of T) |
+| `I xx` | iterate | play this note only on phrase passes whose bit (pass count mod 8) is set — `I55` = even passes, `IFF` = always |
+| `J xy` | vary | transpose by x (signed nibble) on passes whose bit (count mod 4) is set in y — `J71` = +7 once every 4 passes |
 
-(`T` tempo and the `I`/`J` variation pair are planned — see PLAN.md.)
+The **full SMSGGDJ-family command set is in.** `I`/`J`/`Z` are the
+deterministic-variation trio: phrase variation without cloning. Pass
+counts accumulate across the whole arrangement and reset at play-start.
 
 ## Tables (TABLE screen)
 
