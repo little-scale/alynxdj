@@ -2,61 +2,51 @@
  *
  *   groove -> row advance -> trigger -> AHD envelope -> shadow -> flush
  *
- * C-first per DESIGN.md D2; the tick currently runs from the main loop on
- * VBlank frame change (not inside the IRQ) — same rate, render-bounded
- * jitter. It moves into the IRQ when the driver goes asm.
+ * M5: full SONG -> CHAIN -> PHRASE hierarchy. Each of the 4 tracks walks the
+ * song independently (its song row advances when its chain ends), so tracks
+ * can run different chain lengths — the ported per-channel walker model.
+ * Row *timing* is global (one groove clocks all tracks).
  *
- * M3 scope: voice 0 only, one phrase looping, one groove. The data shapes
- * (channel array, 4-byte steps, tick pipeline order) are the ported,
- * load-bearing part.
+ * C-first per DESIGN.md D2; the tick runs from the main loop on VBlank
+ * frame change. It moves into the IRQ when the driver goes asm.
  */
 #include <lynx.h>
 
+#include "tracker.h"
 #include "../build/notes.h"
 
 #define AUD_ENABLE_COUNT  0x10
 #define AUD_ENABLE_RELOAD 0x08
 
-#define NCH 4
+/* the flat song block (DESIGN.md D4: contiguous, save-image order; the
+ * EEPROM packer serializes exactly this struct at M10) */
+struct songdata sd;
 
-#define PHRASE_ROWS 16
-
-/* phrase step, ported layout: note, instr, cmd, param */
-struct step {
-    unsigned char note;     /* 0 = empty, 1..96 = C-1..B-8 */
-    unsigned char instr;
-    unsigned char cmd;
-    unsigned char param;
-};
+struct walk eng_walk[NCH];
 
 struct voice {
-    /* current note */
     unsigned char note;
-    /* AHD envelope: phase 0=off 1=attack 2=hold 3=decay */
-    unsigned char env_phase;
-    unsigned char env_level;    /* 0..$7F current */
-    unsigned char env_peak;     /* attack target */
-    unsigned char hold_left;    /* hold ticks remaining */
-    /* Mikey shadow (flush writes only deltas) */
+    unsigned char env_phase;    /* 0=off 1=attack 2=hold 3=decay */
+    unsigned char env_level;
+    unsigned char env_peak;
+    unsigned char hold_left;
     unsigned char sh_vol, sh_feedback, sh_bkup, sh_ctl;
     unsigned char dirty;
 };
 
-/* M3 hardcoded instrument */
-#define ENV_ATTACK  64          /* level += per tick until peak */
-#define ENV_HOLD    2           /* ticks at peak */
-#define ENV_DECAY   32          /* level -= per tick */
+#define ENV_ATTACK  64
+#define ENV_HOLD    2
+#define ENV_DECAY   32
 
 static struct voice voices[NCH];
 
-struct step phrase[PHRASE_ROWS];        /* demo phrase, RAM (editable later) */
+static const unsigned char groove[2] = {6, 6};
 
-static const unsigned char groove[2] = {6, 6};  /* ticks per row, LSDJ default */
+unsigned char eng_mode;
+#define eng_playing (eng_mode)
 
-unsigned char eng_playing;
-unsigned char eng_row;                  /* current phrase row */
-static unsigned char eng_tick;          /* tick within row */
-static unsigned char eng_gpos;          /* groove index */
+static unsigned char eng_tick;
+static unsigned char eng_gpos;
 
 static volatile struct _mikey_audio *const CHAN[NCH] = {
     &MIKEY.channel_a, &MIKEY.channel_b, &MIKEY.channel_c, &MIKEY.channel_d,
@@ -82,20 +72,20 @@ static void envelope(unsigned char ch)
     unsigned char l = v->env_level;
 
     switch (v->env_phase) {
-    case 1:                                      /* attack */
+    case 1:
         if (l >= v->env_peak - ENV_ATTACK) {
             l = v->env_peak;
             v->env_phase = 2;
         } else
             l += ENV_ATTACK;
         break;
-    case 2:                                      /* hold */
+    case 2:
         if (v->hold_left == 0)
             v->env_phase = 3;
         else
             --v->hold_left;
-        return;                                  /* level unchanged */
-    case 3:                                      /* decay */
+        return;
+    case 3:
         if (l <= ENV_DECAY) {
             l = 0;
             v->env_phase = 0;
@@ -135,8 +125,8 @@ static void flush(unsigned char ch)
     h->control = v->sh_ctl;
 }
 
-/* Full reprogram only on trigger; volume-only updates must not stop the
- * oscillator (envelope would otherwise glitch the phase every tick). */
+/* Volume-only update: never restarts the oscillator (envelope ticks would
+ * otherwise glitch the phase). */
 static void flush_vol(unsigned char ch)
 {
     volatile struct _mikey_audio *h = CHAN[ch];
@@ -150,29 +140,150 @@ static void flush_vol(unsigned char ch)
         h->control = 0;
 }
 
+/* --- walkers --- */
+
+/* Load track ch's walker from song row `row` (first row at/after with a
+ * chain; EMPTY row 0 after wrap = inactive). */
+static void walk_load_song(unsigned char ch, unsigned char row)
+{
+    struct walk *w = &eng_walk[ch];
+    unsigned char tries = 0;
+
+    w->active = 0;
+    while (tries++ < 2) {
+        for (; row < SONG_ROWS; ++row) {
+            unsigned char cn = sd.song[row][ch];
+            if (cn != EMPTY && cn < NCHAINS
+                && sd.chains[cn][0].phrase != EMPTY) {
+                w->song_row = row;
+                w->chain = cn;
+                w->cpos = 0;
+                w->phrase = sd.chains[cn][0].phrase;
+                w->tsp = sd.chains[cn][0].tsp;
+                w->prow = 0;
+                w->active = 1;
+                return;
+            }
+            if (cn == EMPTY)
+                break;              /* first hole ends the track (ported) */
+        }
+        row = 0;                    /* wrap once: loop the song */
+    }
+}
+
+/* Advance track ch one phrase row; steps chain / song row as phrases end. */
+static void walk_advance(unsigned char ch)
+{
+    struct walk *w = &eng_walk[ch];
+
+    if (!w->active)
+        return;
+    if (++w->prow < PHRASE_ROWS)
+        return;
+    w->prow = 0;
+
+    if (eng_mode == MODE_PHRASE)                 /* loop one phrase */
+        return;
+
+    ++w->cpos;
+    if (w->cpos < PHRASE_ROWS && sd.chains[w->chain][w->cpos].phrase != EMPTY) {
+        w->phrase = sd.chains[w->chain][w->cpos].phrase;
+        w->tsp = sd.chains[w->chain][w->cpos].tsp;
+        return;
+    }
+    /* chain ended */
+    if (eng_mode == MODE_CHAIN) {                /* loop the chain */
+        w->cpos = 0;
+        w->phrase = sd.chains[w->chain][0].phrase;
+        w->tsp = sd.chains[w->chain][0].tsp;
+        return;
+    }
+    walk_load_song(ch, w->song_row + 1);         /* MODE_SONG */
+}
+
+/* returns 1 if a note was triggered on this row */
+static unsigned char row_trigger(unsigned char ch)
+{
+    struct walk *w = &eng_walk[ch];
+    struct step *s;
+    unsigned char n;
+
+    if (!w->active)
+        return 0;
+    s = &sd.phrases[w->phrase][w->prow];
+    if (!s->note)
+        return 0;
+    n = s->note + w->tsp;
+    if (n < NOTE_MIN || n > NOTE_MAX)
+        n = s->note;
+    trigger(ch, n);
+    return 1;
+}
+
 void engine_stop(void)
 {
     unsigned char ch;
-    eng_playing = 0;
+    eng_mode = MODE_STOP;
     for (ch = 0; ch < NCH; ++ch) {
         voices[ch].env_phase = 0;
         voices[ch].env_level = 0;
+        voices[ch].dirty = 0;
+        eng_walk[ch].active = 0;
         CHAN[ch]->control = 0;
         CHAN[ch]->volume = 0;
     }
 }
 
-void engine_play(void)
+static void play_common(void)
 {
-    eng_row = 0;
     eng_tick = 0;
     eng_gpos = 0;
-    eng_playing = 1;
 }
 
-/* Audition a note on voice 0 outside playback (editor prelisten). The
- * envelope keeps ticking from engine_tick, which runs every frame whether
- * or not the sequencer is playing, so the note decays naturally. */
+void engine_play_song(unsigned char row)
+{
+    unsigned char ch;
+    engine_stop();
+    for (ch = 0; ch < NCH; ++ch)
+        walk_load_song(ch, row);
+    play_common();
+    eng_mode = MODE_SONG;
+}
+
+void engine_play_chain(unsigned char track, unsigned char chain)
+{
+    struct walk *w = &eng_walk[track];
+    engine_stop();
+    if (sd.chains[chain][0].phrase == EMPTY)
+        return;
+    w->chain = chain;
+    w->cpos = 0;
+    w->phrase = sd.chains[chain][0].phrase;
+    w->tsp = sd.chains[chain][0].tsp;
+    w->prow = 0;
+    w->song_row = 0;
+    w->active = 1;
+    play_common();
+    eng_mode = MODE_CHAIN;
+}
+
+void engine_play_phrase(unsigned char track, unsigned char phrase)
+{
+    struct walk *w = &eng_walk[track];
+    engine_stop();
+    w->chain = 0;
+    w->cpos = 0;
+    w->phrase = phrase;
+    w->tsp = 0;
+    w->prow = 0;
+    w->song_row = 0;
+    w->active = 1;
+    play_common();
+    eng_mode = MODE_PHRASE;
+}
+
+/* Editor prelisten on voice 0; envelope keeps ticking while stopped so the
+ * note decays naturally. */
 void engine_audition(unsigned char note)
 {
     trigger(0, note);
@@ -183,33 +294,28 @@ void engine_audition(unsigned char note)
 void engine_tick(void)
 {
     unsigned char ch;
-    unsigned char triggered = 0;
+    unsigned char trig = 0;
 
-    if (eng_playing && eng_tick == 0) {          /* row start */
-        struct step *s = &phrase[eng_row];
-        if (s->note) {
-            trigger(0, s->note);
-            triggered = 1;
-        }
-    }
+    if (eng_playing && eng_tick == 0)
+        trig = 1;
 
     for (ch = 0; ch < NCH; ++ch) {
-        if (!(triggered && ch == 0))
-            envelope(ch);
-        if (triggered && ch == 0)
+        if (trig && row_trigger(ch))
             flush(ch);
-        else
+        else {
+            envelope(ch);
             flush_vol(ch);
+        }
     }
 
     if (!eng_playing)
         return;
 
-    if (++eng_tick >= groove[eng_gpos]) {        /* row advance */
+    if (++eng_tick >= groove[eng_gpos]) {
         eng_tick = 0;
         if (++eng_gpos >= sizeof(groove))
             eng_gpos = 0;
-        if (++eng_row >= PHRASE_ROWS)
-            eng_row = 0;
+        for (ch = 0; ch < NCH; ++ch)
+            walk_advance(ch);
     }
 }

@@ -5,37 +5,19 @@
  * the palette, and interrupts — that is done here.
  */
 #include <lynx.h>
+#include <string.h>
 
+#include "tracker.h"
 #include "../build/font.h"
 #include "../build/buildid.h"
 
 #define SCREEN      ((unsigned char *)0xA000)
-#define COLS        40
-#define ROWS        17
 #define LINE_BYTES  80
-
-#define PEN_BG      0
-#define PEN_TEXT    1
-#define PEN_DIM     2
-#define PEN_ACCENT  3
 
 extern volatile unsigned int frames;
 void vbl_install(void);
-void sound_init(void);
-
-struct step {
-    unsigned char note, instr, cmd, param;
-};
-extern struct step phrase[16];
-void engine_tick(void);
-
-void editor_init(void);
-void editor_frame(unsigned char joy, unsigned char prev);
 
 #define N(oct, semi) ((unsigned char)(((oct) - 1) * 12 + (semi) + 1))
-#define NC(o) N(o, 0)
-#define NE(o) N(o, 4)
-#define NG(o) N(o, 7)
 
 /* raw pad byte mirrored here for the harness's RAM-dump probes */
 #define JOY_MIRROR (*(volatile unsigned char *)0xC000)
@@ -60,10 +42,14 @@ static void palette_init(void)
 
 static void screen_clear(void)
 {
-    unsigned char *p = SCREEN;
-    unsigned int n;
-    for (n = 0; n < (unsigned int)LINE_BYTES * 102; ++n)
-        p[n] = PEN_BG | (PEN_BG << 4);
+    memset(SCREEN, PEN_BG | (PEN_BG << 4), (unsigned int)LINE_BYTES * 102);
+}
+
+/* clear the 16 grid rows (char rows 1..16 = pixel rows 6..101) */
+void clear_grid(void)
+{
+    memset(SCREEN + 6 * LINE_BYTES, PEN_BG | (PEN_BG << 4),
+           (unsigned int)LINE_BYTES * 96);
 }
 
 /* Draw one glyph at char cell (cx, cy); fg/bg are pen numbers. */
@@ -106,6 +92,56 @@ void draw_hex8(unsigned char cx, unsigned char cy, unsigned char v,
     draw_char(cx + 1, cy, hexd[v & 0x0F], fg, bg);
 }
 
+/* blank song: $FF sentinels everywhere (ported convention) */
+static void song_new(void)
+{
+    memset(sd.song, EMPTY, sizeof(sd.song));
+    memset(sd.chains, 0, sizeof(sd.chains));
+    memset(sd.phrases, 0, sizeof(sd.phrases));
+    {
+        unsigned char c, s;
+        for (c = 0; c < NCHAINS; ++c)
+            for (s = 0; s < PHRASE_ROWS; ++s)
+                sd.chains[c][s].phrase = EMPTY;
+    }
+}
+
+/* demo song until the sample pool ships a real one:
+ * T1 = C-major arp (chain 0: phrase 0, then phrase 0 transposed +12)
+ * T2 = bass roots   (chain 1: phrase 1)
+ * T3 = offbeat blips (chain 2: phrase 2) */
+static void song_demo(void)
+{
+    static const unsigned char arp[16] = {
+        N(4,0), N(4,4), N(4,7), N(5,0), N(5,4), N(5,0), N(4,7), N(4,4),
+        N(4,0), N(4,7), N(5,0), N(5,4), N(5,7), N(5,4), N(5,0), N(4,7),
+    };
+    unsigned char i;
+
+    song_new();
+    for (i = 0; i < 16; ++i)
+        sd.phrases[0][i].note = arp[i];
+    for (i = 0; i < 16; i += 4)
+        sd.phrases[1][i].note = N(2,0);            /* C-2 bass */
+    for (i = 2; i < 16; i += 4)
+        sd.phrases[2][i].note = N(5,7);            /* G-5 blips */
+
+    sd.chains[0][0].phrase = 0;
+    sd.chains[0][1].phrase = 0;
+    sd.chains[0][1].tsp = 12;                      /* second pass +1 octave */
+    sd.chains[1][0].phrase = 1;
+    sd.chains[1][1].phrase = 1;
+    sd.chains[2][0].phrase = 2;
+    sd.chains[2][1].phrase = 2;
+
+    sd.song[0][0] = 0;
+    sd.song[0][1] = 1;
+    sd.song[0][2] = 2;
+    sd.song[1][0] = 0;
+    sd.song[1][1] = 1;
+    sd.song[1][2] = 2;
+}
+
 void main(void)
 {
     unsigned char last = 0xFF;
@@ -115,17 +151,7 @@ void main(void)
     screen_clear();
     MIKEY.scrbase = SCREEN;
     sound_init();
-
-    /* demo phrase until M5 brings the song hierarchy: C-major arp */
-    {
-        static const unsigned char arp[16] = {
-            NC(4), NE(4), NG(4), NC(5), NE(5), NC(5), NG(4), NE(4),
-            NC(4), NG(4), NC(5), NE(5), NG(5), NE(5), NC(5), NG(4),
-        };
-        unsigned char i;
-        for (i = 0; i < 16; ++i)
-            phrase[i].note = arp[i];
-    }
+    song_demo();
 
     vbl_install();
     editor_init();
