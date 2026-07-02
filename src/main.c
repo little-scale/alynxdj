@@ -264,6 +264,7 @@ void main(void)
     screen_clear();
     MIKEY.scrbase = SCREEN;
     sound_init();
+    sync_init();
     song_demo();
 
     /* autoload: a valid save replaces the demo song (ported slot-0
@@ -285,6 +286,7 @@ void main(void)
 
         joy = SUZY.joystick;
         JOY_MIRROR = joy;
+        sync_poll();
         editor_frame(joy, prev_joy);
         prev_joy = joy;
     }

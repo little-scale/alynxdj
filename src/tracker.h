@@ -131,6 +131,20 @@ void sound_init(void);
 void __fastcall__ pcm_play(unsigned char slot);
 void pcm_stop(void);
 
+/* ComLynx sync (src/sync.c) */
+#define SYNC_OFF 0
+#define SYNC_OUT 1
+#define SYNC_IN  2
+#define NSYNC    3
+#define SYNC_OP_ROW   0x01
+#define SYNC_OP_START 0x02
+#define SYNC_OP_STOP  0x03
+extern unsigned char sync_mode;
+extern unsigned char sync_row_pending;
+void sync_init(void);
+void __fastcall__ sync_tx(unsigned char b);
+void sync_poll(void);
+
 /* 93C86 EEPROM (src/eeprom.s), full 16-bit words per cell */
 unsigned __fastcall__ ee_read(unsigned cell);
 void __fastcall__ ee_write(unsigned cell, unsigned val);

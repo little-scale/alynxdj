@@ -444,6 +444,7 @@ static void draw_files_status(void)
 
 static void draw_files_row(unsigned char r, unsigned char cursor_here)
 {
+    static const char *const sync_name[NSYNC] = { "OFF", "OUT", "IN " };
     unsigned char fg = cursor_here ? PEN_BG : PEN_TEXT;
     unsigned char bg = cursor_here ? PEN_TEXT : PEN_BG;
 
@@ -451,12 +452,17 @@ static void draw_files_row(unsigned char r, unsigned char cursor_here)
         draw_text(1, GRID_TOP + 1, "SAVE", fg, bg);
     else if (r == 1)
         draw_text(1, GRID_TOP + 3, "LOAD", fg, bg);
+    else if (r == 2) {
+        draw_text(1, GRID_TOP + 5, "SYNC", PEN_DIM, PEN_BG);
+        draw_text(6, GRID_TOP + 5, sync_name[sync_mode], fg, bg);
+    }
 }
 
 static void draw_files_screen(void)
 {
     draw_files_row(0, f_row == 0);
     draw_files_row(1, f_row == 1);
+    draw_files_row(2, f_row == 2);
     draw_files_status();
 }
 
@@ -592,8 +598,10 @@ static void move_cursor(unsigned char dir)
         }
         break;
     case SCR_FILES:
-        if (dir == 0 || dir == 1)
-            f_row ^= 1;
+        switch (dir) {
+        case 0: if (f_row) --f_row; else f_row = 2; break;
+        case 1: if (f_row < 2) ++f_row; else f_row = 0; break;
+        }
         break;
     case SCR_GROOVE:
         switch (dir) {
@@ -851,6 +859,11 @@ static void insert_cell(void)
         }
         break;
     case SCR_FILES:
+        if (f_row == 2) {               /* cycle the sync mode */
+            sync_mode = (sync_mode + 1) % NSYNC;
+            draw_files_row(2, 1);
+            break;
+        }
         engine_stop();
         transport_label();
         f_status = f_row ? save_load() : save_do();

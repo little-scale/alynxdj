@@ -26,8 +26,8 @@
 /* the flat song block lives in HIRAM ($C900, SONG segment) — MAIN is full */
 #pragma bss-name (push, "SONG")
 struct songdata sd;
-#pragma bss-name (pop)
 struct walk eng_walk[NCH];
+#pragma bss-name (pop)
 
 extern volatile unsigned int frames;    /* VBL counter (irq.s) */
 
@@ -60,7 +60,9 @@ struct voice {
     unsigned char dirty, retime;
 };
 
+#pragma bss-name (push, "SONG")
 static struct voice voices[NCH];
+#pragma bss-name (pop)
 
 unsigned char eng_mode;
 unsigned char eng_mute;         /* per-track mute bitmask (editor-owned) */
@@ -488,6 +490,8 @@ static void row_start(unsigned char ch)
 void engine_stop(void)
 {
     unsigned char ch;
+    if (eng_mode)
+        sync_tx(SYNC_OP_STOP);
     eng_mode = MODE_STOP;
     pcm_stop();
     for (ch = 0; ch < NCH; ++ch) {
@@ -519,6 +523,7 @@ void engine_play_song(unsigned char row)
         walk_load_song(ch, row);
     play_common();
     eng_mode = MODE_SONG;
+    sync_tx(SYNC_OP_START);
 }
 
 void engine_play_chain(unsigned char track, unsigned char chain)
@@ -562,6 +567,14 @@ void engine_audition(unsigned char note, unsigned char inum)
 void engine_tick(void)
 {
     unsigned char ch;
+
+    /* sync slave: rows are granted by received ROW bytes, not the groove */
+    if (eng_playing && sync_mode == SYNC_IN && eng_tick && sync_row_pending) {
+        --sync_row_pending;
+        for (ch = 0; ch < NCH; ++ch)
+            walk_advance(ch);
+        eng_tick = 0;
+    }
 
     if (eng_playing && eng_tick == 0) {
         unsigned char g = sd.grooves[eng_groove][eng_gpos];
@@ -635,11 +648,17 @@ void engine_tick(void)
     if (!eng_playing)
         return;
 
+    if (sync_mode == SYNC_IN) {         /* slave: hold until the next clock */
+        eng_tick = 1;
+        return;
+    }
+
     if (++eng_tick >= row_ticks) {
         eng_tick = 0;
         if (++eng_gpos >= 16 || sd.grooves[eng_groove][eng_gpos] == 0)
             eng_gpos = 0;
         for (ch = 0; ch < NCH; ++ch)
             walk_advance(ch);
+        sync_tx(SYNC_OP_ROW);
     }
 }
