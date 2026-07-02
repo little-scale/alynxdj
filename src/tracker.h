@@ -20,14 +20,23 @@
 #define CMD_C    2      /* C xy  chord: loop +0,+x,+y semitones per tick */
 #define CMD_D    3      /* D xx  delay trigger xx ticks */
 #define CMD_G    4      /* G xx  switch groove */
-#define CMD_H    5      /* H xx  table: loop to row x (phrase H is M9b) */
+#define CMD_H    5      /* H xx  table: loop to row x; phrase: end phrase */
 #define CMD_K    6      /* K xx  kill note after xx ticks */
 #define CMD_O    7      /* O xy  pan: ATTEN left x / right y */
 #define CMD_P    8      /* P xx  pitch bend, signed 1/16-semi per tick */
 #define CMD_V    9      /* V xy  vibrato speed x depth y (1/16 semis) */
 #define CMD_W    10     /* W xx  shorten this row to xx ticks */
 #define CMD_X    11     /* X xx  this note's volume (envelope peak) */
-#define NCMDS    12
+#define CMD_F    12     /* F xx  finetune, signed 1/16 semis (one-shot) */
+#define CMD_L    13     /* L xx  slide from the previous pitch, xx/16 semi
+                                 per tick (needs a note on the row) */
+#define CMD_N    14     /* N xx  live LFSR taps override: bits 0-5 = taps
+                                 0-5, 6 = tap 7, 7 = tap 10 (D11 morph) */
+#define CMD_R    15     /* R xy  retrig every y ticks, peak -8x per fire */
+#define CMD_S    16     /* S xx  live PCM rate: timer-7 reload (pitch the
+                                 playing sample; smaller = faster) */
+#define CMD_Z    17     /* Z xx  probability: note plays if rand8 < xx */
+#define NCMDS    18
 
 #define IT_TONE  0
 #define IT_NOISE 1

@@ -96,16 +96,22 @@ the point.
 | `A xx` | table | run table xx on this note (one-shot) |
 | `C xy` | chord | loop +0, +x, +y semitones per tick |
 | `D xx` | delay | trigger after xx ticks |
+| `F xx` | finetune | signed offset in 1/16 semitones (one-shot) |
 | `G xx` | groove | switch the global groove |
-| `H xx` | hop | **tables only:** loop to row x |
+| `H xx` | hop | phrase: end this phrase after this row; table: loop to row x |
 | `K xx` | kill | cut the note after xx ticks (00 = instant) |
+| `L xx` | slide | glide into this row's note from the previous pitch, xx/16 semitone per tick |
+| `N xx` | taps | live LFSR-taps morph: bits 0–5 = taps 0–5, 6 = tap 7, 7 = tap 10 |
 | `O xy` | pan | attenuation left x / right y (Lynx II stereo) |
 | `P xx` | pitch | bend, signed, 1/16 semitone per tick |
+| `R xy` | retrig | re-fire the note every y ticks, peak −8·x per fire (KIT refires the sample) |
+| `S xx` | rate | live PCM sample rate: timer reload (smaller = faster/higher) |
 | `V xy` | vibrato | speed x, depth y (1/16 semitones) |
 | `W xx` | wait | shorten this row to xx ticks |
 | `X xx` | volume | this note's envelope peak |
+| `Z xx` | chance | the note plays if an 8-bit roll < xx (`Z80` ≈ 50/50) |
 
-(`T L R F N S Z I J` and phrase-level `H` are planned — see PLAN.md.)
+(`T` tempo and the `I`/`J` variation pair are planned — see PLAN.md.)
 
 ## Tables (TABLE screen)
 

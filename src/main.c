@@ -205,6 +205,46 @@ static void song_demo(void)
     sd.instrs[8].seed_lo = 0x55;
     sd.instrs[8].seed_hi = 0x05;
 
+    /* M9c command rigs (song rows 19-25, chain-loop transport) */
+    sd.instrs[5].type = IT_TONE;                   /* sustain lead */
+    sd.instrs[5].vol = 0x7F;
+    sd.instrs[5].hold = 8;
+    sd.instrs[5].dcy = 2;
+    for (i = 9; i <= 15; ++i) {
+        sd.chains[i][0].phrase = i;
+        sd.chains[i][0].tsp = 0;
+        sd.song[19 + (i - 9)][0] = i;
+    }
+    /* ph9  L: C-4 then C-5 with L04 -> audible glide */
+    sd.phrases[9][0].note = N(4,0);  sd.phrases[9][0].instr = 5;
+    sd.phrases[9][8].note = N(5,0);  sd.phrases[9][8].instr = 5;
+    sd.phrases[9][8].cmd = CMD_L;    sd.phrases[9][8].param = 4;
+    /* ph10 R: one note retriggered every 3 ticks, fading */
+    sd.phrases[10][0].note = N(4,0); sd.phrases[10][0].instr = 5;
+    sd.phrases[10][0].cmd = CMD_R;   sd.phrases[10][0].param = 0x13;
+    /* ph11 F: plain C-4 / +8 sixteenths C-4 alternating */
+    for (i = 0; i < 16; i += 4) {
+        sd.phrases[11][i].note = N(4,0); sd.phrases[11][i].instr = 0;
+        if (i & 4) { sd.phrases[11][i].cmd = CMD_F; sd.phrases[11][i].param = 8; }
+    }
+    /* ph12 N: square then taps-$F1 morph */
+    sd.phrases[12][0].note = N(4,0); sd.phrases[12][0].instr = 5;
+    sd.phrases[12][8].note = N(4,0); sd.phrases[12][8].instr = 5;
+    sd.phrases[12][8].cmd = CMD_N;   sd.phrases[12][8].param = 0xF1;
+    /* ph13 S: kit BD normal / double-rate */
+    sd.phrases[13][0].note = N(4,0); sd.phrases[13][0].instr = 3;
+    sd.phrases[13][8].note = N(4,0); sd.phrases[13][8].instr = 3;
+    sd.phrases[13][8].cmd = CMD_S;   sd.phrases[13][8].param = 63;
+    /* ph14 Z: coin-flip note on every row */
+    for (i = 0; i < 16; ++i) {
+        sd.phrases[14][i].note = N(4,0);
+        sd.phrases[14][i].cmd = CMD_Z;
+        sd.phrases[14][i].param = 0x80;
+    }
+    /* ph15 H: note at row 0, phrase ends at row 4 -> 5-row loop */
+    sd.phrases[15][0].note = N(4,0);
+    sd.phrases[15][4].cmd = CMD_H;
+
     /* table 0: a demo arp macro (0/+4/+7 at tick rate, H-looped) */
     sd.tables[0][0].tsp = 0;
     sd.tables[0][1].tsp = 4;

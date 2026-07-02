@@ -28,6 +28,7 @@
 /* command letters, indexed by CMD_* id */
 static const char cmd_chars[NCMDS] = {
     '-', 'A', 'C', 'D', 'G', 'H', 'K', 'O', 'P', 'V', 'W', 'X',
+    'F', 'L', 'N', 'R', 'S', 'Z',
 };
 
 #define GRID_TOP 1

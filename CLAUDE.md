@@ -45,6 +45,12 @@ make clean
   fixed address (e.g. debug mirrors) instead of scraping pixels.
 - Handy is dev-speed, not silicon: its LFSR-timbre and DAC-timing fidelity is
   suspect (DESIGN.md Q4) — hardware passes at M6/M7.
+- **cc65 comparison gotcha:** `int_var > uchar_var` can compile as an
+  *unsigned* compare — a negative int silently becomes huge (bit the L
+  slide: it diverged an octave down). Cast explicitly:
+  `int r = (int)uchar_var;` then compare against `r`.
+- Boot **autoloads** a valid EEPROM save over `song_demo()` — when testing
+  demo/rig changes, delete the emulator-side `.eeprom` file first.
 
 ## The reference projects (read before designing anything)
 

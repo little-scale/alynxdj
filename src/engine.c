@@ -29,6 +29,8 @@ struct songdata sd;
 #pragma bss-name (pop)
 struct walk eng_walk[NCH];
 
+extern volatile unsigned int frames;    /* VBL counter (irq.s) */
+
 struct voice {
     unsigned char base_note;    /* chain-transposed trigger note */
     unsigned char type;         /* IT_* latched at trigger */
@@ -40,11 +42,15 @@ struct voice {
     /* effects */
     int           bend;         /* accumulated 1/16 semis */
     signed char   bend_rate;    /* P: per tick */
+    int           slide_off;    /* L: offset from previous pitch -> 0 */
+    unsigned char slide_rate;
     unsigned char vib_speed, vib_depth, vib_phase;
     unsigned char chord[3], chord_len, chord_pos;
     unsigned char kill_in;      /* $FF = none */
     unsigned char table, tpos;  /* $FF = none */
     signed char   tbl_tsp;
+    unsigned char inum;         /* instrument (retrig refires it) */
+    unsigned char rt_rate, rt_fade, rt_cnt;
     /* delayed trigger (D) */
     unsigned char dly_in;       /* $FF = none */
     unsigned char dly_note, dly_instr;
@@ -88,7 +94,7 @@ static void pitch_update(unsigned char ch)
                           : (signed char)((ph & 0x1F) - 0x10);
         vib = (signed char)((vib * v->vib_depth) >> 4);
     }
-    p = (int)v->base_note * 16 + v->bend + vib
+    p = (int)v->base_note * 16 + v->bend + v->slide_off + vib
         + ((int)v->chord[v->chord_pos] + v->tbl_tsp) * 16;
     if (v->type == IT_WAV)
         p += 43 * 16;
@@ -165,7 +171,30 @@ static void exec_cmd(unsigned char ch, unsigned char cmd, unsigned char param)
             v->env_level = v->env_peak;
         v->dirty = 1;
         break;
-    /* CMD_H is table-level (handled in table_step); CMD_D in the peek */
+    case CMD_F:
+        v->bend += (signed char)param;
+        break;
+    case CMD_N: {
+        /* live taps morph (D11): bits 0-5 = taps 0-5, 6 = tap 7,
+         * 7 = tap 10; full reprogram reseeds the shifter */
+        v->sh_feedback = (param & 0x3F) | ((param & 0x80) >> 1);
+        if (param & 0x40)
+            v->sh_ctl |= AUD_TAP7;
+        else
+            v->sh_ctl &= ~AUD_TAP7;
+        v->retime = 1;
+        v->dirty = 1;
+        break;
+    }
+    case CMD_R:
+        v->rt_rate = param & 0x0F;
+        v->rt_fade = param >> 4;
+        v->rt_cnt = 0;
+        break;
+    case CMD_S:
+        *(volatile unsigned char *)0xFD1C = param;  /* TIM7BKUP live */
+        break;
+    /* CMD_H (table loop / phrase end), CMD_D and CMD_Z live in the peek */
     }
 }
 
@@ -217,6 +246,7 @@ static void trigger(unsigned char ch, unsigned char note, unsigned char inum)
         return;
     }
     v->base_note = note;
+    v->inum = inum;
     v->type = in->type;
     v->env_peak = in->vol;
     v->e_atk = in->atk;
@@ -232,11 +262,14 @@ static void trigger(unsigned char ch, unsigned char note, unsigned char inum)
     /* one-shot effect state resets on every note (ported semantics) */
     v->bend = 0;
     v->bend_rate = 0;
+    v->slide_off = 0;
+    v->slide_rate = 0;
     v->vib_speed = v->vib_depth = v->vib_phase = 0;
     v->chord[0] = 0;
     v->chord_len = 1;
     v->chord_pos = 0;
     v->kill_in = EMPTY;
+    v->rt_rate = 0;
     v->table = (in->table < NTABLES) ? in->table : EMPTY;
     v->tpos = 0;
     v->tbl_tsp = 0;
@@ -400,12 +433,23 @@ static void walk_advance(unsigned char ch)
     walk_load_song(ch, w->song_row + 1);
 }
 
-/* row start for one track: D-peek, trigger, phrase command */
+/* 16-bit Galois LFSR, taps $B400 (the sibling's Z roll) */
+static unsigned prng;
+static unsigned char rand8(void)
+{
+    prng = (prng >> 1) ^ ((prng & 1) ? 0xB400 : 0);
+    return (unsigned char)prng;
+}
+
+/* row start for one track: peek (D delay, Z roll, L capture, phrase H),
+ * trigger, phrase command */
 static void row_start(unsigned char ch)
 {
     struct walk *w = &eng_walk[ch];
+    struct voice *v = &voices[ch];
     struct step *s;
     unsigned char n;
+    int prev_pitch;
 
     if (!w->active)
         return;
@@ -418,17 +462,26 @@ static void row_start(unsigned char ch)
         if (n < NOTE_MIN || n > NOTE_MAX)
             n = s->note;
     }
+    if (s->cmd == CMD_Z && n && rand8() >= s->param)
+        n = 0;                                  /* the roll failed */
     if (s->cmd == CMD_D && s->param) {          /* delayed trigger */
         if (n) {
-            voices[ch].dly_in = s->param;
-            voices[ch].dly_note = n;
-            voices[ch].dly_instr = s->instr;
+            v->dly_in = s->param;
+            v->dly_note = n;
+            v->dly_instr = s->instr;
         }
         return;
     }
+    prev_pitch = (int)v->base_note * 16 + v->bend + v->slide_off;
     if (n)
         trigger(ch, n, s->instr);
-    if (s->cmd && s->cmd != CMD_D)
+    if (s->cmd == CMD_L && n) {
+        /* glide in from wherever the voice just was */
+        v->slide_off = prev_pitch - (int)n * 16;
+        v->slide_rate = s->param ? s->param : 1;
+    } else if (s->cmd == CMD_H) {
+        w->prow = PHRASE_ROWS - 1;              /* phrase ends after this row */
+    } else if (s->cmd && s->cmd != CMD_D && s->cmd != CMD_Z)
         exec_cmd(ch, s->cmd, s->param);
 }
 
@@ -454,6 +507,8 @@ static void play_common(void)
     eng_gpos = 0;
     eng_groove = 0;
     row_ticks = sd.grooves[0][0] ? sd.grooves[0][0] : 6;
+    prng ^= frames;                     /* Z roll: seed from play-start time */
+    prng |= 1;                          /* never the LFSR zero state */
 }
 
 void engine_play_song(unsigned char row)
@@ -527,11 +582,41 @@ void engine_tick(void)
             table_step(ch);
             if (v->bend_rate)
                 v->bend += v->bend_rate;
+            if (v->slide_off) {                  /* L: home in on the note */
+                int r = (int)v->slide_rate;      /* explicit: cc65 compares
+                                                    int vs uchar unsigned */
+                if (v->slide_off > r)
+                    v->slide_off -= r;
+                else if (v->slide_off < -r)
+                    v->slide_off += r;
+                else
+                    v->slide_off = 0;
+            }
             if (v->vib_depth)
                 v->vib_phase += v->vib_speed + 1;
             if (v->chord_len > 1
                 && ++v->chord_pos >= v->chord_len)
                 v->chord_pos = 0;
+            if (v->rt_rate && ++v->rt_cnt >= v->rt_rate) {
+                v->rt_cnt = 0;                   /* R: re-fire the note */
+                if (v->type == IT_KIT)
+                    pcm_play(((v->base_note - 1) % 12) & 7);
+                else {
+                    unsigned char fade = v->rt_fade << 3;
+                    v->env_peak = (v->env_peak > fade)
+                                  ? v->env_peak - fade : 0;
+                    if (v->e_atk) {
+                        v->env_phase = 1;
+                        v->env_level = 0;
+                    } else {
+                        v->env_phase = 2;
+                        v->env_level = v->env_peak;
+                    }
+                    v->hold_left = sd.instrs[v->inum < NINSTR
+                                             ? v->inum : 0].hold;
+                    v->dirty = 1;
+                }
+            }
             pitch_update(ch);
             envelope(ch);
             if (v->kill_in != EMPTY) {
