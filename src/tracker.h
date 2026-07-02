@@ -67,9 +67,11 @@ struct chainstep {
 struct instr {
     unsigned char type;     /* IT_* */
     unsigned char vol;      /* envelope peak, $00-$7F */
-    unsigned char atk;      /* level += atk/tick; 0 = instant */
-    unsigned char hold;     /* ticks at peak */
-    unsigned char dcy;      /* level -= dcy/tick; 0 = sustain */
+    unsigned char env;      /* ATK<<4 | DCY: 4-bit TIMES, higher = longer
+                               (0 = instant attack / sustain-forever decay);
+                               mapped through env_rate[] in the engine */
+    unsigned char hold;     /* low nibble: ticks at peak (0-15) */
+    unsigned char free0;    /* was the dcy byte; reserved */
     unsigned char taps_lo;  /* TAPS bits 7..0 */
     unsigned char table;    /* $FF = none */
     unsigned char pan;      /* L/R nibbles */
@@ -120,6 +122,7 @@ extern unsigned char eng_mute;
 extern unsigned char eng_gpos, eng_groove;
 void __fastcall__ engine_set_mute(unsigned char mask);
 
+extern const unsigned char env_rate[16];
 void engine_init(void);
 void engine_tick(void);
 void engine_stop(void);

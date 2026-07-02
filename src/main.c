@@ -134,23 +134,23 @@ static void song_demo(void)
     sd.instrs[0].type = IT_TONE;
     sd.instrs[0].vol = 0x7F;
     sd.instrs[0].hold = 2;
-    sd.instrs[0].dcy = 32;
+    sd.instrs[0].env = 0x04;                       /* instant atk, ~4t dcy */
     sd.instrs[1].type = IT_NOISE;
     sd.instrs[1].vol = 0x60;
     sd.instrs[1].taps_lo = (unsigned char)TAPS_NOISE;
     sd.instrs[1].taps_hi = TAPS_NOISE >> 8;
-    sd.instrs[1].dcy = 24;
+    sd.instrs[1].env = 0x05;                       /* short hat decay */
     sd.instrs[2].type = IT_TONE;
     sd.instrs[2].vol = 0x70;
     sd.instrs[2].hold = 8;
-    sd.instrs[2].dcy = 8;
+    sd.instrs[2].env = 0x08;                       /* ~11t bass decay */
     sd.instrs[2].pan = 0xF4;                       /* bass: hard left */
     sd.instrs[3].type = IT_KIT;
     sd.instrs[3].vol = 0x7F;
     sd.instrs[4].type = IT_WAV;                    /* integrate triangle */
     sd.instrs[4].vol = 10;
     sd.instrs[4].hold = 8;
-    sd.instrs[4].dcy = 2;
+    sd.instrs[4].env = 0x0E;                       /* long blip tail */
     sd.instrs[4].pan = 0x4F;                       /* blips: hard right */
 
     for (i = 0; i < 16; ++i)
@@ -192,7 +192,7 @@ static void song_demo(void)
         sd.instrs[i].type = IT_TONE;
         sd.instrs[i].vol = 0x7F;
         sd.instrs[i].hold = 8;
-        sd.instrs[i].dcy = 2;
+        sd.instrs[i].env = 0x0E;
         sd.phrases[i - 2][0].note = N(4,0);
         sd.phrases[i - 2][0].instr = i;
         sd.chains[i - 2][0].phrase = i - 2;
@@ -209,7 +209,7 @@ static void song_demo(void)
     sd.instrs[5].type = IT_TONE;                   /* sustain lead */
     sd.instrs[5].vol = 0x7F;
     sd.instrs[5].hold = 8;
-    sd.instrs[5].dcy = 2;
+    sd.instrs[5].env = 0x0E;
     for (i = 9; i <= 15; ++i) {
         sd.chains[i][0].phrase = i;
         sd.chains[i][0].tsp = 0;

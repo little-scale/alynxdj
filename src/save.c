@@ -16,7 +16,23 @@
 #define HDR_WORDS 4
 #define CAP_BYTES SAVE_CAP_BYTES        /* see tracker.h (Handy load cap) */
 
-#define SAVE_VER  1
+#define SAVE_VER  2
+
+/* nearest time-curve nibble for a v1 per-tick rate (0 stays special) */
+static unsigned char rate_nib(unsigned char rate)
+{
+    unsigned char i, best = 1, bd = 255, d;
+    if (!rate)
+        return 0;
+    for (i = 1; i < 16; ++i) {
+        d = (env_rate[i] > rate) ? env_rate[i] - rate : rate - env_rate[i];
+        if (d < bd) {
+            bd = d;
+            best = i;
+        }
+    }
+    return best;
+}
 
 /* pack buffer in the free RAM band above the mirrors */
 static unsigned char *const buf = (unsigned char *)0xC100;
@@ -125,6 +141,18 @@ unsigned char save_load(void)
     if ((unsigned char)ee_read(3) != cksum(len))
         return ST_BADSUM;
     unpack(len);
+    if ((ee_read(3) >> 8) < 2) {
+        /* v1 records stored ATK/HOLD/DCY as per-tick RATE bytes at
+         * offsets 2/3/4 — fold each rate onto the nearest env_rate[]
+         * nibble (time semantics, v2) */
+        unsigned char i;
+        for (i = 0; i < NINSTR; ++i) {
+            unsigned char *r = (unsigned char *)&sd.instrs[i];
+            r[2] = (rate_nib(r[2]) << 4) | rate_nib(r[4]);
+            r[3] = (r[3] > 15) ? 15 : r[3];
+            r[4] = 0;
+        }
+    }
     return ST_OK;
 }
 

@@ -292,16 +292,23 @@ static const char *const ifield_name[NIFIELDS] = {
 };
 static const char *const itype_name[4] = { "TONE", "NOISE", "WAV", "KIT" };
 
-static unsigned char *ifield_ptr(unsigned char f)
+static unsigned char ifield_nib(unsigned char f)
 {
     struct instr *in = &sd.instrs[edit_instr];
     switch (f) {
-    case 0: return &in->type;
-    case 1: return &in->vol;
-    case 2: return &in->atk;
-    case 3: return &in->hold;
-    case 4: return &in->dcy;
-    default: return &in->table;
+    case 2:  return in->env >> 4;           /* ATK */
+    case 3:  return in->hold & 0x0F;        /* HOLD */
+    default: return in->env & 0x0F;         /* DCY */
+    }
+}
+
+static void ifield_nib_set(unsigned char f, unsigned char v)
+{
+    struct instr *in = &sd.instrs[edit_instr];
+    switch (f) {
+    case 2: in->env = (in->env & 0x0F) | (v << 4); break;
+    case 3: in->hold = v; break;
+    default: in->env = (in->env & 0xF0) | v; break;
     }
 }
 
@@ -361,8 +368,17 @@ static void draw_instr_row(unsigned char r, unsigned char cursor_here)
         else
             draw_hex8(8, y, sd.instrs[edit_instr].table, fg, bg);
         break;
-    default:
-        draw_hex8(8, y, *ifield_ptr(r), fg, bg);
+    case 1:
+        draw_hex8(8, y, sd.instrs[edit_instr].vol, fg, bg);
+        break;
+    default: {                          /* ATK / HOLD / DCY nibbles */
+        char b[2];
+        static const char hexd[] = "0123456789ABCDEF";
+        b[0] = hexd[ifield_nib(r)];
+        b[1] = 0;
+        draw_text(8, y, b, fg, bg);
+        break;
+    }
     }
 }
 
@@ -778,6 +794,12 @@ static unsigned edit_u16(unsigned v, unsigned char dir, unsigned max)
     return v & max;
 }
 
+static unsigned char *ifield_ptr(unsigned char f)
+{
+    struct instr *in = &sd.instrs[edit_instr];
+    return (f == 0) ? &in->type : &in->vol;
+}
+
 static void edit_instr_cell(unsigned char dir)
 {
     struct instr *in = &sd.instrs[edit_instr];
@@ -803,6 +825,17 @@ static void edit_instr_cell(unsigned char dir)
         else
             in->table = (v == 0 || v >= NTABLES) ? EMPTY : v - 1;
         return;
+    case 2:                             /* ATK / HOLD / DCY: 0-F times */
+    case 3:
+    case 4:
+        v = ifield_nib(i_row);
+        stp = (dir < 2) ? 4 : 1;
+        if (dir == 0 || dir == 3)
+            v = (v + stp <= 15) ? v + stp : 15;
+        else
+            v = (v >= stp) ? v - stp : 0;
+        ifield_nib_set(i_row, v);
+        break;
     default:
         p = ifield_ptr(i_row);
         v = *p;

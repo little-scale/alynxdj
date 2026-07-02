@@ -65,6 +65,13 @@ struct voice {
 static struct voice voices[NCH];
 #pragma bss-name (pop)
 
+/* ATK/DCY nibble -> per-tick level step. Time-semantic: higher nibble =
+ * longer stage (~ticks: -,1,2,3,4,5,6,8,11,16,21,26,32,43,64,127 =
+ * 17 ms .. 2.1 s at the 60 Hz tick). Index 0 = instant attack / sustain. */
+const unsigned char env_rate[16] = {
+    0, 127, 64, 43, 32, 26, 22, 16, 12, 8, 6, 5, 4, 3, 2, 1,
+};
+
 unsigned char eng_mode;
 unsigned char eng_mute;         /* per-track mute bitmask (editor-owned) */
 #define eng_playing (eng_mode)
@@ -252,10 +259,10 @@ static void trigger(unsigned char ch, unsigned char note, unsigned char inum)
     v->inum = inum;
     v->type = in->type;
     v->env_peak = in->vol;
-    v->e_atk = in->atk;
-    v->e_dcy = in->dcy;
-    v->hold_left = in->hold;
-    if (in->atk) {
+    v->e_atk = env_rate[in->env >> 4];
+    v->e_dcy = env_rate[in->env & 0x0F];
+    v->hold_left = in->hold & 0x0F;
+    if (in->env & 0xF0) {
         v->env_phase = 1;
         v->env_level = 0;
     } else {
@@ -646,7 +653,7 @@ void engine_tick(void)
                         v->env_level = v->env_peak;
                     }
                     v->hold_left = sd.instrs[v->inum < NINSTR
-                                             ? v->inum : 0].hold;
+                                             ? v->inum : 0].hold & 0x0F;
                     v->dirty = 1;
                 }
             }

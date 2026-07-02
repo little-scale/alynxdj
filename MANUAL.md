@@ -54,9 +54,9 @@ FILES and GROOVE.
 |---|---|
 | TYPE | TONE / NOISE / WAV / KIT |
 | VOL | envelope peak, $00–$7F |
-| ATK | attack rate per tick (0 = instant) |
-| HOLD | ticks held at the peak |
-| DCY | decay rate per tick (0 = sustain until the next note) |
+| ATK | attack **time**, 0–F: 0 = instant, F ≈ 2 s (higher = slower) |
+| HOLD | ticks held at the peak, 0–F |
+| DCY | decay **time**, 0–F: 0 = sustain until the next note, 1 = instant-ish, F ≈ 2 s |
 | **TAPS** | the raw 12-bit-LFSR tap mask — see below |
 | **SEED** | the shifter start state, $000–$FFF |
 | TABLE | macro table to run on every note (`--` = none) |
