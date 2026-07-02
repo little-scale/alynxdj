@@ -94,6 +94,9 @@ extern struct walk eng_walk[NCH];
 #define MODE_CHAIN  2
 #define MODE_PHRASE 3
 extern unsigned char eng_mode;
+extern unsigned char eng_mute;
+extern unsigned char eng_gpos, eng_groove;
+void __fastcall__ engine_set_mute(unsigned char mask);
 
 void engine_tick(void);
 void engine_stop(void);

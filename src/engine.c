@@ -62,11 +62,12 @@ static const unsigned char timbre_noise[8] = {
 };
 
 unsigned char eng_mode;
+unsigned char eng_mute;         /* per-track mute bitmask (editor-owned) */
 #define eng_playing (eng_mode)
 
 static unsigned char eng_tick;
-static unsigned char eng_gpos;
-static unsigned char eng_groove;        /* active groove number */
+unsigned char eng_gpos;                 /* groove row (GROOVE playhead) */
+unsigned char eng_groove;               /* active groove number */
 static unsigned char row_ticks;         /* this row's length (W overrides) */
 
 static volatile struct _mikey_audio *const CHAN[NCH] = {
@@ -323,14 +324,23 @@ static void flush(unsigned char ch)
         h->other = 0;
         h->count = v->sh_bkup;
         h->reload = v->sh_bkup;
-        h->volume = v->env_level;
+        h->volume = (eng_mute & (1 << ch)) ? 0 : v->env_level;
         (&MIKEY.attena)[ch] = v->sh_pan;
         h->control = v->sh_ctl;
         return;
     }
     /* running update: reload + volume only — never restart the phase */
     h->reload = v->sh_bkup;
-    h->volume = v->env_level;
+    h->volume = (eng_mute & (1 << ch)) ? 0 : v->env_level;
+}
+
+/* editor mute/solo: apply immediately, even mid-note */
+void __fastcall__ engine_set_mute(unsigned char mask)
+{
+    unsigned char ch;
+    eng_mute = mask;
+    for (ch = 0; ch < NCH; ++ch)
+        CHAN[ch]->volume = (mask & (1 << ch)) ? 0 : voices[ch].env_level;
 }
 
 /* --- walkers (M5, unchanged) --- */
