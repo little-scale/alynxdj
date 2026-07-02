@@ -134,6 +134,8 @@ static void song_demo(void)
     sd.instrs[2].vol = 0x70;
     sd.instrs[2].hold = 8;
     sd.instrs[2].dcy = 8;
+    sd.instrs[3].type = IT_KIT;
+    sd.instrs[3].vol = 0x7F;
 
     for (i = 0; i < 16; ++i)
         sd.phrases[0][i].note = arp[i];
@@ -143,9 +145,11 @@ static void song_demo(void)
     }
     for (i = 2; i < 16; i += 4)
         sd.phrases[2][i].note = N(5,7);            /* G-5 blips */
+    /* 808 kit: C=BD, D=SD, F#=HH (note semitone picks the slot) */
     for (i = 0; i < 16; i += 2) {
-        sd.phrases[3][i].note = N(6,0);            /* hat clock */
-        sd.phrases[3][i].instr = 1;
+        sd.phrases[3][i].note = (i & 4) ? ((i & 2) ? N(4,6) : N(4,2))
+                                        : ((i & 2) ? N(4,6) : N(4,0));
+        sd.phrases[3][i].instr = 3;
     }
 
     sd.chains[0][0].phrase = 0;

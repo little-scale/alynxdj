@@ -12,7 +12,7 @@ ROM   := $(BUILD)/alynxdj.lnx
 CFG   := alynxdj.cfg
 
 SRC_C := src/main.c src/sound.c src/engine.c src/editor.c
-SRC_S := src/lowcode.s src/irq.s
+SRC_S := src/lowcode.s src/irq.s $(BUILD)/kit.s
 
 # cc65 2.18 gotcha: lynx/defdir.s references __LOWCODE_SIZE__, but marks the
 # LOWCODE segment optional, so a build with no LOWCODE data fails to link.
@@ -26,6 +26,9 @@ BUILDID := $(shell git rev-parse --short HEAD 2>/dev/null)$(shell git diff-index
 $(shell mkdir -p $(BUILD))
 $(shell [ "`cat $(BUILD)/buildid.h 2>/dev/null`" = '#define BUILDID "$(BUILDID)"' ] || \
         echo '#define BUILDID "$(BUILDID)"' > $(BUILD)/buildid.h)
+
+$(BUILD)/kit.s: tools/alynxdj_sample.py
+	python3 tools/alynxdj_sample.py "samples/01 808" $@
 
 $(BUILD)/notes.h: tools/maketables.py
 	python3 tools/maketables.py $@

@@ -13,9 +13,9 @@
 
 #define IT_TONE  0
 #define IT_NOISE 1
-#define IT_WAV   2      /* M8 */
-#define IT_KIT   3      /* M7 */
-#define NTYPES   2      /* editable range today */
+#define IT_WAV   2      /* M8: falls back to TONE until then */
+#define IT_KIT   3
+#define NTYPES   4
 
 struct step {
     unsigned char note;     /* 0 = empty, 1..96 = C-1..B-8 */
@@ -76,6 +76,8 @@ void engine_play_phrase(unsigned char track, unsigned char phrase);
 void engine_audition(unsigned char note, unsigned char inum);
 
 void sound_init(void);
+void __fastcall__ pcm_play(unsigned char slot);
+void pcm_stop(void);
 
 /* render (main.c) */
 void draw_text(unsigned char cx, unsigned char cy, const char *s,

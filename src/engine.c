@@ -66,6 +66,16 @@ static void trigger(unsigned char ch, unsigned char note, unsigned char inum)
     struct voice *v = &voices[ch];
     struct instr *in = &sd.instrs[inum < NINSTR ? inum : 0];
 
+    if (in->type == IT_KIT) {
+        /* PCM: note semitone picks the kit slot; plays on channel D's DAC
+         * regardless of track (mono sample bus, SMSGGDJ T3 policy). The
+         * engine leaves channel D's registers alone while it runs. */
+        pcm_play(((note - 1) % 12) & 7);
+        v->env_phase = 0;
+        v->env_level = 0;
+        v->dirty = 0;
+        return;
+    }
     v->note = note;
     v->env_peak = in->vol;
     v->e_atk = in->atk;
@@ -246,6 +256,7 @@ void engine_stop(void)
 {
     unsigned char ch;
     eng_mode = MODE_STOP;
+    pcm_stop();
     for (ch = 0; ch < NCH; ++ch) {
         voices[ch].env_phase = 0;
         voices[ch].env_level = 0;
