@@ -103,7 +103,7 @@ static void transport_label(void)
 #define MAP_X 34
 static void draw_map(void)
 {
-    static const char rows[3][6] = { "OP W ", "SCPIT", " G   " };
+    static const char rows[3][6] = { "OP W ", "SCPIT", "FG   " };
     unsigned char r, c;
     char b[2];
 

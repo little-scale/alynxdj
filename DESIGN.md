@@ -121,20 +121,21 @@ map indicator + 4 per-track activity meters (name + level bar, ported from
 GENMDDJ M12).
 
 Screen map (B-held + D-pad), same 2D shape as SMSGGDJ — OPTIONS above
-SONG, PROJECT above CHAIN, **WAVE above INSTR**, GROOVE below CHAIN:
+SONG, PROJECT above CHAIN, **WAVE above INSTR**, **FILES below SONG**,
+GROOVE below CHAIN:
 
 ```
 OPTIONS  PROJECT             WAVE
    |        |                  |
 SONG  →  CHAIN  →  PHRASE  →  INSTR  →  TABLE
-            |
-          GROOVE
+   |        |
+FILES    GROOVE
 LIVE is a SONG-screen mode toggle (M12).
 ```
 
 The right column carries the **map indicator** (ported): three rows
-(`OP_W_` / `SCPIT` / `_G___`), current screen inverted, unshipped screens
-dim.
+(`OP_W_` / `SCPIT` / `FG___`), current screen inverted, unshipped screens
+dim. FILES is the save-slot manager (lands with M10b persistence).
 
 Inverse-video cursor, playhead row highlight, selection box — ported. The
 16-step phrase grid + chrome fits 17 rows exactly; no paging (the GG build's
