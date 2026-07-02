@@ -34,6 +34,10 @@ The payload unpacks to `struct songdata` verbatim (7424 bytes):
 `phrases[64][16]` (4-byte steps), `instrs[32]` (16-byte records),
 `tables[16][16]` (4-byte rows), `grooves[16][16]`.
 
+Instrument record bytes: 0 type, 1 vol, 2 atk, 3 hold, 4 dcy,
+5 taps bits 7-0, 6 table, 7 pan, 8 fine, 9 taps bit 8, 10 seed bits 7-0,
+11 seed bits 11-8, 12-15 reserved (TAPS/SEED per DESIGN.md D11).
+
 RLE tokens: `t < $80` → literal, the next `t+1` bytes are verbatim;
 `t >= $80` → run, the next byte repeats `(t-$80)+3` times (3–130).
 

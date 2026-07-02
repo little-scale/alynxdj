@@ -21,6 +21,7 @@
 #define AUD_ENABLE_COUNT  0x10
 #define AUD_ENABLE_RELOAD 0x08
 #define AUD_INTEGRATE     0x20
+#define AUD_TAP7          0x80          /* control bit 7 enables LFSR tap 7 */
 
 /* the flat song block lives in HIRAM ($C900, SONG segment) — MAIN is full */
 #pragma bss-name (push, "SONG")
@@ -49,17 +50,11 @@ struct voice {
     unsigned char dly_note, dly_instr;
     /* Mikey shadow */
     unsigned char sh_feedback, sh_bkup, sh_ctl, sh_pan;
+    unsigned char sh_shiftlo, sh_shifthi;   /* LFSR seed (OTHER hi nibble) */
     unsigned char dirty, retime;
 };
 
 static struct voice voices[NCH];
-
-static const unsigned char timbre_tone[8] = {
-    0x01, 0x03, 0x07, 0x0F, 0x1F, 0x3F, 0x43, 0xC1,
-};
-static const unsigned char timbre_noise[8] = {
-    0x81, 0x83, 0x87, 0x8F, 0x9F, 0xBF, 0xC3, 0xFF,
-};
 
 unsigned char eng_mode;
 unsigned char eng_mute;         /* per-track mute bitmask (editor-owned) */
@@ -108,7 +103,7 @@ static void pitch_update(unsigned char ch)
         b1 = note_bkup[n];
         b0 = b0 - (unsigned char)((((unsigned int)(b0 - b1)) * frac) >> 4);
     }
-    ctl = (v->sh_ctl & AUD_INTEGRATE)
+    ctl = (v->sh_ctl & (AUD_INTEGRATE | AUD_TAP7))
           | AUD_ENABLE_COUNT | AUD_ENABLE_RELOAD | clk;
     if (b0 != v->sh_bkup || ctl != v->sh_ctl) {
         v->sh_bkup = b0;
@@ -249,11 +244,18 @@ static void trigger(unsigned char ch, unsigned char note, unsigned char inum)
     if (in->type == IT_WAV) {
         v->sh_feedback = 0x80;          /* tap-11 triangle carrier */
         v->sh_ctl = AUD_INTEGRATE;
+        v->sh_shiftlo = 0;
+        v->sh_shifthi = 0;
     } else {
-        v->sh_feedback = (in->type == IT_NOISE)
-                         ? timbre_noise[in->timbre & 7]
-                         : timbre_tone[in->timbre & 7];
-        v->sh_ctl = 0;
+        /* raw tap mask (D11): user bits 0-5 = taps 0-5 -> FEEDBACK 0-5;
+         * user bit 6 = tap 7 -> control bit 7; user bit 7 = tap 10 ->
+         * FEEDBACK 6; user bit 8 = tap 11 -> FEEDBACK 7 */
+        unsigned char lo = in->taps_lo;
+        v->sh_feedback = (lo & 0x3F) | ((lo & 0x80) >> 1)
+                         | ((in->taps_hi & 0x01) << 7);
+        v->sh_ctl = (lo & 0x40) ? AUD_TAP7 : 0;
+        v->sh_shiftlo = in->seed_lo;
+        v->sh_shifthi = (in->seed_hi & 0x0F) << 4;  /* OTHER bits 7-4 */
     }
     v->sh_pan = in->pan;
     v->sh_bkup = 0;                     /* pitch_update programs it */
@@ -320,8 +322,8 @@ static void flush(unsigned char ch)
         h->control = 0;                 /* full reprogram (trigger/clock) */
         h->feedback = v->sh_feedback;
         h->dac = 0;
-        h->shiftlo = 0;
-        h->other = 0;
+        h->shiftlo = v->sh_shiftlo;     /* LFSR seed, bits 7-0 */
+        h->other = v->sh_shifthi;       /* seed bits 11-8 in bits 7-4 */
         h->count = v->sh_bkup;
         h->reload = v->sh_bkup;
         h->volume = (eng_mute & (1 << ch)) ? 0 : v->env_level;

@@ -47,19 +47,32 @@ struct chainstep {
     signed char   tsp;      /* semitone transpose for the whole phrase */
 };
 
-/* 16-byte fixed record, union-by-type later (DESIGN.md §6) */
+/* 16-byte fixed record, union-by-type later (DESIGN.md §6).
+ *
+ * TAPS is the raw 12-bit-LFSR tap mask (DESIGN.md D11), user-contiguous:
+ * bits 0-5 = taps 0-5, bit 6 = tap 7, bit 7 = tap 10, bit 8 = tap 11
+ * (trigger remaps to the scattered FEEDBACK/control layout). SEED is the
+ * 12-bit shifter start state — many tap sets have several disjoint state
+ * cycles, so the seed picks the waveform; some (taps, seed) pairs hit the
+ * LFSR lock state and go silent, exactly like the silicon. */
 struct instr {
     unsigned char type;     /* IT_* */
     unsigned char vol;      /* envelope peak, $00-$7F */
     unsigned char atk;      /* level += atk/tick; 0 = instant */
     unsigned char hold;     /* ticks at peak */
     unsigned char dcy;      /* level -= dcy/tick; 0 = sustain */
-    unsigned char timbre;   /* LFSR tap preset 0-7 within the type's bank */
-    unsigned char table;    /* $FF = none (M6b) */
-    unsigned char pan;      /* L/R nibbles (M8) */
-    signed char   fine;     /* (M9) */
-    unsigned char pad[7];
+    unsigned char taps_lo;  /* TAPS bits 7..0 */
+    unsigned char table;    /* $FF = none */
+    unsigned char pan;      /* L/R nibbles */
+    signed char   fine;     /* (M9c) */
+    unsigned char taps_hi;  /* TAPS bit 8 (tap 11) in bit 0 */
+    unsigned char seed_lo;  /* SEED bits 7..0 */
+    unsigned char seed_hi;  /* SEED bits 11..8 in bits 3..0 */
+    unsigned char pad[4];
 };
+
+#define TAPS_SQUARE 0x001   /* tap 0 only: the proven square */
+#define TAPS_NOISE  0x1BF   /* taps 0-5 + 10 + 11: long/max-length noise */
 
 struct tablerow {
     unsigned char vol;      /* 0 = no change, else set envelope level */

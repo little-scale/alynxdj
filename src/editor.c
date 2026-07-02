@@ -282,9 +282,12 @@ static void draw_phrase_screen(void)
 
 /* --- INSTR screen: field rows --- */
 
-#define NIFIELDS 7
+#define NIFIELDS 8
+#define IF_TAPS  5
+#define IF_SEED  6
+#define IF_TABLE 7
 static const char *const ifield_name[NIFIELDS] = {
-    "TYPE", "VOL", "ATK", "HOLD", "DCY", "TIMBRE", "TABLE",
+    "TYPE", "VOL", "ATK", "HOLD", "DCY", "TAPS", "SEED", "TABLE",
 };
 static const char *const itype_name[4] = { "TONE", "NOISE", "WAV", "KIT" };
 
@@ -297,27 +300,69 @@ static unsigned char *ifield_ptr(unsigned char f)
     case 2: return &in->atk;
     case 3: return &in->hold;
     case 4: return &in->dcy;
-    case 5: return &in->timbre;
     default: return &in->table;
     }
 }
+
+static unsigned instr_taps(void)
+{
+    struct instr *in = &sd.instrs[edit_instr];
+    return in->taps_lo | ((in->taps_hi & 1) << 8);
+}
+
+static unsigned instr_seed(void)
+{
+    struct instr *in = &sd.instrs[edit_instr];
+    return in->seed_lo | ((in->seed_hi & 0x0F) << 8);
+}
+
+/* which taps the mask lights, in user-bit order (D11) */
+static const char tap_glyph[9] = { '0','1','2','3','4','5','7','A','B' };
 
 static void draw_instr_row(unsigned char r, unsigned char cursor_here)
 {
     unsigned char y = GRID_TOP + r;
     unsigned char fg = cursor_here ? PEN_BG : PEN_TEXT;
     unsigned char bg = cursor_here ? PEN_TEXT : PEN_BG;
+    unsigned v;
 
     if (r >= NIFIELDS)
         return;
     draw_text(1, y, ifield_name[r], PEN_DIM, PEN_BG);
-    if (r == 0) {
+    switch (r) {
+    case 0:
         draw_text(8, y, "     ", PEN_BG, PEN_BG);
         draw_text(8, y, itype_name[sd.instrs[edit_instr].type & 3], fg, bg);
-    } else if (r == 6 && sd.instrs[edit_instr].table >= NTABLES)
-        draw_text(8, y, "--", fg, bg);
-    else
+        break;
+    case IF_TAPS: {
+        unsigned char i;
+        char b[2];
+        v = instr_taps();
+        draw_hex8(8, y, (unsigned char)(v >> 8), fg, bg);
+        draw_hex8(10, y, (unsigned char)v, fg, bg);
+        /* lit tap glyphs: 0-5 7 A B */
+        b[1] = 0;
+        for (i = 0; i < 9; ++i) {
+            b[0] = tap_glyph[i];
+            draw_text(14 + i, y, b, (v & (1 << i)) ? PEN_ACCENT : PEN_DIM,
+                      PEN_BG);
+        }
+        break;
+    }
+    case IF_SEED:
+        v = instr_seed();
+        draw_hex8(8, y, (unsigned char)(v >> 8), fg, bg);
+        draw_hex8(10, y, (unsigned char)v, fg, bg);
+        break;
+    case IF_TABLE:
+        if (sd.instrs[edit_instr].table >= NTABLES)
+            draw_text(8, y, "--", fg, bg);
+        else
+            draw_hex8(8, y, sd.instrs[edit_instr].table, fg, bg);
+        break;
+    default:
         draw_hex8(8, y, *ifield_ptr(r), fg, bg);
+    }
 }
 
 static void draw_instr_screen(void)
@@ -696,34 +741,64 @@ static void edit_table_cell(unsigned char dir)
 }
 
 /* clamp table per field: {max, small step, big step} */
-static const unsigned char ifield_lim[NIFIELDS][3] = {
+static const unsigned char ifield_lim[5][3] = {
     {NTYPES - 1, 1, 1},     /* TYPE cycles the shipped types */
     {0x7F, 1, 16},          /* VOL */
     {0x7F, 1, 16},          /* ATK */
     {0x7F, 1, 16},          /* HOLD */
     {0x7F, 1, 16},          /* DCY */
-    {7, 1, 1},              /* TIMBRE */
 };
+
+/* edit a 16-bit field masked to `max`; L/R +-1, U/D +-16, wrapping —
+ * sweeping the whole tap/seed space is the point (D11) */
+static unsigned edit_u16(unsigned v, unsigned char dir, unsigned max)
+{
+    switch (dir) {
+    case 0: v += 16; break;
+    case 1: v -= 16; break;
+    case 2: --v; break;
+    case 3: ++v; break;
+    }
+    return v & max;
+}
 
 static void edit_instr_cell(unsigned char dir)
 {
-    unsigned char *p = ifield_ptr(i_row);
-    unsigned char max, stp, v = *p;
+    struct instr *in = &sd.instrs[edit_instr];
+    unsigned char *p;
+    unsigned char max, stp, v;
+    unsigned t;
 
-    if (i_row == 6) {                   /* TABLE: -- <-> 0..15 */
+    switch (i_row) {
+    case IF_TAPS:
+        t = edit_u16(instr_taps(), dir, 0x1FF);
+        in->taps_lo = (unsigned char)t;
+        in->taps_hi = (unsigned char)(t >> 8);
+        break;
+    case IF_SEED:
+        t = edit_u16(instr_seed(), dir, 0xFFF);
+        in->seed_lo = (unsigned char)t;
+        in->seed_hi = (unsigned char)(t >> 8);
+        break;
+    case IF_TABLE:
+        v = in->table;
         if (dir == 0 || dir == 3)
-            *p = (v >= NTABLES) ? 0 : (v < NTABLES - 1 ? v + 1 : v);
+            in->table = (v >= NTABLES) ? 0 : (v < NTABLES - 1 ? v + 1 : v);
         else
-            *p = (v == 0 || v >= NTABLES) ? EMPTY : v - 1;
+            in->table = (v == 0 || v >= NTABLES) ? EMPTY : v - 1;
         return;
+    default:
+        p = ifield_ptr(i_row);
+        v = *p;
+        max = ifield_lim[i_row][0];
+        stp = (dir < 2) ? ifield_lim[i_row][2] : ifield_lim[i_row][1];
+        if (dir == 0 || dir == 3)
+            v = (v + stp <= max) ? v + stp : max;
+        else
+            v = (v >= stp) ? v - stp : 0;
+        *p = v;
+        break;
     }
-    max = ifield_lim[i_row][0];
-    stp = (dir < 2) ? ifield_lim[i_row][2] : ifield_lim[i_row][1];
-    if (dir == 0 || dir == 3)
-        v = (v + stp <= max) ? v + stp : max;
-    else
-        v = (v >= stp) ? v - stp : 0;
-    *p = v;
     if (!eng_mode)
         engine_audition(last_note, edit_instr);
 }

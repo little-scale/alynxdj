@@ -109,6 +109,7 @@ static void song_new(void)
     for (c = 0; c < NINSTR; ++c) {
         sd.instrs[c].pan = 0xFF;        /* centre = full both sides */
         sd.instrs[c].table = EMPTY;
+        sd.instrs[c].taps_lo = TAPS_SQUARE;  /* no taps = frozen LFSR */
     }
     sd.grooves[0][0] = 6;               /* default groove: straight 6/6 */
     sd.grooves[0][1] = 6;
@@ -136,7 +137,8 @@ static void song_demo(void)
     sd.instrs[0].dcy = 32;
     sd.instrs[1].type = IT_NOISE;
     sd.instrs[1].vol = 0x60;
-    sd.instrs[1].timbre = 7;
+    sd.instrs[1].taps_lo = (unsigned char)TAPS_NOISE;
+    sd.instrs[1].taps_hi = TAPS_NOISE >> 8;
     sd.instrs[1].dcy = 24;
     sd.instrs[2].type = IT_TONE;
     sd.instrs[2].vol = 0x70;
@@ -182,6 +184,26 @@ static void song_demo(void)
         sd.song[i][2] = 2;
         sd.song[i][3] = 3;
     }
+
+    /* LFSR exploration rigs (D11 verification + starting points):
+     * instr 6 = tap 7 only (control-bit wiring proof), 7/8 = same taps,
+     * different seed (disjoint state cycles = different waveforms) */
+    for (i = 6; i <= 8; ++i) {
+        sd.instrs[i].type = IT_TONE;
+        sd.instrs[i].vol = 0x7F;
+        sd.instrs[i].hold = 8;
+        sd.instrs[i].dcy = 2;
+        sd.phrases[i - 2][0].note = N(4,0);
+        sd.phrases[i - 2][0].instr = i;
+        sd.chains[i - 2][0].phrase = i - 2;
+        sd.chains[i - 2][0].tsp = 0;
+        sd.song[16 + (i - 6)][0] = i - 2;
+    }
+    sd.instrs[6].taps_lo = 0x40;                   /* tap 7 only */
+    sd.instrs[7].taps_lo = 0xF1;    /* taps $0F1: strongly seed-dependent */
+    sd.instrs[8].taps_lo = 0xF1;    /* same taps, seed $555 (new cycle) */
+    sd.instrs[8].seed_lo = 0x55;
+    sd.instrs[8].seed_hi = 0x05;
 
     /* table 0: a demo arp macro (0/+4/+7 at tick rate, H-looped) */
     sd.tables[0][0].tsp = 0;
