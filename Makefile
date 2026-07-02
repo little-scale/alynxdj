@@ -11,7 +11,7 @@ BUILD := build
 ROM   := $(BUILD)/alynxdj.lnx
 CFG   := alynxdj.cfg
 
-SRC_C := src/main.c src/sound.c
+SRC_C := src/main.c src/sound.c src/engine.c
 SRC_S := src/lowcode.s src/irq.s
 
 # cc65 2.18 gotcha: lynx/defdir.s references __LOWCODE_SIZE__, but marks the
@@ -27,10 +27,13 @@ $(shell mkdir -p $(BUILD))
 $(shell [ "`cat $(BUILD)/buildid.h 2>/dev/null`" = '#define BUILDID "$(BUILDID)"' ] || \
         echo '#define BUILDID "$(BUILDID)"' > $(BUILD)/buildid.h)
 
+$(BUILD)/notes.h: tools/maketables.py
+	python3 tools/maketables.py $@
+
 $(BUILD)/font.h: tools/makefont.py
 	python3 tools/makefont.py $@
 
-$(ROM): $(SRC_C) $(SRC_S) $(CFG) $(BUILD)/font.h $(BUILD)/buildid.h
+$(ROM): $(SRC_C) $(SRC_S) $(CFG) $(BUILD)/font.h $(BUILD)/notes.h $(BUILD)/buildid.h
 	cl65 -t lynx -O -C $(CFG) -o $@ $(SRC_C) $(SRC_S)
 
 # --- headless screenshot + audio capture (no GUI / permissions needed) ---

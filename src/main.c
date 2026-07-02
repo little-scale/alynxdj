@@ -25,6 +25,20 @@ void sound_init(void);
 void tone_on(unsigned char clocksel, unsigned char bkup);
 void tone_off(void);
 
+struct step {
+    unsigned char note, instr, cmd, param;
+};
+extern struct step phrase[16];
+extern unsigned char eng_playing, eng_row;
+void engine_play(void);
+void engine_stop(void);
+void engine_tick(void);
+
+#define N(oct, semi) ((unsigned char)(((oct) - 1) * 12 + (semi) + 1))
+#define NC(o) N(o, 0)
+#define NE(o) N(o, 4)
+#define NG(o) N(o, 7)
+
 /* raw pad byte mirrored here for the harness's RAM-dump mapping probe */
 #define JOY_MIRROR (*(volatile unsigned char *)0xC000)
 
@@ -109,31 +123,43 @@ void main(void)
     draw_text(14, 8, BUILDID, PEN_DIM, PEN_BG);
     draw_text(14, 10, "FRAME", PEN_DIM, PEN_BG);
     draw_text(14, 11, "JOY", PEN_DIM, PEN_BG);
+    draw_text(14, 12, "ROW", PEN_DIM, PEN_BG);
+
+    /* M3 demo phrase: C-major arp up and back, one note per row */
+    {
+        static const unsigned char arp[16] = {
+            NC(4), NE(4), NG(4), NC(5), NE(5), NC(5), NG(4), NE(4),
+            NC(4), NG(4), NC(5), NE(5), NG(5), NE(5), NC(5), NG(4),
+        };
+        unsigned char i;
+        for (i = 0; i < 16; ++i)
+            phrase[i].note = arp[i];
+    }
 
     vbl_install();
+    engine_play();
 
     for (;;) {
         unsigned char f = (unsigned char)frames;
         if (f == last)
             continue;
         last = f;
+        engine_tick();
+
         draw_hex8(20, 10, f, PEN_TEXT, PEN_BG);
 
         joy = SUZY.joystick;
         JOY_MIRROR = joy;
         draw_hex8(20, 11, joy, PEN_TEXT, PEN_BG);
+        draw_hex8(20, 12, eng_row, PEN_TEXT, PEN_BG);
 
-        /* M2 sound probe: A=440Hz, B=294Hz, OPT1=220Hz while held */
-        if (joy != prev_joy) {
-            if (joy & JOY_BTN_A_MASK)
-                tone_on(3, 141);        /* 8us, 440.1 Hz */
-            else if (joy & JOY_BTN_B_MASK)
-                tone_on(3, 212);        /* 8us, 293.4 Hz */
-            else if (joy & BUTTON_OPTION1)
-                tone_on(4, 141);        /* 16us, 220.0 Hz */
+        /* A toggles play/stop (edge) */
+        if ((joy & JOY_BTN_A_MASK) && !(prev_joy & JOY_BTN_A_MASK)) {
+            if (eng_playing)
+                engine_stop();
             else
-                tone_off();
-            prev_joy = joy;
+                engine_play();
         }
+        prev_joy = joy;
     }
 }
