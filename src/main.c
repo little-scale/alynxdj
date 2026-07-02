@@ -243,6 +243,17 @@ void main(void)
     editor_init();
     draw_text(18, 0, BUILDID, PEN_DIM, PEN_BG);
 
+    /* M10a EEPROM plumbing probe: mirror what cell 0 held at boot, then
+     * stamp the magic — a reload of the emulator .sav proves the round
+     * trip across power cycles. Becomes the real save header at M10b. */
+    *(volatile unsigned int *)0xC010 = lynx_eeprom_read(0);
+    lynx_eeprom_write(0, 0x414C);       /* 'AL' */
+    *(volatile unsigned int *)0xC012 = lynx_eeprom_read(0);
+    lynx_eeprom_write(1, 0xAA55);
+    lynx_eeprom_write(2, 0x0180);
+    *(volatile unsigned int *)0xC014 = lynx_eeprom_read(1);
+    *(volatile unsigned int *)0xC016 = lynx_eeprom_read(2);
+
     for (;;) {
         unsigned char f = (unsigned char)frames;
         if (f == last)

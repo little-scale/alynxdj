@@ -117,12 +117,15 @@ int main(int argc, char **argv) {
     void (*retro_set_controller_port_device)(unsigned, unsigned);
     void *(*retro_get_memory_data)(unsigned);
     size_t (*retro_get_memory_size)(unsigned);
+    void (*retro_unload_game)(void);
+    void (*retro_deinit)(void);
     SYM(retro_set_environment); SYM(retro_set_video_refresh);
     SYM(retro_set_input_poll);  SYM(retro_set_input_state);
     SYM(retro_set_audio_sample); SYM(retro_set_audio_sample_batch);
     SYM(retro_init); SYM(retro_load_game); SYM(retro_run);
     SYM(retro_get_system_av_info); SYM(retro_set_controller_port_device);
     SYM(retro_get_memory_data); SYM(retro_get_memory_size);
+    SYM(retro_unload_game); SYM(retro_deinit);
 
     retro_set_environment(env_cb);
     retro_set_video_refresh(video_cb);
@@ -229,5 +232,7 @@ int main(int argc, char **argv) {
     }
     fclose(o);
     fprintf(stderr, "retroshot: %ux%u fmt=%u, %d frames\n", g_w, g_h, g_fmt, frames);
+    retro_unload_game();    /* lets cores flush persistent state (EEPROM .sav) */
+    retro_deinit();
     return 0;
 }

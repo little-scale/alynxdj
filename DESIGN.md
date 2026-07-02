@@ -274,7 +274,7 @@ render in fixed order so audio never waits on drawing.
 | Q2 | Real PCM voice ceiling + max mix rate | M7 | Cycle-count the IRQ handler on Handy, verify on hardware |
 | Q3 | ✅ **RESOLVED at M1 — 59.90 Hz** (crt0 timing kept; 96 VBL ticks per 120 Handy frames, i.e. Handy paces 75 fps but the emulated timer 2 runs 159 µs × 105 lines). maketables.py uses 59.90 Hz | M3 | — |
 | Q4 | Handy's LFSR/integrate fidelity vs real Mikey | M6 | Curate tap presets on hardware; Holani core as a second opinion |
-| Q5 | `.lnx` EEPROM header byte + Handy save path end-to-end | M10 | Prove a 93C86 round-trip in the harness (RETROSHOT_SRAM hooks) early |
+| Q5 | ✅ **RESOLVED at M10a** — `.lnx` byte 60 = 1 → Handy emulates a 93C46; cc65's `lynx_eeprom_write` is byte-exact in the persisted file; the file flushes on `retro_unload_game` (harness now calls it) and loads on the next run — **full power-cycle round trip proven**. Caveat: through cc65's read routine Handy returns only the low byte per cell (high byte constant junk) — treat cells as byte-wide until the custom 93C86 driver lands (M10b); cc65's driver is silicon-proven, so this is likely a Handy artifact — recheck on hardware | M10 | — |
 
 ## 15. Deliverables & toolchain
 

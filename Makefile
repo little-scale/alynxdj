@@ -38,6 +38,7 @@ $(BUILD)/font.h: tools/makefont.py
 
 $(ROM): $(SRC_C) $(SRC_S) $(CFG) $(BUILD)/font.h $(BUILD)/notes.h $(BUILD)/buildid.h
 	cl65 -t lynx -O -C $(CFG) -o $@ $(SRC_C) $(SRC_S)
+	python3 -c "p='$@'; d=bytearray(open(p,'rb').read()); d[60]=1; open(p,'wb').write(d)"  # .lnx byte 60: 93C46 EEPROM
 
 # --- headless screenshot + audio capture (no GUI / permissions needed) ---
 EMUDIR    := tools/emu
