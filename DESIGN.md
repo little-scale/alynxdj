@@ -120,16 +120,21 @@ title, BPM, play state, sync state, position `SS:CC:PP`; right column = screen
 map indicator + 4 per-track activity meters (name + level bar, ported from
 GENMDDJ M12).
 
-Screen map (B-held + D-pad), same 2D shape as the siblings:
+Screen map (B-held + D-pad), same 2D shape as SMSGGDJ — OPTIONS above
+SONG, PROJECT above CHAIN, **WAVE above INSTR**, GROOVE below CHAIN:
 
 ```
-        OPTIONS  PROJECT
-           |        |
+OPTIONS  PROJECT             WAVE
+   |        |                  |
 SONG  →  CHAIN  →  PHRASE  →  INSTR  →  TABLE
-                                 |
-                               WAVE
-GROOVE sits off PROJECT; LIVE is a SONG-screen mode toggle (M12).
+            |
+          GROOVE
+LIVE is a SONG-screen mode toggle (M12).
 ```
+
+The right column carries the **map indicator** (ported): three rows
+(`OP_W_` / `SCPIT` / `_G___`), current screen inverted, unshipped screens
+dim.
 
 Inverse-video cursor, playhead row highlight, selection box — ported. The
 16-step phrase grid + chrome fits 17 rows exactly; no paging (the GG build's

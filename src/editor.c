@@ -94,6 +94,30 @@ static void transport_label(void)
               eng_mode ? PEN_ACCENT : PEN_DIM, PEN_BG);
 }
 
+/* Screen-map indicator (right column, ported from SMSGGDJ): the middle row
+ * is the shipped SONG-CHAIN-PHRASE-INSTR-TABLE strip (current = inverted);
+ * the rows above/below are the planned screens, drawn dim until they
+ * exist — OPTIONS/PROJECT above SONG/CHAIN, WAVE above INSTR (SMSGGDJ
+ * layout), GROOVE below. Column positions follow the 2D map (DESIGN.md
+ * §4) so vertical B-nav can land here later. */
+#define MAP_X 34
+static void draw_map(void)
+{
+    static const char rows[3][6] = { "OP W ", "SCPIT", " G   " };
+    unsigned char r, c;
+    char b[2];
+
+    b[1] = 0;
+    for (r = 0; r < 3; ++r)
+        for (c = 0; c < 5; ++c) {
+            unsigned char cur = (r == 1 && c == screen);
+            b[0] = rows[r][c];
+            draw_text(MAP_X + c, GRID_TOP + r, b,
+                      cur ? PEN_BG : (r == 1 ? PEN_TEXT : PEN_DIM),
+                      cur ? PEN_ACCENT : PEN_BG);
+        }
+}
+
 /* --- SONG screen: 16-row page of the 128-row song, 4 track columns --- */
 
 #define SONG_COLX(c) (4 + (c) * 3)
@@ -327,6 +351,7 @@ static void draw_screen(void)
     case SCR_INSTR:  draw_instr_screen(); break;
     case SCR_TABLE:  draw_table_screen(); break;
     }
+    draw_map();
     MIRROR_SCREEN = screen;
 }
 
