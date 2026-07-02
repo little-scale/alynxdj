@@ -11,8 +11,8 @@ BUILD := build
 ROM   := $(BUILD)/alynxdj.lnx
 CFG   := alynxdj.cfg
 
-SRC_C := src/main.c src/sound.c src/engine.c src/editor.c src/save.c src/sync.c $(BUILD)/notes.c
-SRC_S := src/lowcode.s src/irq.s src/eeprom.s $(BUILD)/kit.s
+SRC_C := src/main.c src/sound.c src/engine.c src/editor.c src/save.c src/sync.c src/pool.c $(BUILD)/notes.c
+SRC_S := src/lowcode.s src/irq.s src/eeprom.s src/cart.s
 
 # cc65 2.18 gotcha: lynx/defdir.s references __LOWCODE_SIZE__, but marks the
 # LOWCODE segment optional, so a build with no LOWCODE data fails to link.
@@ -27,8 +27,8 @@ $(shell mkdir -p $(BUILD))
 $(shell [ "`cat $(BUILD)/buildid.h 2>/dev/null`" = '#define BUILDID "$(BUILDID)"' ] || \
         echo '#define BUILDID "$(BUILDID)"' > $(BUILD)/buildid.h)
 
-$(BUILD)/kit.s: tools/alynxdj_sample.py
-	python3 tools/alynxdj_sample.py "samples/01 808" $@
+$(BUILD)/pool.bin: tools/alynxdj_pool.py
+	python3 tools/alynxdj_pool.py samples $@
 
 $(BUILD)/notes.h $(BUILD)/notes.c &: tools/maketables.py
 	python3 tools/maketables.py $(BUILD)/notes.h
@@ -36,9 +36,16 @@ $(BUILD)/notes.h $(BUILD)/notes.c &: tools/maketables.py
 $(BUILD)/font.h: tools/makefont.py
 	python3 tools/makefont.py $@
 
-$(ROM): $(SRC_C) $(SRC_S) src/tracker.h $(CFG) $(BUILD)/font.h $(BUILD)/notes.h $(BUILD)/buildid.h
+$(ROM): $(SRC_C) $(SRC_S) src/tracker.h $(CFG) $(BUILD)/font.h $(BUILD)/notes.h $(BUILD)/buildid.h $(BUILD)/pool.bin
 	cl65 -t lynx -O -C $(CFG) -o $@ $(SRC_C) $(SRC_S)
 	python3 -c "p='$@'; d=bytearray(open(p,'rb').read()); d[60]=5; open(p,'wb').write(d)"  # .lnx byte 60: 93C86 EEPROM (2KB)
+	python3 -c "\
+p='$@'; d=bytearray(open(p,'rb').read()); \
+assert len(d) <= 64+40*1024, 'program spills into the pool block'; \
+d += b'\0'*(64+40*1024-len(d)); \
+d += open('$(BUILD)/pool.bin','rb').read(); \
+d += b'\0'*(64+256*1024-len(d)); \
+open(p,'wb').write(d)"  # pool at cart block 40, pad to 256KB
 
 # --- headless screenshot + audio capture (no GUI / permissions needed) ---
 EMUDIR    := tools/emu

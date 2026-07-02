@@ -73,8 +73,8 @@ struct instr {
                                (0 = instant attack / sustain-forever decay);
                                mapped through env_rate[] in the engine */
     unsigned char hold;     /* low nibble: ticks at peak (0-15) */
-    unsigned char wave;     /* WAV type: $FF = hardware triangle,
-                               0-7 = wavetable through the channel-C DAC */
+    unsigned char wave;     /* the BANK byte: WAV = wavetable # ($FF =
+                               hardware triangle); KIT = pool kit # */
     unsigned char taps_lo;  /* TAPS bits 7..0 */
     unsigned char table;    /* $FF = none */
     unsigned char pan;      /* L/R nibbles */
@@ -137,8 +137,18 @@ void engine_audition(unsigned char note, unsigned char inum);
 void __fastcall__ engine_audition_cmd(unsigned char cmd, unsigned char param);
 
 void sound_init(void);
-void __fastcall__ pcm_play(unsigned char slot);
 void pcm_stop(void);
+void pcm_ring_start(void);
+
+/* cart streaming (src/cart.s) + sample pool (src/pool.c) */
+void __fastcall__ cart_seek(unsigned char block, unsigned off);
+void __fastcall__ cart_read(unsigned char *dst, unsigned char n);
+void pool_init(void);
+void pool_pump(void);
+void __fastcall__ pool_trigger(unsigned char kit, unsigned char slot);
+unsigned char pool_kits(void);
+extern unsigned char *pcm_head;
+extern unsigned char pcm_done;
 
 /* ComLynx sync (src/sync.c) */
 #define SYNC_OFF 0

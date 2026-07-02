@@ -255,8 +255,10 @@ static void trigger(unsigned char ch, unsigned char note, unsigned char inum)
     if (in->type == IT_KIT) {
         /* PCM: note semitone picks the kit slot; plays on channel D's DAC
          * regardless of track (mono sample bus, SMSGGDJ T3 policy). */
-        pcm_play(((note - 1) % 12) & 7);
+        pool_trigger(in->wave < 8 ? in->wave : 0, ((note - 1) % 12) & 7);
         v->type = IT_KIT;
+        v->inum = inum;
+        v->base_note = note;
         v->env_phase = 0;
         v->env_level = 0;
         v->dirty = 0;
@@ -665,8 +667,12 @@ void engine_tick(void)
                 v->chord_pos = 0;
             if (v->rt_rate && ++v->rt_cnt >= v->rt_rate) {
                 v->rt_cnt = 0;                   /* R: re-fire the note */
-                if (v->type == IT_KIT)
-                    pcm_play(((v->base_note - 1) % 12) & 7);
+                if (v->type == IT_KIT) {
+                    unsigned char kb = sd.instrs[v->inum < NINSTR
+                                                 ? v->inum : 0].wave;
+                    pool_trigger(kb < 8 ? kb : 0,
+                                 ((v->base_note - 1) % 12) & 7);
+                }
                 else {
                     unsigned char fade = v->rt_fade << 3;
                     v->env_peak = (v->env_peak > fade)

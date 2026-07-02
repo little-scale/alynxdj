@@ -8,12 +8,14 @@
 
         .export         _vbl_install
         .export         _frames
-        .export         _pcm_play
         .export         _pcm_stop
         .export         _wave_start
         .export         _wave_rate
         .export         _wave_stop
-        .import         _kit_dir
+        .export         _pcm_ring_start
+        .export         _pcm_ptr
+        .export         _pcm_head
+        .export         _pcm_done
         .import         _sd
         .import         popa
 
@@ -32,13 +34,16 @@ AUD3CTL  := $FD3D
 PCM_BKUP = 127                  ; 1us clock -> 7812.5 Hz
 PCM_CTLA = $98                  ; int enable | count | reload | 1us
 WAVES_OFF = 7424                ; offsetof(struct songdata, waves)
+RING_HI  = $D0                  ; 1 KB sample ring at $D000-$D3FF
+RING_END = $D4
 
         .segment "APPZP" : zeropage
-pcm_ptr: .res 2                 ; owned by the IRQ while timer 7 runs
+_pcm_ptr: .res 2                 ; ring tail — owned by the IRQ
 wav_ptr: .res 2                 ; base of the active 32-byte wavetable
 
         .bss
-pcm_end: .res 2
+_pcm_head: .res 2               ; ring head — owned by the C pump
+_pcm_done: .res 1               ; pump: no more stream bytes coming
 wav_pos: .res 1                 ; table read position (wraps & $1F)
 wav_step: .res 1                ; entries per IRQ (pitch step-doubling)
 _frames: .res 2                 ; u16 frame counter (read by C)
@@ -59,22 +64,13 @@ _vbl_install:
         cli
         rts
 
-; void __fastcall__ pcm_play(unsigned char slot);  slot 0-7
-_pcm_play:
-        stz     TIM7CTLA        ; stop the feed while retargeting
+; void pcm_ring_start(void);  tail to ring base, start the feed IRQ
+_pcm_ring_start:
+        stz     TIM7CTLA
         stz     AUD3CTL         ; channel D shifter off: OUTPUT is ours
-        asl     a
-        asl     a
-        tax                     ; dir entry: {ptr.w, len.w} * slot
-        lda     _kit_dir,x
-        sta     pcm_ptr
-        clc
-        adc     _kit_dir+2,x
-        sta     pcm_end
-        lda     _kit_dir+1,x
-        sta     pcm_ptr+1
-        adc     _kit_dir+3,x
-        sta     pcm_end+1
+        stz     _pcm_ptr
+        lda     #RING_HI
+        sta     _pcm_ptr+1
         lda     #PCM_BKUP
         sta     TIM7BKUP
         lda     #PCM_CTLA
@@ -135,17 +131,26 @@ handler:
         and     #$80            ; timer 7: PCM byte due
         beq     @wave
         sta     INTRST          ; ack
-        lda     (pcm_ptr)
+        lda     _pcm_ptr         ; ring empty?
+        cmp     _pcm_head
+        bne     @feed
+        lda     _pcm_ptr+1
+        cmp     _pcm_head+1
+        bne     @feed
+        lda     _pcm_done       ; empty: done -> stop, else hold (underrun)
+        beq     @wave
+        stz     TIM7CTLA
+        bra     @wave
+@feed:  lda     (_pcm_ptr)
         sta     AUD3DAC
-        inc     pcm_ptr
+        inc     _pcm_ptr
+        bne     @wave
+        lda     _pcm_ptr+1
+        inc     a
+        cmp     #RING_END
         bne     :+
-        inc     pcm_ptr+1
-:       lda     pcm_ptr
-        cmp     pcm_end
-        lda     pcm_ptr+1
-        sbc     pcm_end+1
-        bcc     @wave           ; ptr < end: keep feeding
-        stz     TIM7CTLA        ; sample done
+        lda     #RING_HI
+:       sta     _pcm_ptr+1
 @wave:
         lda     INTSET
         and     #$20            ; timer 5: wavetable entry due

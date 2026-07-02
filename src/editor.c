@@ -327,7 +327,7 @@ static void draw_phrase_screen(void)
 #define IF_WAVE  7
 #define IF_TABLE 8
 static const char *const ifield_name[NIFIELDS] = {
-    "TYPE", "VOL", "ATK", "HOLD", "DCY", "TAPS", "SEED", "WAVE", "TABLE",
+    "TYPE", "VOL", "ATK", "HOLD", "DCY", "TAPS", "SEED", "BANK", "TABLE",
 };
 static const char *const itype_name[4] = { "TONE", "NOISE", "WAV", "KIT" };
 

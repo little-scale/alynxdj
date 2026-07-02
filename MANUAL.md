@@ -71,6 +71,7 @@ ship as triangle, saw, square, 25% pulse.
 | HOLD | ticks held at the peak, 0–F |
 | DCY | decay **time**, 0–F: 0 = sustain until the next note, 1 = instant-ish, F ≈ 2 s |
 | **TAPS** | the raw 12-bit-LFSR tap mask — see below |
+| BANK | WAV: wavetable 0–7 (`--` = hardware triangle); KIT: sample kit 0–7 |
 | **SEED** | the shifter start state, $000–$FFF |
 | TABLE | macro table to run on every note (`--` = none) |
 
@@ -103,8 +104,10 @@ the point.
   one output channel (like KIT), the envelope gates length only (the DAC
   is full-amplitude), and very high notes read the table coarser to keep
   the feed rate sane.
-- **KIT** plays the sample kit through the channel DAC; the note's
-  semitone picks the kit slot (C=1, C#=2, …). Samples share one output
+- **KIT** streams samples from the cart through the channel DAC; the
+  note's semitone picks the kit slot (C=1, C#=2, …) and **BANK picks the
+  kit** — the cart ships all eight `samples/` folders (808, 909, C78,
+  606, four speech banks) at full quality. Samples share one output
   channel.
 
 ## Commands (PHRASE and TABLE command columns)
