@@ -9,21 +9,29 @@
 
 BUILD := build
 ROM   := $(BUILD)/alynxdj.lnx
+CFG   := alynxdj.cfg
 
 SRC_C := src/main.c
-SRC_S := src/lowcode.s
+SRC_S := src/lowcode.s src/irq.s
 
-# cc65 2.18 gotcha: lynx/defdir.s references __LOWCODE_SIZE__, but the stock
-# lynx.cfg marks LOWCODE optional, so a build with no LOWCODE data fails to
-# link. src/lowcode.s exists only to instantiate the segment.
+# cc65 2.18 gotcha: lynx/defdir.s references __LOWCODE_SIZE__, but marks the
+# LOWCODE segment optional, so a build with no LOWCODE data fails to link.
+# src/lowcode.s exists only to instantiate the segment.
 
 all: $(ROM)
 
-$(ROM): $(SRC_C) $(SRC_S) | $(BUILD)
-	cl65 -t lynx -O -o $@ $(SRC_C) $(SRC_S)
+# build stamp: short git hash, trailing + when the tree is dirty; only
+# rewritten when it changes so it doesn't force rebuilds (sibling pattern)
+BUILDID := $(shell git rev-parse --short HEAD 2>/dev/null)$(shell git diff-index --quiet HEAD -- 2>/dev/null || echo +)
+$(shell mkdir -p $(BUILD))
+$(shell [ "`cat $(BUILD)/buildid.h 2>/dev/null`" = '#define BUILDID "$(BUILDID)"' ] || \
+        echo '#define BUILDID "$(BUILDID)"' > $(BUILD)/buildid.h)
 
-$(BUILD):
-	mkdir -p $(BUILD)
+$(BUILD)/font.h: tools/makefont.py
+	python3 tools/makefont.py $@
+
+$(ROM): $(SRC_C) $(SRC_S) $(CFG) $(BUILD)/font.h $(BUILD)/buildid.h
+	cl65 -t lynx -O -C $(CFG) -o $@ $(SRC_C) $(SRC_S)
 
 # --- headless screenshot + audio capture (no GUI / permissions needed) ---
 EMUDIR    := tools/emu

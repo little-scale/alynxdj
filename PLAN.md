@@ -35,9 +35,9 @@ and data model live in cc65 C, the driver/render/IRQ paths in ca65 asm
 | M | Milestone | Proves |
 |---|---|---|
 | M0 | ✅ **DONE** — toolchain: cc65 lynx target builds a bootable `.lnx`; headless Handy retroshot harness (PNG + audio WAV capture), `make`/`make shot` | The pipeline |
-| M1 | Boot: display init (timers 0/2, DISPCTL, palette, framebuffer), 4×6 font + makefont.py, splash with version + git-hash build stamp, VBlank IRQ + frame counter | The board comes up |
+| M1 | ✅ **DONE** — boot: palette + SCRBASE + framebuffer at $A000 (alynxdj.cfg RAM map), 4×6 font (makefont.py, 40×17 grid, legibility screenshot-verified), splash with version + git-hash build stamp, VBlank IRQ (timer 2) + live frame counter. **Q3 resolved: VBL = 59.90 Hz with crt0 timing** (96 ticks/120 Handy frames) | The board comes up |
 | M2 | First sound + input: pad read (edge + DAS repeat), pad→note on a TONE square (LFSR tap set), audio-capture FFT verification of pitch | The sound path |
-| M3 | Engine core: note table (maketables.py, 75 Hz constants — resolves Q3), phrase playback pipeline (groove → row → trigger → AHD → shadow → flush), demo arp FFT-verified | The sequencer |
+| M3 | Engine core: note table (maketables.py, 59.9 Hz constants — Q3 resolved at M1), phrase playback pipeline (groove → row → trigger → AHD → shadow → flush), demo arp FFT-verified | The sequencer |
 | M4 | PHRASE editor: 16-step grid, cursor + key-repeat, A-hold edit / A-tap insert, prelisten, live playback | First playable build |
 | M5 | Structure: 4-voice engine, CHAIN + SONG walkers and screens, 2D screen map nav, transport (B+A), playheads, drill-down | Song structure |
 | M6 | Instruments: TONE timbre presets + NOISE preset list (curates Q4), INSTR screen, tables + TABLE screen, shared command executor | The voice model |
@@ -72,5 +72,6 @@ second-opinion core.
 
 ## Status
 
-**M0 done** (2026-07-02): cc65 + Handy headless harness proven end-to-end
-(`make shot` → PNG + WAV from a bootable `.lnx`). Next: M1 boot/splash.
+**M0 + M1 done** (2026-07-02): toolchain + headless harness, boot splash
+with build stamp and live VBlank frame counter, all screenshot-verified;
+VBL tick measured at 59.90 Hz (Q3). Next: M2 first sound + input.

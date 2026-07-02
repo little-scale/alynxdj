@@ -15,7 +15,7 @@ deliberately and update §0. The proven ancestors are **SMSGGDJ**
 |---|---|---|
 | D1 | **4 identical tracks (CH1–CH4), every track plays every instrument type** (TONE/NOISE/WAV/KIT). The Lynx has no fixed channel roles — that *is* its pitch. | Fixed roles (3 tone + 1 noise, SMS-style): simpler arbitration, wastes the hardware's symmetry. |
 | D2 | **cc65 C for editor/UI/data, ca65 assembly for the sound driver, PCM IRQ, and text render.** cc65 codegen is slow but the editor workload is small at 160×102; the audible paths stay in asm. | All-asm (sibling style): faster everywhere, much slower to build; revisit per-routine if profiling demands. |
-| D3 | **Engine tick = VBlank at the Lynx's ~75 Hz frame rate.** One clean IRQ; groove/BPM tables are computed for 75 Hz (`T` converts BPM→groove at 75). No PAL/NTSC split exists on Lynx — single note/tempo tables, no per-region pairs. | A dedicated 60 Hz cascaded timer for sibling-identical BPM rungs: spends a timer + a second IRQ to make numbers match machines this unit never syncs to by wire. Revisit if ComLynx↔DE-9 bridge sync demands it (§11). |
+| D3 | **Engine tick = VBlank at ~59.9 Hz** (measured at M1: the cc65 crt0 display timing, 159 µs/line × 105 lines = 16.695 ms — Handy's 75 fps `retro_run` pacing is a frontend artifact, the emulated timer 2 runs at 59.9 Hz). Groove/BPM tables use the siblings' NTSC-60 math near-verbatim. No PAL/NTSC split exists on Lynx — single tables. | Reprogram timer 0/2 for a 75 Hz display (many Lynx games do): more tick resolution, breaks BPM-table parity with the siblings, LCD flicker tradeoffs — only revisit with hardware in hand. |
 | D4 | **Song lives as one contiguous flat RAM block (save image order), but the EEPROM save is a packed/RLE serialization of it.** The Lynx persists to a 93Cxx serial EEPROM — 2 KB max (93C86) — so the siblings' verbatim-copy save cannot survive. Flat block keeps the engine + tooling model; the codec is the one new layer. | Shrink the song to fit 2 KB raw: guts the data model. RAM-only + ComLynx export only: no self-contained save on cart. |
 | D5 | **Samples are 8-bit signed PCM streamed from cart at a fixed per-note timer rate; each KIT voice owns a timer-IRQ-fed channel DAC.** Direct 8-bit DACs × 4 are the Lynx's sample superpower (vs the SMS 4-bit log trick, vs GENMDDJ's single shared YM2612 DAC). | Software-mix N samples into one channel: more polyphony, needs a mixing loop the 65C02 can't afford at useful rates. |
 | D6 | **Concurrent PCM voices capped at 2** (Q2 measures the real ceiling). KIT triggers beyond the cap steal the oldest PCM voice. | Uncapped: IRQ load would eat the editor and jitter the engine tick. |
@@ -138,11 +138,11 @@ paged-WAVE compromise is not needed at 40 columns).
 ## 5. Sound engine
 
 ### 5.1 Timing
-Engine tick = VBlank IRQ at the ~75 Hz display rate (D3). The groove model is
-ported unchanged: a groove is up to 16 tick-counts, tempo *is* the groove,
-PROJECT TMPO walks achievable BPM rungs at 75 Hz, `T` does BPM→groove
-conversion with 75 Hz constants. In sync-slave mode row timing is
-clock-driven and grooves are ignored (ported semantics, §11).
+Engine tick = VBlank IRQ at ~59.9 Hz (D3, measured at M1). The groove model
+is ported unchanged: a groove is up to 16 tick-counts, tempo *is* the groove,
+PROJECT TMPO walks the NTSC-60 BPM rungs, `T` does BPM→groove conversion
+with 60 Hz constants. In sync-slave mode row timing is clock-driven and
+grooves are ignored (ported semantics, §11).
 
 ### 5.2 Per-tick pipeline *(ported from engine.asm, one voice type richer)*
 groove → row advance → trigger/command peek (`D`/`L`/`I`/`Z`/`J` pre-trigger,
@@ -252,7 +252,7 @@ numbered like the siblings): **OFF / OUT / IN / IN24**.
 - SAVEFORMAT.md is written at M10 and kept in sync with any RAM-map change
   (standing sibling rule).
 
-## 13. Frame budget (65C02, ~3.6 MHz effective, 75 Hz tick ≈ 48 K cycles)
+## 13. Frame budget (65C02, ~3.6 MHz effective, 59.9 Hz tick ≈ 60 K cycles)
 
 | Consumer | Budget |
 |---|---|
@@ -272,7 +272,7 @@ render in fixed order so audio never waits on drawing.
 |---|---|---|---|
 | Q1 | EEPROM pack ratio — does a *typical* song RLE into 2 KB? | M10 | Instrument the packer over test songs at M9; if no, shrink phrase pool in the save tier only |
 | Q2 | Real PCM voice ceiling + max mix rate | M7 | Cycle-count the IRQ handler on Handy, verify on hardware |
-| Q3 | Exact display/tick rate (75.0? 73.2?) + BPM table constants | M3 | Derive from timer-0/2 reload chosen at M1; freeze in maketables.py |
+| Q3 | ✅ **RESOLVED at M1 — 59.90 Hz** (crt0 timing kept; 96 VBL ticks per 120 Handy frames, i.e. Handy paces 75 fps but the emulated timer 2 runs 159 µs × 105 lines). maketables.py uses 59.90 Hz | M3 | — |
 | Q4 | Handy's LFSR/integrate fidelity vs real Mikey | M6 | Curate tap presets on hardware; Holani core as a second opinion |
 | Q5 | `.lnx` EEPROM header byte + Handy save path end-to-end | M10 | Prove a 93C86 round-trip in the harness (RETROSHOT_SRAM hooks) early |
 
