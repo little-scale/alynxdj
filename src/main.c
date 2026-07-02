@@ -103,6 +103,8 @@ static void song_new(void)
         for (c = 0; c < NCHAINS; ++c)
             for (s = 0; s < PHRASE_ROWS; ++s)
                 sd.chains[c][s].phrase = EMPTY;
+        for (c = 0; c < NINSTR; ++c)
+            sd.instrs[c].pan = 0xFF;    /* centre = full both sides */
     }
 }
 
@@ -134,8 +136,14 @@ static void song_demo(void)
     sd.instrs[2].vol = 0x70;
     sd.instrs[2].hold = 8;
     sd.instrs[2].dcy = 8;
+    sd.instrs[2].pan = 0xF4;                       /* bass: hard left */
     sd.instrs[3].type = IT_KIT;
     sd.instrs[3].vol = 0x7F;
+    sd.instrs[4].type = IT_WAV;                    /* integrate triangle */
+    sd.instrs[4].vol = 10;
+    sd.instrs[4].hold = 8;
+    sd.instrs[4].dcy = 2;
+    sd.instrs[4].pan = 0x4F;                       /* blips: hard right */
 
     for (i = 0; i < 16; ++i)
         sd.phrases[0][i].note = arp[i];
@@ -143,8 +151,10 @@ static void song_demo(void)
         sd.phrases[1][i].note = N(2,0);            /* C-2 bass */
         sd.phrases[1][i].instr = 2;
     }
-    for (i = 2; i < 16; i += 4)
-        sd.phrases[2][i].note = N(5,7);            /* G-5 blips */
+    for (i = 2; i < 16; i += 4) {
+        sd.phrases[2][i].note = N(5,7);            /* G-5 blips, WAV voice */
+        sd.phrases[2][i].instr = 4;
+    }
     /* 808 kit: C=BD, D=SD, F#=HH (note semitone picks the slot) */
     for (i = 0; i < 16; i += 2) {
         sd.phrases[3][i].note = (i & 4) ? ((i & 2) ? N(4,6) : N(4,2))

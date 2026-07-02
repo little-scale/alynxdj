@@ -17,6 +17,7 @@
 
 #define AUD_ENABLE_COUNT  0x10
 #define AUD_ENABLE_RELOAD 0x08
+#define AUD_INTEGRATE     0x20
 
 /* the flat song block (DESIGN.md D4: contiguous, save-image order; the
  * EEPROM packer serializes exactly this struct at M10) */
@@ -31,7 +32,7 @@ struct voice {
     unsigned char env_peak;
     unsigned char hold_left;
     unsigned char e_atk, e_dcy; /* latched from the instrument at trigger */
-    unsigned char sh_vol, sh_feedback, sh_bkup, sh_ctl;
+    unsigned char sh_vol, sh_feedback, sh_bkup, sh_ctl, sh_pan;
     unsigned char dirty;
 };
 
@@ -88,11 +89,28 @@ static void trigger(unsigned char ch, unsigned char note, unsigned char inum)
         v->env_phase = 2;                        /* instant attack */
         v->env_level = in->vol;
     }
-    v->sh_feedback = (in->type == IT_NOISE)
-                     ? timbre_noise[in->timbre & 7]
-                     : timbre_tone[in->timbre & 7];
-    v->sh_bkup = note_bkup[note - 1];
-    v->sh_ctl = AUD_ENABLE_COUNT | AUD_ENABLE_RELOAD | note_clock[note - 1];
+    if (in->type == IT_WAV) {
+        /* Hardware triangle: integrate mode + feedback from tap 11 only.
+         * The inverted-parity feedback cycles the all-zero shifter through
+         * 12 ones / 12 zeros, so OUTPUT ramps +/-VOLUME for 12 shifts each
+         * way — a triangle at shiftrate/24. That is 12x the square's
+         * divider: look the note up +43 semitones (2 cents off 12x).
+         * Peak = 12 * step: keep instrument vol <= 10 or the 8-bit
+         * accumulator wraps. */
+        unsigned char n = note + 43;    /* extended table entries 96..138 */
+        v->sh_feedback = 0x80;
+        v->sh_bkup = note_bkup[n - 1];
+        v->sh_ctl = AUD_ENABLE_COUNT | AUD_ENABLE_RELOAD | AUD_INTEGRATE
+                    | note_clock[n - 1];
+    } else {
+        v->sh_feedback = (in->type == IT_NOISE)
+                         ? timbre_noise[in->timbre & 7]
+                         : timbre_tone[in->timbre & 7];
+        v->sh_bkup = note_bkup[note - 1];
+        v->sh_ctl = AUD_ENABLE_COUNT | AUD_ENABLE_RELOAD
+                    | note_clock[note - 1];
+    }
+    v->sh_pan = in->pan;
     v->dirty = 1;
 }
 
@@ -154,6 +172,7 @@ static void flush(unsigned char ch)
     h->count = v->sh_bkup;
     h->reload = v->sh_bkup;
     h->volume = v->env_level;
+    (&MIKEY.attena)[ch] = v->sh_pan;             /* L/R nibbles (Lynx II) */
     h->control = v->sh_ctl;
 }
 

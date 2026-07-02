@@ -42,7 +42,7 @@ and data model live in cc65 C, the driver/render/IRQ paths in ca65 asm
 | M5 | ✅ **DONE** — flat song block (`struct songdata sd`: 128×4 song, 32 chains, 64 phrases, $FF sentinels), per-track walkers (song→chain→phrase, chain-end song-row advance, wrap-once loop), contextual transport (SONG=play from cursor row / CHAIN=loop chain / PHRASE=loop phrase), SONG+CHAIN screens with shared cursor/edit/insert machinery, B-held+L/R screen nav with drill-down (loads chain/phrase under cursor), B-tap back, per-screen playheads, src/tracker.h single-source data model. **FFT-verified**: 3 tracks play together (bass C-2 + odd harmonics, arp, G-5 blips); chain step 2's +12 transpose audible (C4 vanishes, C6 appears). Nav verified via screen-id RAM mirror | Song structure |
 | M6 | ✅ **instruments DONE** — 16-byte records in the song block (type/vol/AHD/timbre + reserved table/pan/fine), per-instrument AHD latched at trigger (atk 0 = instant, dcy 0 = sustain), LFSR timbre banks (8 tone + 8 noise feedback presets — hardware curation stays Q4), INSTR screen (PHRASE→INSTR drill, field edit w/ audition). **Verified**: NOISE hats on track 4 are spectrally noise-like (top-bin share 0.018), pulse at 4.8 Hz as sequenced, bandwidth follows the note clock (C-6 → ~3.9 kHz shift rate — hiss wants higher notes); TYPE field edit TONE→NOISE on-screen. ◻️ **tables + TABLE screen + shared command executor → folded into M9** (one command pass) | The voice model |
 | M7 | ✅ **core DONE** — alynxdj_sample.py (WAV→8-bit signed PCM @7812.5 Hz, silence-trim + budget caps: the 808 kit fits 12.1 KB RAM-resident, linked into the ROM), src/pcm.s-in-irq.s (timer-7 IRQ feeds channel D OUTPUT, ~45 cyc/byte ≈ 9% CPU, APPZP pointer, self-stopping), IT_KIT (note semitone → kit slot, mono sample bus on channel D, SMSGGDJ T3 policy). **Verified: captured audio cross-correlates with the source 808 WAVs at 1.11 (BD) / 0.83 (SD) / 0.69 (HH); full 4-track mix keeps all melodic components (engine unstarved).** ◻️ remaining: cart-streamed multi-kit pool + kit-select, `S` rate command, 2-voice cap measurement on hardware (Q2) | The flagship — samples |
-| M8 | WAV voices: integrate-mode shapes + 32-byte wavetable loop, WAVE screen; stereo `O` command (ATTEN) | Synthesis depth |
+| M8 | ✅ **core DONE** — IT_WAV = **hardware triangle** (integrate mode + tap-11-only feedback: inverted parity cycles the zero shifter through 12 ones/12 zeros → triangle at shiftrate/24; note lookup +43 semitones via the extended 139-entry table; instrument vol ≤10 or the 8-bit accumulator wraps). **Instrument pan**: pan nibbles → per-channel ATTEN at trigger, PAN reg enabled, write-always (D8). **Verified solo: 786 Hz for G-5, H2 0.002 / H3 0.113 (textbook triangle), R/L rms 3.75 = exactly the $4F ATTEN ratio — Handy models Lynx II stereo.** ◻️ remaining: 32-byte wavetable loop mode + WAVE screen, `O` command (needs M9 executor) | Synthesis depth |
 | M9 | Full command set + GROOVE screen; copy/paste/clone, block select/cut/paste; mute/solo (Option 1 layer) | Editing power |
 | M10 | Persistence: packed EEPROM save/load + size meter (resolves Q1, Q5), SAVEFORMAT.md, PROJECT/OPTIONS screens, browser savetool | Songs survive |
 | M11 | ComLynx sync: OUT/IN row clock + transport bytes, two-unit lock in emulator, hardware pass; IN24 reserved for the ESP32 bridge | Sync |
@@ -72,9 +72,10 @@ second-opinion core.
 
 ## Status
 
-**M0–M7(core) done** (2026-07-02): toolchain + headless harness; boot +
+**M0–M8(core) done** (2026-07-02): toolchain + headless harness; boot +
 59.90 Hz tick; squares, sequencer, song hierarchy, TONE/NOISE instruments,
-and **8-bit PCM drums (808 kit, xcorr-verified against the source WAVs)**
-all verified headless. Four screens: SONG/CHAIN/PHRASE/INSTR. Next: M8 WAV
-voices + stereo `O`, or M9 command pass (tables + executor + full command
-set + block ops).
+**8-bit PCM drums (xcorr-verified)**, **hardware-triangle WAV voices**, and
+**stereo instrument pan (ATTEN, ratio-exact in capture)** all verified
+headless. Four screens: SONG/CHAIN/PHRASE/INSTR. All four voice types
+sound. Next: M9 command pass (tables + shared executor + full command set
++ copy/paste/clone + mute/solo) — the biggest remaining editor surface.

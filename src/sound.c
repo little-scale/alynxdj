@@ -21,7 +21,8 @@ void sound_init(void)
     MIKEY.attenb = 0xFF;
     MIKEY.attenc = 0xFF;
     MIKEY.attend = 0xFF;
-    MIKEY.panning = 0x00;
+    MIKEY.panning = 0xFF;   /* attenuation active on all channels (D8:
+                               write-always; Lynx I ignores, Lynx II pans) */
 }
 
 /* clocksel: 0..6 = 1<<n microseconds per tick; bkup: timer reload */
