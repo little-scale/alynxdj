@@ -15,7 +15,7 @@ import numpy as np
 
 PCM_RATE = 7812.5           # timer7 @ 1us, BKUP=127
 SLOT_CAP = 2600             # bytes per slot
-KIT_CAP = 10200             # total budget (RAM-resident, see DESIGN §13)
+KIT_CAP = 7700             # total budget (RAM-resident, see DESIGN §13)
 TRIM_DB = -48.0             # trailing-silence threshold
 
 

@@ -25,6 +25,8 @@
 #define SCR_FILES  5
 #define SCR_GROOVE 6
 #define SCR_WAVE   7
+#define SCR_PROJ   8
+#define SCR_OPTS   9
 
 /* command letters, indexed by CMD_* id */
 static const char cmd_chars[NCMDS] = {
@@ -52,17 +54,36 @@ static unsigned char f_status;          /* last save/load ST_* result */
 static unsigned char g_row;             /* GROOVE: 0-15 */
 static unsigned char w_col;             /* WAVE: 0-31 */
 static unsigned char edit_wave;         /* what WAVE shows */
+static unsigned char pj_row;            /* PROJECT: field index */
+static unsigned char o_row;             /* OPTIONS: field index */
+unsigned char opt_prelisten = 1;        /* audition on edit */
+unsigned char opt_repeat = 12;          /* DAS delay, frames */
 static unsigned char edit_groove;       /* what GROOVE shows */
 
-/* single-field clipboard (block select = later pass) */
+/* clipboard: single fields and row ranges share one kind tag */
 #define CLIP_NONE  0
 #define CLIP_STEP  1                    /* phrase step */
 #define CLIP_CHST  2                    /* chain step */
 #define CLIP_CELL  3                    /* song cell (chain #) */
+#define CLIP_RPH   4                    /* phrase row range */
+#define CLIP_RCH   5                    /* chain row range */
+#define CLIP_RSNG  6                    /* song row range */
 static unsigned char clip_kind;
 static struct step clip_step;
 static struct chainstep clip_chst;
 static unsigned char clip_cell;
+#pragma bss-name (push, "SONG")
+static struct step blk_steps[16];
+static struct chainstep blk_chst[16];
+static unsigned char blk_song[16][NCH];
+#pragma bss-name (pop)
+static unsigned char blk_n;
+
+/* block select (A-held + B long-hold, ported gesture) */
+#define SEL_HOLD 20
+static unsigned char sel_active;
+static unsigned char sel_anchor;
+static unsigned char ab_pending, ab_timer;
 
 /* A double-tap window (paste / mint / clone), ~0.3 s */
 #define TAP_WINDOW 18
@@ -123,6 +144,12 @@ static void top_bar(void)
         draw_text(1, 0, "WAVE", PEN_ACCENT, PEN_BG);
         draw_hex8(6, 0, edit_wave, PEN_TEXT, PEN_BG);
         break;
+    case SCR_PROJ:
+        draw_text(1, 0, "PROJECT", PEN_ACCENT, PEN_BG);
+        break;
+    case SCR_OPTS:
+        draw_text(1, 0, "OPTIONS", PEN_ACCENT, PEN_BG);
+        break;
     }
     /* mute flags: track digits, muted = inverted */
     {
@@ -166,9 +193,11 @@ static void draw_map(void)
             unsigned char cur = (r == 1 && c == screen)
                 || (r == 2 && c == 0 && screen == SCR_FILES)
                 || (r == 2 && c == 1 && screen == SCR_GROOVE)
-                || (r == 0 && c == 3 && screen == SCR_WAVE);
+                || (r == 0 && c == 3 && screen == SCR_WAVE)
+                || (r == 0 && c == 0 && screen == SCR_OPTS)
+                || (r == 0 && c == 1 && screen == SCR_PROJ);
             unsigned char shipped = (r == 1) || (r == 2 && c <= 1)
-                || (r == 0 && c == 3);
+                || (r == 0 && c <= 1) || (r == 0 && c == 3);
             b[0] = rows[r][c];
             draw_text(MAP_X + c, GRID_TOP + r, b,
                       cur ? PEN_BG : (shipped ? PEN_TEXT : PEN_DIM),
@@ -476,7 +505,6 @@ static void draw_files_status(void)
 
 static void draw_files_row(unsigned char r, unsigned char cursor_here)
 {
-    static const char *const sync_name[NSYNC] = { "OFF", "OUT", "IN " };
     unsigned char fg = cursor_here ? PEN_BG : PEN_TEXT;
     unsigned char bg = cursor_here ? PEN_TEXT : PEN_BG;
 
@@ -484,17 +512,12 @@ static void draw_files_row(unsigned char r, unsigned char cursor_here)
         draw_text(1, GRID_TOP + 1, "SAVE", fg, bg);
     else if (r == 1)
         draw_text(1, GRID_TOP + 3, "LOAD", fg, bg);
-    else if (r == 2) {
-        draw_text(1, GRID_TOP + 5, "SYNC", PEN_DIM, PEN_BG);
-        draw_text(6, GRID_TOP + 5, sync_name[sync_mode], fg, bg);
-    }
 }
 
 static void draw_files_screen(void)
 {
     draw_files_row(0, f_row == 0);
     draw_files_row(1, f_row == 1);
-    draw_files_row(2, f_row == 2);
     draw_files_status();
 }
 
@@ -547,6 +570,121 @@ static void draw_wave_screen(void)
         draw_wave_col(c, c == w_col);
 }
 
+/* --- PROJECT: tempo readout (tempo IS the groove) + free-block counts --- */
+
+static void draw_dec(unsigned char cx, unsigned char cy, unsigned v,
+                     unsigned char fg, unsigned char bg)
+{
+    char b[4];
+    b[0] = '0' + (v / 100) % 10;
+    b[1] = '0' + (v / 10) % 10;
+    b[2] = '0' + v % 10;
+    b[3] = 0;
+    draw_text(cx, cy, b, fg, bg);
+}
+
+/* BPM = ticks/min / (avg ticks/row * 4 rows/beat) at the 59.9 Hz tick */
+static unsigned proj_bpm(void)
+{
+    unsigned sum = 0;
+    unsigned char n = 0;
+    while (n < 16 && sd.grooves[eng_groove][n]) {
+        sum += sd.grooves[eng_groove][n];
+        ++n;
+    }
+    if (!sum)
+        return 0;
+    return (unsigned)(899u * n / sum);
+}
+
+static unsigned char count_free_chains(void)
+{
+    unsigned char c, s, n = 0;
+    for (c = 0; c < NCHAINS; ++c) {
+        for (s = 0; s < PHRASE_ROWS; ++s)
+            if (sd.chains[c][s].phrase != EMPTY)
+                break;
+        if (s == PHRASE_ROWS)
+            ++n;
+    }
+    return n;
+}
+
+static unsigned char count_free_phrases(void)
+{
+    unsigned char c, s, n = 0;
+    for (c = 0; c < NPHRASES; ++c) {
+        for (s = 0; s < PHRASE_ROWS; ++s)
+            if (sd.phrases[c][s].note || sd.phrases[c][s].cmd)
+                break;
+        if (s == PHRASE_ROWS)
+            ++n;
+    }
+    return n;
+}
+
+static void draw_proj_row(unsigned char r, unsigned char cursor_here)
+{
+    unsigned char fg = cursor_here ? PEN_BG : PEN_TEXT;
+    unsigned char bg = cursor_here ? PEN_TEXT : PEN_BG;
+
+    switch (r) {
+    case 0:
+        draw_text(1, GRID_TOP + 1, "TMPO", PEN_DIM, PEN_BG);
+        draw_dec(6, GRID_TOP + 1, proj_bpm(), fg, bg);
+        draw_text(10, GRID_TOP + 1, "BPM (GROOVE", PEN_DIM, PEN_BG);
+        draw_hex8(22, GRID_TOP + 1, eng_groove, PEN_DIM, PEN_BG);
+        draw_text(24, GRID_TOP + 1, ")", PEN_DIM, PEN_BG);
+        break;
+    case 1:
+        draw_text(1, GRID_TOP + 3, "FREE CHAINS", PEN_DIM, PEN_BG);
+        draw_hex8(13, GRID_TOP + 3, count_free_chains(), PEN_TEXT, PEN_BG);
+        break;
+    case 2:
+        draw_text(1, GRID_TOP + 5, "FREE PHRASES", PEN_DIM, PEN_BG);
+        draw_hex8(14, GRID_TOP + 5, count_free_phrases(), PEN_TEXT, PEN_BG);
+        break;
+    }
+}
+
+static void draw_proj_screen(void)
+{
+    draw_proj_row(0, pj_row == 0);
+    draw_proj_row(1, 0);
+    draw_proj_row(2, 0);
+}
+
+/* --- OPTIONS: machine settings (runtime-only for now) --- */
+
+static void draw_opts_row(unsigned char r, unsigned char cursor_here)
+{
+    static const char *const sync_name[NSYNC] = { "OFF", "OUT", "IN " };
+    unsigned char fg = cursor_here ? PEN_BG : PEN_TEXT;
+    unsigned char bg = cursor_here ? PEN_TEXT : PEN_BG;
+
+    switch (r) {
+    case 0:
+        draw_text(1, GRID_TOP + 1, "SYNC", PEN_DIM, PEN_BG);
+        draw_text(9, GRID_TOP + 1, sync_name[sync_mode], fg, bg);
+        break;
+    case 1:
+        draw_text(1, GRID_TOP + 3, "PRELIS", PEN_DIM, PEN_BG);
+        draw_text(9, GRID_TOP + 3, opt_prelisten ? "ON " : "OFF", fg, bg);
+        break;
+    case 2:
+        draw_text(1, GRID_TOP + 5, "REPEAT", PEN_DIM, PEN_BG);
+        draw_hex8(9, GRID_TOP + 5, opt_repeat, fg, bg);
+        break;
+    }
+}
+
+static void draw_opts_screen(void)
+{
+    unsigned char r;
+    for (r = 0; r < 3; ++r)
+        draw_opts_row(r, r == o_row);
+}
+
 /* --- dispatch --- */
 
 static void draw_row(unsigned char r, unsigned char cursor_here)
@@ -559,6 +697,8 @@ static void draw_row(unsigned char r, unsigned char cursor_here)
     case SCR_TABLE:  draw_table_row(r, cursor_here); break;
     case SCR_FILES:  draw_files_row(r, cursor_here); break;
     case SCR_GROOVE: draw_groove_row(r, cursor_here); break;
+    case SCR_PROJ:   draw_proj_row(r, cursor_here); break;
+    case SCR_OPTS:   draw_opts_row(r, cursor_here); break;
     }
 }
 
@@ -576,6 +716,8 @@ static void draw_screen(void)
     case SCR_FILES:  draw_files_screen(); break;
     case SCR_GROOVE: draw_groove_screen(); break;
     case SCR_WAVE:   draw_wave_screen(); break;
+    case SCR_PROJ:   draw_proj_screen(); break;
+    case SCR_OPTS:   draw_opts_screen(); break;
     }
     draw_map();
     MIRROR_SCREEN = screen;
@@ -591,6 +733,8 @@ static unsigned char cursor_vrow(void)
     case SCR_FILES: return f_row;
     case SCR_GROOVE: return g_row;
     case SCR_WAVE:  return 0;
+    case SCR_PROJ:  return pj_row;
+    case SCR_OPTS:  return o_row;
     default:        return p_row;
     }
 }
@@ -604,6 +748,8 @@ static void mirror_cursor(void)
     case SCR_TABLE: MIRROR_ROW = t_row; MIRROR_COL = t_col; break;
     case SCR_GROOVE: MIRROR_ROW = g_row; MIRROR_COL = 0; break;
     case SCR_WAVE:  MIRROR_ROW = edit_wave; MIRROR_COL = w_col; break;
+    case SCR_PROJ:  MIRROR_ROW = pj_row; MIRROR_COL = 0; break;
+    case SCR_OPTS:  MIRROR_ROW = o_row; MIRROR_COL = 0; break;
     default:        MIRROR_ROW = p_row; MIRROR_COL = p_col; break;
     }
 }
@@ -657,10 +803,8 @@ static void move_cursor(unsigned char dir)
         }
         break;
     case SCR_FILES:
-        switch (dir) {
-        case 0: if (f_row) --f_row; else f_row = 2; break;
-        case 1: if (f_row < 2) ++f_row; else f_row = 0; break;
-        }
+        if (dir == 0 || dir == 1)
+            f_row ^= 1;
         break;
     case SCR_GROOVE:
         switch (dir) {
@@ -670,6 +814,18 @@ static void move_cursor(unsigned char dir)
         case 3: if (edit_groove < NGROOVES - 1) { ++edit_groove; draw_screen(); } break;
         }
         break;
+    case SCR_PROJ:
+        break;                          /* TMPO is the only cursor field */
+    case SCR_OPTS:
+        if (dir == 0 || dir == 1) {
+            unsigned char old = o_row;
+            o_row = (dir == 1) ? (o_row < 2 ? o_row + 1 : 0)
+                               : (o_row ? o_row - 1 : 2);
+            draw_opts_row(old, 0);
+            draw_opts_row(o_row, 1);
+        }
+        mirror_cursor();
+        return;
     case SCR_WAVE: {
         unsigned char oc = w_col;
         switch (dir) {
@@ -759,7 +915,7 @@ static void edit_phrase_cell(unsigned char dir)
         }
         s->note = n;
         last_note = n;
-        if (!eng_mode)
+        if (!eng_mode && opt_prelisten)
             engine_audition(n, s->instr);
     } else if (p_col == 1 && s->note) {
         switch (dir) {
@@ -783,7 +939,7 @@ static void edit_phrase_cell(unsigned char dir)
         }
 audition_row:
         /* prelisten the row as it will play: note + command */
-        if (s->note && !eng_mode) {
+        if (s->note && !eng_mode && opt_prelisten) {
             engine_audition(s->note, s->instr);
             engine_audition_cmd(s->cmd, s->param);
         }
@@ -938,6 +1094,38 @@ static void edit_cell(unsigned char dir)
     case SCR_INSTR:  edit_instr_cell(dir); break;
     case SCR_TABLE:  edit_table_cell(dir); break;
     case SCR_GROOVE: edit_groove_cell(dir); break;
+    case SCR_PROJ: {
+        /* TMPO: step every entry of the active groove together (walks
+         * the achievable BPM rungs without flattening swing) */
+        unsigned char i, up = (dir == 0 || dir == 3);
+        for (i = 0; i < 16 && sd.grooves[eng_groove][i]; ++i) {
+            unsigned char *g = &sd.grooves[eng_groove][i];
+            /* more ticks/row = slower: up means fewer ticks */
+            if (up && *g > 1) --*g;
+            if (!up && *g < 15) ++*g;
+        }
+        draw_proj_row(0, 1);
+        return;
+    }
+    case SCR_OPTS:
+        switch (o_row) {
+        case 0:
+            sync_mode = (dir == 0 || dir == 3)
+                        ? (sync_mode + 1) % NSYNC
+                        : (sync_mode + NSYNC - 1) % NSYNC;
+            break;
+        case 1:
+            opt_prelisten ^= 1;
+            break;
+        case 2:
+            if ((dir == 0 || dir == 3) && opt_repeat < 30)
+                ++opt_repeat;
+            else if ((dir == 1 || dir == 2) && opt_repeat > 4)
+                --opt_repeat;
+            break;
+        }
+        draw_opts_row(o_row, 1);
+        return;
     case SCR_WAVE: {
         signed char *v = (signed char *)&sd.waves[edit_wave][w_col];
         int nv = *v;
@@ -979,11 +1167,6 @@ static void insert_cell(void)
         }
         break;
     case SCR_FILES:
-        if (f_row == 2) {               /* cycle the sync mode */
-            sync_mode = (sync_mode + 1) % NSYNC;
-            draw_files_row(2, 1);
-            break;
-        }
         engine_stop();
         transport_label();
         f_status = f_row ? save_load() : save_do();
@@ -1031,6 +1214,8 @@ static void nav(unsigned char to_right)
     } else {
         if (screen == SCR_WAVE)
             screen = SCR_INSTR;
+        else if (screen == SCR_OPTS || screen == SCR_PROJ)
+            screen = (screen == SCR_OPTS) ? SCR_SONG : SCR_CHAIN;
         else if (screen == SCR_TABLE)
             screen = SCR_INSTR;
         else if (screen == SCR_INSTR)
@@ -1055,6 +1240,14 @@ static void nav_v(unsigned char down)
         screen = SCR_FILES;
     else if (!down && screen == SCR_FILES)
         screen = SCR_SONG;
+    else if (!down && screen == SCR_SONG)
+        screen = SCR_OPTS;
+    else if (down && screen == SCR_OPTS)
+        screen = SCR_SONG;
+    else if (!down && screen == SCR_CHAIN)
+        screen = SCR_PROJ;
+    else if (down && screen == SCR_PROJ)
+        screen = SCR_CHAIN;
     else if (down && screen == SCR_CHAIN)
         screen = SCR_GROOVE;
     else if (!down && screen == SCR_GROOVE)
@@ -1101,6 +1294,127 @@ static void cut_field(void)
     draw_row(cursor_vrow(), 1);
 }
 
+/* --- block select: row ranges on SONG/CHAIN/PHRASE --- */
+
+static unsigned char cursor_row_abs(void)
+{
+    switch (screen) {
+    case SCR_SONG:  return s_row;
+    case SCR_CHAIN: return c_row;
+    default:        return p_row;
+    }
+}
+
+static void sel_bounds(unsigned char *a, unsigned char *b)
+{
+    unsigned char c = cursor_row_abs();
+    *a = (sel_anchor < c) ? sel_anchor : c;
+    *b = (sel_anchor < c) ? c : sel_anchor;
+}
+
+/* selected rows get inverted row numbers */
+static void sel_paint(void)
+{
+    unsigned char a, b, r, vr;
+    sel_bounds(&a, &b);
+    for (r = 0; r < 16; ++r) {
+        unsigned char abs_r = (screen == SCR_SONG) ? song_page() + r : r;
+        unsigned char inside = sel_active && abs_r >= a && abs_r <= b;
+        vr = GRID_TOP + r;
+        if (inside)
+            draw_hex8(1, vr, abs_r, PEN_BG, PEN_ACCENT);
+        else
+            draw_hex8(1, vr, abs_r, PEN_DIM, PEN_BG);
+    }
+}
+
+static void blk_copy(void)
+{
+    unsigned char a, b, i;
+    sel_bounds(&a, &b);
+    blk_n = b - a + 1;
+    switch (screen) {
+    case SCR_PHRASE:
+        clip_kind = CLIP_RPH;
+        memcpy(blk_steps, &sd.phrases[edit_phrase][a],
+               blk_n * sizeof(struct step));
+        break;
+    case SCR_CHAIN:
+        clip_kind = CLIP_RCH;
+        memcpy(blk_chst, &sd.chains[edit_chain][a],
+               blk_n * sizeof(struct chainstep));
+        break;
+    case SCR_SONG:
+        clip_kind = CLIP_RSNG;
+        for (i = 0; i < blk_n; ++i)
+            memcpy(blk_song[i], sd.song[a + i], NCH);
+        break;
+    }
+}
+
+static void blk_clear(void)
+{
+    unsigned char a, b, i;
+    sel_bounds(&a, &b);
+    switch (screen) {
+    case SCR_PHRASE:
+        memset(&sd.phrases[edit_phrase][a], 0,
+               (b - a + 1) * sizeof(struct step));
+        break;
+    case SCR_CHAIN:
+        memset(&sd.chains[edit_chain][a], EMPTY,
+               (b - a + 1) * sizeof(struct chainstep));
+        break;
+    case SCR_SONG:
+        for (i = a; i <= b; ++i)
+            memset(sd.song[i], EMPTY, NCH);
+        break;
+    }
+}
+
+static void sel_exit(void)
+{
+    sel_active = 0;
+    draw_screen();
+    mirror_cursor();
+}
+
+static void blk_paste(void)
+{
+    unsigned char at = cursor_row_abs();
+    unsigned char n = blk_n, i;
+
+    switch (screen) {
+    case SCR_PHRASE:
+        if (clip_kind != CLIP_RPH)
+            return;
+        if (at + n > PHRASE_ROWS)
+            n = PHRASE_ROWS - at;
+        memcpy(&sd.phrases[edit_phrase][at], blk_steps,
+               n * sizeof(struct step));
+        break;
+    case SCR_CHAIN:
+        if (clip_kind != CLIP_RCH)
+            return;
+        if (at + n > PHRASE_ROWS)
+            n = PHRASE_ROWS - at;
+        memcpy(&sd.chains[edit_chain][at], blk_chst,
+               n * sizeof(struct chainstep));
+        break;
+    case SCR_SONG:
+        if (clip_kind != CLIP_RSNG)
+            return;
+        if (at + n > SONG_ROWS)
+            n = SONG_ROWS - at;
+        for (i = 0; i < n; ++i)
+            memcpy(sd.song[at + i], blk_song[i], NCH);
+        break;
+    default:
+        return;
+    }
+    draw_screen();
+}
+
 /* first all-empty chain/phrase, or $FF if the pool is full */
 static unsigned char find_free_chain(void)
 {
@@ -1132,6 +1446,10 @@ static unsigned char find_free_phrase(void)
  * (populated cell) into the next free slot — ported semantics */
 static void double_tap(void)
 {
+    if (clip_kind >= CLIP_RPH) {
+        blk_paste();
+        return;
+    }
     switch (screen) {
     case SCR_SONG:
         if (clip_kind == CLIP_CELL) {
@@ -1232,6 +1550,15 @@ static void playhead_update(void)
     }
 }
 
+static unsigned char dir_of(unsigned char pressed)
+{
+    if (pressed & JOYPAD_UP) return 0;
+    if (pressed & JOYPAD_DOWN) return 1;
+    if (pressed & JOYPAD_LEFT) return 2;
+    if (pressed & JOYPAD_RIGHT) return 3;
+    return 0xFF;
+}
+
 /* ---------------- public ---------------- */
 
 void editor_init(void)
@@ -1277,11 +1604,65 @@ void editor_frame(unsigned char joy, unsigned char prev)
         return;
     }
 
-    /* A held + B pressed = cut the field under the cursor */
-    if ((joy & JOY_BTN_A_MASK) && (pressed & JOY_BTN_B_MASK)) {
+    /* block-select mode swallows everything (ported gesture set) */
+    if (sel_active) {
+        if (dir_of(pressed) == 0 || dir_of(pressed) == 1) {
+            move_cursor(dir_of(pressed));
+            sel_paint();
+            return;
+        }
+        if ((joy & JOY_BTN_A_MASK) && (pressed & JOY_BTN_B_MASK)) {
+            blk_copy();                  /* cut = copy + clear */
+            blk_clear();
+            a_used = 1;
+            b_used = 1;
+            sel_exit();
+            return;
+        }
+        if (pressed & JOY_BTN_A_MASK) {  /* copy */
+            blk_copy();
+            a_used = 1;
+            sel_exit();
+            return;
+        }
+        if (pressed & JOY_BTN_B_MASK) {  /* cancel */
+            b_used = 1;
+            sel_exit();
+            return;
+        }
+        return;
+    }
+
+    /* A held + B: quick release = single-field cut, long hold = SELECT */
+    if ((joy & JOY_BTN_A_MASK) && (pressed & JOY_BTN_B_MASK)
+        && (screen == SCR_SONG || screen == SCR_CHAIN
+            || screen == SCR_PHRASE)) {
         a_used = 1;
         b_used = 1;
+        ab_pending = 1;
+        ab_timer = 0;
+        return;
+    }
+    if ((joy & JOY_BTN_A_MASK) && (pressed & JOY_BTN_B_MASK)) {
+        a_used = 1;                      /* other screens: immediate cut */
+        b_used = 1;
         cut_field();
+        return;
+    }
+    if (ab_pending) {
+        if ((joy & (JOY_BTN_A_MASK | JOY_BTN_B_MASK))
+            == (JOY_BTN_A_MASK | JOY_BTN_B_MASK)) {
+            if (++ab_timer >= SEL_HOLD) {
+                ab_pending = 0;
+                sel_active = 1;
+                sel_anchor = cursor_row_abs();
+                sel_paint();
+            }
+            return;
+        }
+        ab_pending = 0;
+        if (!(joy & JOY_BTN_B_MASK))     /* B released early: field cut */
+            cut_field();
         return;
     }
 
@@ -1308,7 +1689,7 @@ void editor_frame(unsigned char joy, unsigned char prev)
 
     if (dir != 0xFF) {
         rep_dir = dir;
-        rep_timer = DAS_DELAY;
+        rep_timer = opt_repeat;
     } else if (joy & (JOYPAD_UP | JOYPAD_DOWN | JOYPAD_LEFT | JOYPAD_RIGHT)) {
         if (--rep_timer == 0) {
             rep_timer = DAS_RATE;

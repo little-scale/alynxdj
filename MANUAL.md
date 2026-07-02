@@ -25,7 +25,8 @@ action.** No simultaneous-press timing windows.
 | **A** tap | insert on an empty cell (repeats the last value) |
 | **A** hold + d-pad | edit the value under the cursor — ←/→ small step, ↑/↓ big step |
 | **A** double-tap | paste the clipboard; with nothing cut: mint the next free chain/phrase on an empty cell, or clone a populated one |
-| **A** held + **B** | cut the field under the cursor into the clipboard |
+| **A** held + **B** tap | cut the field under the cursor into the clipboard |
+| **A** held + **B** long-hold | **block SELECT** (SONG/CHAIN/PHRASE): anchors at the cursor; ↑/↓ extend; **A** = copy, **A**-held+**B** = cut, **B** = cancel; paste with A double-tap (rows land at the cursor) |
 | **B** tap | back (PHRASE → CHAIN → SONG) |
 | **B** hold + d-pad | move around the screen map (see below) |
 | **B** held + **A** | play / stop — contextual: SONG plays from the cursor row, CHAIN loops the chain, PHRASE loops the phrase |
@@ -44,9 +45,17 @@ S C P I T   =  SONG > CHAIN > PHRASE > INSTR > TABLE
 F G            FILES (below SONG)   GROOVE (below CHAIN)
 ```
 
-B-held + →  descends and *drills in* (opens the chain/phrase/instrument
-under the cursor); B-held + ← / B-tap goes back; B-held + ↑/↓ reaches
-FILES, GROOVE and WAVE (above INSTR).
+All ten screens are live. B-held + → descends and *drills in* (opens the
+chain/phrase/instrument under the cursor); B-held + ← / B-tap goes back;
+B-held + ↑/↓ moves vertically (OPTIONS above SONG, PROJECT above CHAIN,
+WAVE above INSTR, FILES and GROOVE below).
+
+**PROJECT:** TMPO — the live BPM readout derived from the active groove
+(tempo *is* the groove); editing it steps every groove entry together, so
+swing is preserved. Plus free-chain/phrase counters.
+
+**OPTIONS:** SYNC (ComLynx OFF/OUT/IN), PRELIS (audition-on-edit on/off),
+REPEAT (key-repeat delay).
 
 **WAVE screen:** 32-column bar editor for the 8 wavetables. ←/→ move,
 ↑/↓ page waves, A-held + d-pad draws (↑/↓ coarse, ←/→ fine). Waves 0–3
@@ -139,11 +148,11 @@ the 16 grooves.
 
 ## Saving (FILES screen)
 
-B-held + ↓ from SONG. The song packs into the cart's EEPROM — the PACK
-meter shows the packed size against capacity; a song that doesn't fit is
-refused, never truncated. The last saved song autoloads at boot.
-In an emulator the save lives in the `.eeprom` file beside the ROM
-(format: [SAVEFORMAT.md](SAVEFORMAT.md)).
+B-held + ↓ from SONG: SAVE and LOAD. The song packs into the cart's
+EEPROM — the PACK meter shows the packed size against capacity; a song
+that doesn't fit is refused, never truncated. The last saved song
+autoloads at boot. In an emulator the save lives in the `.eeprom` file
+beside the ROM (format: [SAVEFORMAT.md](SAVEFORMAT.md)).
 
 ## The demo song
 
