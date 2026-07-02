@@ -103,9 +103,13 @@ static void song_new(void)
         for (c = 0; c < NCHAINS; ++c)
             for (s = 0; s < PHRASE_ROWS; ++s)
                 sd.chains[c][s].phrase = EMPTY;
-        for (c = 0; c < NINSTR; ++c)
+        for (c = 0; c < NINSTR; ++c) {
             sd.instrs[c].pan = 0xFF;    /* centre = full both sides */
+            sd.instrs[c].table = EMPTY;
+        }
     }
+    sd.grooves[0][0] = 6;               /* default groove: straight 6/6 */
+    sd.grooves[0][1] = 6;
 }
 
 /* demo song until the sample pool ships a real one:
@@ -178,6 +182,50 @@ static void song_demo(void)
         sd.song[i][2] = 2;
         sd.song[i][3] = 3;
     }
+
+    /* --- M9 command test rigs (song rows 16.., unreachable from the demo
+     * playback, driven by chain-loop transport in the harness) --- */
+    sd.instrs[5].type = IT_TONE;                   /* sustain lead */
+    sd.instrs[5].vol = 0x7F;
+    sd.instrs[5].hold = 4;
+    sd.instrs[5].dcy = 2;
+    sd.grooves[1][0] = 3;                          /* G-test groove */
+    sd.grooves[1][1] = 3;
+
+    for (i = 4; i <= 10; ++i) {
+        sd.chains[i][0].phrase = i;
+        sd.song[16 + (i - 4)][0] = i;
+    }
+    /* ph4: K kill — short/long burst alternation */
+    for (i = 0; i < 16; i += 4) {
+        sd.phrases[4][i].note = N(4,0);
+        if (!(i & 4)) { sd.phrases[4][i].cmd = CMD_K; sd.phrases[4][i].param = 2; }
+    }
+    /* ph5: P bend up */
+    sd.phrases[5][0].note = N(4,0); sd.phrases[5][0].instr = 5;
+    sd.phrases[5][0].cmd = CMD_P;  sd.phrases[5][0].param = 2;
+    /* ph6: V vibrato */
+    sd.phrases[6][0].note = N(4,0); sd.phrases[6][0].instr = 5;
+    sd.phrases[6][0].cmd = CMD_V;  sd.phrases[6][0].param = 0x28;
+    /* ph7: C chord arp */
+    sd.phrases[7][0].note = N(4,0); sd.phrases[7][0].instr = 5;
+    sd.phrases[7][0].cmd = CMD_C;  sd.phrases[7][0].param = 0x47;
+    /* ph8: X volume accent — quiet/loud alternation */
+    for (i = 0; i < 16; i += 4) {
+        sd.phrases[8][i].note = N(4,0);
+        if (!(i & 4)) { sd.phrases[8][i].cmd = CMD_X; sd.phrases[8][i].param = 0x20; }
+    }
+    /* ph9: A table — table 0 arpeggiates 0/+4/+7 at tick rate */
+    sd.phrases[9][0].note = N(4,0); sd.phrases[9][0].instr = 5;
+    sd.phrases[9][0].cmd = CMD_A;  sd.phrases[9][0].param = 0;
+    sd.tables[0][0].tsp = 0;
+    sd.tables[0][1].tsp = 4;
+    sd.tables[0][2].tsp = 7;
+    sd.tables[0][3].cmd = CMD_H;   sd.tables[0][3].param = 0;
+    /* ph10: G groove switch — notes every 2 rows, groove 1 doubles the rate */
+    sd.phrases[10][0].cmd = CMD_G; sd.phrases[10][0].param = 1;
+    for (i = 0; i < 16; i += 2)
+        sd.phrases[10][i].note = N(4,0);
 }
 
 void main(void)

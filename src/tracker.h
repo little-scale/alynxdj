@@ -9,7 +9,25 @@
 #define NCHAINS     32
 #define NPHRASES    64
 #define NINSTR      32
+#define NTABLES     16
+#define NGROOVES    16
 #define EMPTY       0xFF
+
+/* command ids (cmd byte in steps/tables; 0 = none). Letters follow the
+ * SMSGGDJ set where the meaning survives (DESIGN.md §8). */
+#define CMD_NONE 0
+#define CMD_A    1      /* A xx  run table xx (one-shot; 10 = off) */
+#define CMD_C    2      /* C xy  chord: loop +0,+x,+y semitones per tick */
+#define CMD_D    3      /* D xx  delay trigger xx ticks */
+#define CMD_G    4      /* G xx  switch groove */
+#define CMD_H    5      /* H xx  table: loop to row x (phrase H is M9b) */
+#define CMD_K    6      /* K xx  kill note after xx ticks */
+#define CMD_O    7      /* O xy  pan: ATTEN left x / right y */
+#define CMD_P    8      /* P xx  pitch bend, signed 1/16-semi per tick */
+#define CMD_V    9      /* V xy  vibrato speed x depth y (1/16 semis) */
+#define CMD_W    10     /* W xx  shorten this row to xx ticks */
+#define CMD_X    11     /* X xx  this note's volume (envelope peak) */
+#define NCMDS    12
 
 #define IT_TONE  0
 #define IT_NOISE 1
@@ -43,11 +61,20 @@ struct instr {
     unsigned char pad[7];
 };
 
+struct tablerow {
+    unsigned char vol;      /* 0 = no change, else set envelope level */
+    signed char   tsp;      /* semitone offset while this row is active */
+    unsigned char cmd;
+    unsigned char param;
+};
+
 struct songdata {
     unsigned char    song[SONG_ROWS][NCH];
     struct chainstep chains[NCHAINS][PHRASE_ROWS];
     struct step      phrases[NPHRASES][PHRASE_ROWS];
     struct instr     instrs[NINSTR];
+    struct tablerow  tables[NTABLES][PHRASE_ROWS];
+    unsigned char    grooves[NGROOVES][16];     /* ticks/row, 0 = end */
 };
 extern struct songdata sd;
 

@@ -1,14 +1,17 @@
 /* Sequencer engine — per-tick pipeline ported from SMSGGDJ engine.asm:
  *
- *   groove -> row advance -> trigger -> AHD envelope -> shadow -> flush
+ *   groove -> row advance -> trigger peek (D) -> trigger + commands ->
+ *   table step -> continuous effects (bend/vibrato/chord) -> envelope ->
+ *   kill -> shadow -> flush
  *
- * M5: full SONG -> CHAIN -> PHRASE hierarchy. Each of the 4 tracks walks the
- * song independently (its song row advances when its chain ends), so tracks
- * can run different chain lengths — the ported per-channel walker model.
- * Row *timing* is global (one groove clocks all tracks).
+ * Each of the 4 tracks walks the song independently; row timing is global
+ * (one groove clocks all tracks). One executor runs both the phrase and
+ * table command columns (ported discipline).
  *
- * C-first per DESIGN.md D2; the tick runs from the main loop on VBlank
- * frame change. It moves into the IRQ when the driver goes asm.
+ * Pitch model: 1/16-semitone fixed point. base note (chain transpose
+ * applied) + chord/table semitone offsets + bend/vibrato sixteenths ->
+ * table lookup with linear BACKUP interpolation; per-tick pitch updates
+ * write the reload register only, so the oscillator phase never restarts.
  */
 #include <lynx.h>
 
@@ -19,30 +22,35 @@
 #define AUD_ENABLE_RELOAD 0x08
 #define AUD_INTEGRATE     0x20
 
-/* the flat song block (DESIGN.md D4: contiguous, save-image order; the
- * EEPROM packer serializes exactly this struct at M10) */
 struct songdata sd;
-
 struct walk eng_walk[NCH];
 
 struct voice {
-    unsigned char note;
+    unsigned char base_note;    /* chain-transposed trigger note */
+    unsigned char type;         /* IT_* latched at trigger */
     unsigned char env_phase;    /* 0=off 1=attack 2=hold 3=decay */
     unsigned char env_level;
     unsigned char env_peak;
     unsigned char hold_left;
-    unsigned char e_atk, e_dcy; /* latched from the instrument at trigger */
-    unsigned char sh_vol, sh_feedback, sh_bkup, sh_ctl, sh_pan;
-    unsigned char dirty;
+    unsigned char e_atk, e_dcy;
+    /* effects */
+    int           bend;         /* accumulated 1/16 semis */
+    signed char   bend_rate;    /* P: per tick */
+    unsigned char vib_speed, vib_depth, vib_phase;
+    unsigned char chord[3], chord_len, chord_pos;
+    unsigned char kill_in;      /* $FF = none */
+    unsigned char table, tpos;  /* $FF = none */
+    signed char   tbl_tsp;
+    /* delayed trigger (D) */
+    unsigned char dly_in;       /* $FF = none */
+    unsigned char dly_note, dly_instr;
+    /* Mikey shadow */
+    unsigned char sh_feedback, sh_bkup, sh_ctl, sh_pan;
+    unsigned char dirty, retime;
 };
 
 static struct voice voices[NCH];
 
-/* LFSR tap presets (feedback register values) — the timbre banks.
- * Preset 0 of the tone bank is the proven square; the rest are a spread of
- * short-loop (buzzy, pitched) to long-loop (noisy) tap sets. Curated on
- * real hardware at the Q4 pass — Handy's shifter is the reference until
- * then. Taps: bits 0-5 = LFSR taps 0-5, bit 6 = tap 10, bit 7 = tap 11. */
 static const unsigned char timbre_tone[8] = {
     0x01, 0x03, 0x07, 0x0F, 0x1F, 0x3F, 0x43, 0xC1,
 };
@@ -50,17 +58,149 @@ static const unsigned char timbre_noise[8] = {
     0x81, 0x83, 0x87, 0x8F, 0x9F, 0xBF, 0xC3, 0xFF,
 };
 
-static const unsigned char groove[2] = {6, 6};
-
 unsigned char eng_mode;
 #define eng_playing (eng_mode)
 
 static unsigned char eng_tick;
 static unsigned char eng_gpos;
+static unsigned char eng_groove;        /* active groove number */
+static unsigned char row_ticks;         /* this row's length (W overrides) */
 
 static volatile struct _mikey_audio *const CHAN[NCH] = {
     &MIKEY.channel_a, &MIKEY.channel_b, &MIKEY.channel_c, &MIKEY.channel_d,
 };
+
+/* --- pitch --- */
+
+/* effective pitch in 1/16 semis -> program sh_bkup (+ctl if clock moved) */
+static void pitch_update(unsigned char ch)
+{
+    struct voice *v = &voices[ch];
+    int p;
+    unsigned char n, frac, b0, b1, clk, ctl;
+    signed char vib = 0;
+
+    if (v->type == IT_KIT || v->env_phase == 0)
+        return;
+    if (v->vib_depth) {
+        unsigned char ph = v->vib_phase;
+        /* triangle LFO, period 64 phase units, +/-16 peak */
+        vib = (ph & 0x20) ? (signed char)(0x10 - (ph & 0x1F))
+                          : (signed char)((ph & 0x1F) - 0x10);
+        vib = (signed char)((vib * v->vib_depth) >> 4);
+    }
+    p = (int)v->base_note * 16 + v->bend + vib
+        + ((int)v->chord[v->chord_pos] + v->tbl_tsp) * 16;
+    if (v->type == IT_WAV)
+        p += 43 * 16;
+    if (p < 16) p = 16;
+    if (p > (v->type == IT_WAV ? 139 * 16 : 96 * 16))
+        p = (v->type == IT_WAV ? 139 * 16 : 96 * 16);
+    n = (unsigned char)(p >> 4);
+    frac = (unsigned char)(p & 15);
+    b0 = note_bkup[n - 1];
+    clk = note_clock[n - 1];
+    if (frac && n < 139 && note_clock[n] == clk) {
+        b1 = note_bkup[n];
+        b0 = b0 - (unsigned char)((((unsigned int)(b0 - b1)) * frac) >> 4);
+    }
+    ctl = (v->sh_ctl & AUD_INTEGRATE)
+          | AUD_ENABLE_COUNT | AUD_ENABLE_RELOAD | clk;
+    if (b0 != v->sh_bkup || ctl != v->sh_ctl) {
+        v->sh_bkup = b0;
+        if (ctl != v->sh_ctl) {
+            v->sh_ctl = ctl;
+            v->retime = 1;      /* clock prescale moved: full reprogram */
+        }
+        v->dirty = 1;
+    }
+}
+
+/* --- executor: one command, phrase or table column --- */
+
+static void exec_cmd(unsigned char ch, unsigned char cmd, unsigned char param)
+{
+    struct voice *v = &voices[ch];
+
+    switch (cmd) {
+    case CMD_A:
+        v->table = (param < NTABLES) ? param : EMPTY;
+        v->tpos = 0;
+        v->tbl_tsp = 0;
+        break;
+    case CMD_C:
+        if (param) {
+            v->chord[0] = 0;
+            v->chord[1] = param >> 4;
+            v->chord[2] = param & 0x0F;
+            v->chord_len = 3;
+        } else
+            v->chord_len = 1;
+        v->chord_pos = 0;
+        break;
+    case CMD_G:
+        if (param < NGROOVES && sd.grooves[param][0])
+            eng_groove = param;
+        break;
+    case CMD_K:
+        v->kill_in = param;
+        break;
+    case CMD_O:
+        v->sh_pan = param;
+        (&MIKEY.attena)[ch] = param;
+        break;
+    case CMD_P:
+        v->bend_rate = (signed char)param;
+        break;
+    case CMD_V:
+        v->vib_speed = param >> 4;
+        v->vib_depth = param & 0x0F;
+        break;
+    case CMD_W:
+        if (param && param < row_ticks)
+            row_ticks = param;
+        break;
+    case CMD_X:
+        v->env_peak = (param <= 0x7F) ? param : 0x7F;
+        if (v->env_phase == 2 || (v->env_phase == 1 && !v->e_atk))
+            v->env_level = v->env_peak;
+        v->dirty = 1;
+        break;
+    /* CMD_H is table-level (handled in table_step); CMD_D in the peek */
+    }
+}
+
+/* --- table macro sequencer: one row per tick --- */
+
+static void table_step(unsigned char ch)
+{
+    struct voice *v = &voices[ch];
+    struct tablerow *tr;
+
+    if (v->table == EMPTY || v->env_phase == 0)
+        return;
+    tr = &sd.tables[v->table][v->tpos];
+    if (tr->vol) {
+        v->env_level = (tr->vol <= 0x7F) ? tr->vol : 0x7F;
+        v->dirty = 1;
+    }
+    v->tbl_tsp = tr->tsp;
+    if (tr->cmd == CMD_H) {
+        v->tpos = tr->param & 0x0F;
+        tr = &sd.tables[v->table][v->tpos];
+        if (tr->vol) {
+            v->env_level = (tr->vol <= 0x7F) ? tr->vol : 0x7F;
+            v->dirty = 1;
+        }
+        v->tbl_tsp = tr->tsp;
+    }
+    if (tr->cmd && tr->cmd != CMD_H)
+        exec_cmd(ch, tr->cmd, tr->param);
+    if (v->tpos < PHRASE_ROWS - 1)
+        ++v->tpos;                       /* stick at the last row */
+}
+
+/* --- trigger --- */
 
 static void trigger(unsigned char ch, unsigned char note, unsigned char inum)
 {
@@ -69,15 +209,16 @@ static void trigger(unsigned char ch, unsigned char note, unsigned char inum)
 
     if (in->type == IT_KIT) {
         /* PCM: note semitone picks the kit slot; plays on channel D's DAC
-         * regardless of track (mono sample bus, SMSGGDJ T3 policy). The
-         * engine leaves channel D's registers alone while it runs. */
+         * regardless of track (mono sample bus, SMSGGDJ T3 policy). */
         pcm_play(((note - 1) % 12) & 7);
+        v->type = IT_KIT;
         v->env_phase = 0;
         v->env_level = 0;
         v->dirty = 0;
         return;
     }
-    v->note = note;
+    v->base_note = note;
+    v->type = in->type;
     v->env_peak = in->vol;
     v->e_atk = in->atk;
     v->e_dcy = in->dcy;
@@ -86,33 +227,39 @@ static void trigger(unsigned char ch, unsigned char note, unsigned char inum)
         v->env_phase = 1;
         v->env_level = 0;
     } else {
-        v->env_phase = 2;                        /* instant attack */
+        v->env_phase = 2;
         v->env_level = in->vol;
     }
+    /* one-shot effect state resets on every note (ported semantics) */
+    v->bend = 0;
+    v->bend_rate = 0;
+    v->vib_speed = v->vib_depth = v->vib_phase = 0;
+    v->chord[0] = 0;
+    v->chord_len = 1;
+    v->chord_pos = 0;
+    v->kill_in = EMPTY;
+    v->table = (in->table < NTABLES) ? in->table : EMPTY;
+    v->tpos = 0;
+    v->tbl_tsp = 0;
+
     if (in->type == IT_WAV) {
-        /* Hardware triangle: integrate mode + feedback from tap 11 only.
-         * The inverted-parity feedback cycles the all-zero shifter through
-         * 12 ones / 12 zeros, so OUTPUT ramps +/-VOLUME for 12 shifts each
-         * way — a triangle at shiftrate/24. That is 12x the square's
-         * divider: look the note up +43 semitones (2 cents off 12x).
-         * Peak = 12 * step: keep instrument vol <= 10 or the 8-bit
-         * accumulator wraps. */
-        unsigned char n = note + 43;    /* extended table entries 96..138 */
-        v->sh_feedback = 0x80;
-        v->sh_bkup = note_bkup[n - 1];
-        v->sh_ctl = AUD_ENABLE_COUNT | AUD_ENABLE_RELOAD | AUD_INTEGRATE
-                    | note_clock[n - 1];
+        v->sh_feedback = 0x80;          /* tap-11 triangle carrier */
+        v->sh_ctl = AUD_INTEGRATE;
     } else {
         v->sh_feedback = (in->type == IT_NOISE)
                          ? timbre_noise[in->timbre & 7]
                          : timbre_tone[in->timbre & 7];
-        v->sh_bkup = note_bkup[note - 1];
-        v->sh_ctl = AUD_ENABLE_COUNT | AUD_ENABLE_RELOAD
-                    | note_clock[note - 1];
+        v->sh_ctl = 0;
     }
     v->sh_pan = in->pan;
+    v->sh_bkup = 0;                     /* pitch_update programs it */
+    pitch_update(ch);
+    v->sh_ctl |= AUD_ENABLE_COUNT | AUD_ENABLE_RELOAD;
+    v->retime = 1;
     v->dirty = 1;
 }
+
+/* --- envelope / flush (unchanged discipline) --- */
 
 static void envelope(unsigned char ch)
 {
@@ -135,7 +282,7 @@ static void envelope(unsigned char ch)
         return;
     case 3:
         if (v->e_dcy == 0)
-            return;                              /* sustain until next note */
+            return;
         if (l <= v->e_dcy) {
             l = 0;
             v->env_phase = 0;
@@ -164,37 +311,27 @@ static void flush(unsigned char ch)
         h->volume = 0;
         return;
     }
-    h->control = 0;                              /* stop while retiming */
-    h->feedback = v->sh_feedback;
-    h->dac = 0;
-    h->shiftlo = 0;
-    h->other = 0;
-    h->count = v->sh_bkup;
+    if (v->retime) {
+        v->retime = 0;
+        h->control = 0;                 /* full reprogram (trigger/clock) */
+        h->feedback = v->sh_feedback;
+        h->dac = 0;
+        h->shiftlo = 0;
+        h->other = 0;
+        h->count = v->sh_bkup;
+        h->reload = v->sh_bkup;
+        h->volume = v->env_level;
+        (&MIKEY.attena)[ch] = v->sh_pan;
+        h->control = v->sh_ctl;
+        return;
+    }
+    /* running update: reload + volume only — never restart the phase */
     h->reload = v->sh_bkup;
     h->volume = v->env_level;
-    (&MIKEY.attena)[ch] = v->sh_pan;             /* L/R nibbles (Lynx II) */
-    h->control = v->sh_ctl;
 }
 
-/* Volume-only update: never restarts the oscillator (envelope ticks would
- * otherwise glitch the phase). */
-static void flush_vol(unsigned char ch)
-{
-    volatile struct _mikey_audio *h = CHAN[ch];
-    struct voice *v = &voices[ch];
+/* --- walkers (M5, unchanged) --- */
 
-    if (!v->dirty)
-        return;
-    v->dirty = 0;
-    h->volume = (v->env_phase == 0) ? 0 : v->env_level;
-    if (v->env_phase == 0)
-        h->control = 0;
-}
-
-/* --- walkers --- */
-
-/* Load track ch's walker from song row `row` (first row at/after with a
- * chain; EMPTY row 0 after wrap = inactive). */
 static void walk_load_song(unsigned char ch, unsigned char row)
 {
     struct walk *w = &eng_walk[ch];
@@ -216,13 +353,12 @@ static void walk_load_song(unsigned char ch, unsigned char row)
                 return;
             }
             if (cn == EMPTY)
-                break;              /* first hole ends the track (ported) */
+                break;
         }
-        row = 0;                    /* wrap once: loop the song */
+        row = 0;
     }
 }
 
-/* Advance track ch one phrase row; steps chain / song row as phrases end. */
 static void walk_advance(unsigned char ch)
 {
     struct walk *w = &eng_walk[ch];
@@ -232,43 +368,53 @@ static void walk_advance(unsigned char ch)
     if (++w->prow < PHRASE_ROWS)
         return;
     w->prow = 0;
-
-    if (eng_mode == MODE_PHRASE)                 /* loop one phrase */
+    if (eng_mode == MODE_PHRASE)
         return;
-
     ++w->cpos;
     if (w->cpos < PHRASE_ROWS && sd.chains[w->chain][w->cpos].phrase != EMPTY) {
         w->phrase = sd.chains[w->chain][w->cpos].phrase;
         w->tsp = sd.chains[w->chain][w->cpos].tsp;
         return;
     }
-    /* chain ended */
-    if (eng_mode == MODE_CHAIN) {                /* loop the chain */
+    if (eng_mode == MODE_CHAIN) {
         w->cpos = 0;
         w->phrase = sd.chains[w->chain][0].phrase;
         w->tsp = sd.chains[w->chain][0].tsp;
         return;
     }
-    walk_load_song(ch, w->song_row + 1);         /* MODE_SONG */
+    walk_load_song(ch, w->song_row + 1);
 }
 
-/* returns 1 if a note was triggered on this row */
-static unsigned char row_trigger(unsigned char ch)
+/* row start for one track: D-peek, trigger, phrase command */
+static void row_start(unsigned char ch)
 {
     struct walk *w = &eng_walk[ch];
     struct step *s;
     unsigned char n;
 
     if (!w->active)
-        return 0;
+        return;
     s = &sd.phrases[w->phrase][w->prow];
-    if (!s->note)
-        return 0;
-    n = s->note + w->tsp;
-    if (n < NOTE_MIN || n > NOTE_MAX)
-        n = s->note;
-    trigger(ch, n, s->instr);
-    return 1;
+    if (!s->note && !s->cmd)
+        return;
+    n = 0;
+    if (s->note) {
+        n = s->note + w->tsp;
+        if (n < NOTE_MIN || n > NOTE_MAX)
+            n = s->note;
+    }
+    if (s->cmd == CMD_D && s->param) {          /* delayed trigger */
+        if (n) {
+            voices[ch].dly_in = s->param;
+            voices[ch].dly_note = n;
+            voices[ch].dly_instr = s->instr;
+        }
+        return;
+    }
+    if (n)
+        trigger(ch, n, s->instr);
+    if (s->cmd && s->cmd != CMD_D)
+        exec_cmd(ch, s->cmd, s->param);
 }
 
 void engine_stop(void)
@@ -280,6 +426,7 @@ void engine_stop(void)
         voices[ch].env_phase = 0;
         voices[ch].env_level = 0;
         voices[ch].dirty = 0;
+        voices[ch].dly_in = EMPTY;
         eng_walk[ch].active = 0;
         CHAN[ch]->control = 0;
         CHAN[ch]->volume = 0;
@@ -290,6 +437,8 @@ static void play_common(void)
 {
     eng_tick = 0;
     eng_gpos = 0;
+    eng_groove = 0;
+    row_ticks = sd.grooves[0][0] ? sd.grooves[0][0] : 6;
 }
 
 void engine_play_song(unsigned char row)
@@ -334,38 +483,61 @@ void engine_play_phrase(unsigned char track, unsigned char phrase)
     eng_mode = MODE_PHRASE;
 }
 
-/* Editor prelisten on voice 0; envelope keeps ticking while stopped so the
- * note decays naturally. */
 void engine_audition(unsigned char note, unsigned char inum)
 {
     trigger(0, note, inum);
     flush(0);
-    voices[0].dirty = 0;
 }
 
 void engine_tick(void)
 {
     unsigned char ch;
-    unsigned char trig = 0;
 
-    if (eng_playing && eng_tick == 0)
-        trig = 1;
+    if (eng_playing && eng_tick == 0) {
+        unsigned char g = sd.grooves[eng_groove][eng_gpos];
+        row_ticks = g ? g : 6;
+        for (ch = 0; ch < NCH; ++ch)
+            row_start(ch);
+    }
 
     for (ch = 0; ch < NCH; ++ch) {
-        if (trig && row_trigger(ch))
-            flush(ch);
-        else {
-            envelope(ch);
-            flush_vol(ch);
+        struct voice *v = &voices[ch];
+
+        /* delayed trigger countdown (dly_note guards the boot BSS state) */
+        if (v->dly_in != EMPTY && v->dly_note && v->dly_in-- == 0) {
+            trigger(ch, v->dly_note, v->dly_instr);
+            v->dly_in = EMPTY;
         }
+        if (v->env_phase) {
+            table_step(ch);
+            if (v->bend_rate)
+                v->bend += v->bend_rate;
+            if (v->vib_depth)
+                v->vib_phase += v->vib_speed + 1;
+            if (v->chord_len > 1
+                && ++v->chord_pos >= v->chord_len)
+                v->chord_pos = 0;
+            pitch_update(ch);
+            envelope(ch);
+            if (v->kill_in != EMPTY) {
+                if (v->kill_in == 0) {
+                    v->env_phase = 0;
+                    v->env_level = 0;
+                    v->kill_in = EMPTY;
+                    v->dirty = 1;
+                } else
+                    --v->kill_in;
+            }
+        }
+        flush(ch);
     }
 
     if (!eng_playing)
         return;
 
-    if (++eng_tick >= groove[eng_gpos]) {
+    if (++eng_tick >= row_ticks) {
         eng_tick = 0;
-        if (++eng_gpos >= sizeof(groove))
+        if (++eng_gpos >= 16 || sd.grooves[eng_groove][eng_gpos] == 0)
             eng_gpos = 0;
         for (ch = 0; ch < NCH; ++ch)
             walk_advance(ch);
