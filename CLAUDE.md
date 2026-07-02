@@ -13,12 +13,33 @@ while exploiting everything unique to the Lynx sound hardware (Mikey's 4 channel
 LFSR/polynomial-counter synthesis, per-channel 8-bit DAC access, stereo panning on
 later hardware). The ROM and project name is **ALYNXDJ**.
 
-**Current state: greenfield.** No code, no toolchain, no Makefile, no design docs
-exist yet. The first tasks per the brief are: (1) set up a Lynx toolchain plus
-**headless emulation** so progress can be self-verified (screenshots, like
-GENMDDJ's `make shot` retroshot harness), (2) write the design/plan documents,
-deciding what ports from the sibling trackers and what is Lynx-unique, then
-(3) build in milestones.
+**DESIGN.md is the contract** (with a §0 decision log — read it before design
+decisions, don't re-litigate settled ones); **PLAN.md** holds the milestone
+table (M0 toolchain ✅ done; M1 boot next). Key settled decisions: 4 identical
+tracks each playing TONE/NOISE/WAV/KIT (D1), cc65 C editor + ca65 asm
+driver/IRQ/render (D2), 75 Hz VBlank engine tick with no region split (D3),
+flat RAM song block but **packed/RLE EEPROM save — 2 KB 93C86 is the whole
+persistence budget** (D4/D10), per-channel timer-IRQ PCM capped at 2 voices
+(D5/D6), 4×6 font on a 40×17 grid (D7).
+
+## Build and verify
+
+```sh
+make          # cl65 -t lynx → build/alynxdj.lnx
+make shot     # headless Handy run → build/shot.png + build/shot.ppm.wav (audio!)
+              # FRAMES=n and BTN=maskHex or BTN=mask@frames,mask@frames,... for input
+make clean
+```
+
+- Toolchain: **cc65** (Homebrew). `src/lowcode.s` works around a cc65 2.18
+  lynx.cfg bug (optional LOWCODE segment vs defdir.s's unconditional
+  `__LOWCODE_SIZE__` import) — keep it linked.
+- `tools/emu/retroshot` (harness.c, ported from GENMDDJ) drives
+  `handy_libretro.dylib` with **no lynxboot.img** — Handy HLE-boots the cart
+  and logs a harmless BIOS warning. It captures the last frame (PPM→PNG) and
+  the full audio (WAV) — the WAV is how sound milestones get FFT-verified.
+- Handy is dev-speed, not silicon: its LFSR-timbre and DAC-timing fidelity is
+  suspect (DESIGN.md Q4) — hardware passes at M6/M7.
 
 ## The reference projects (read before designing anything)
 
@@ -57,13 +78,14 @@ stale flashes, and per-region timing tables where applicable.
   a makelogo.py-style pipeline).
 - `task.txt` — the original project brief.
 
-## Toolchain notes (to be decided and pinned in DESIGN.md)
+## Hardware quick facts (full picture: DESIGN.md §1)
 
-Nothing is installed or committed yet. The Lynx's CPU is a 65C02 (Mikey), so the
-sibling Z80/68k assemblers do not carry over; the established Lynx homebrew
-toolchain is **cc65** (`ca65`/`cl65` with the `lynx` target, which can produce a
-headered `.lnx` ROM). Emulation candidates for the headless harness: the
-**handy/holani/mednafen** Lynx cores under a libretro screenshot runner (port of
-GENMDDJ's retroshot). Whatever is chosen, record it (and its gotchas) here and in
-DESIGN.md, and keep the GENMDDJ pattern: `make` → `build/alynxdj.lnx`,
-`make shot` → headless `build/shot.png`, `make run` → windowed emulator.
+65C02 @ ~4 MHz, **64 KB unified RAM — code, song, and framebuffer all live in
+it** (the cart is a block-serial device, streamed not mapped). Video 160×102
+4bpp framebuffer, ~75 Hz. Mikey audio: 4 identical channels ($FD20+8n), each
+a 12-bit LFSR polynomial counter = square / pitched noise / integrate ramps,
+**or a directly-written 8-bit signed DAC** (the PCM path). Stereo ATTEN on
+Lynx II only (write-always, D8). ComLynx UART = the sync bus. Saves go to a
+93Cxx EEPROM, **2 KB max** — the design's tightest constraint. cc65's
+`_mikey.h`/`_suzy.h` (in `/opt/homebrew/share/cc65/include/`) are the local
+authoritative register maps.
