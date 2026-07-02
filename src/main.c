@@ -109,7 +109,8 @@ static void song_new(void)
 /* demo song until the sample pool ships a real one:
  * T1 = C-major arp (chain 0: phrase 0, then phrase 0 transposed +12)
  * T2 = bass roots   (chain 1: phrase 1)
- * T3 = offbeat blips (chain 2: phrase 2) */
+ * T3 = offbeat blips (chain 2: phrase 2)
+ * T4 = noise hats   (chain 3: phrase 3, instrument 1) */
 static void song_demo(void)
 {
     static const unsigned char arp[16] = {
@@ -119,12 +120,33 @@ static void song_demo(void)
     unsigned char i;
 
     song_new();
+
+    /* instrument 0: default square lead; 1: noise hat; 2: sustained bass */
+    sd.instrs[0].type = IT_TONE;
+    sd.instrs[0].vol = 0x7F;
+    sd.instrs[0].hold = 2;
+    sd.instrs[0].dcy = 32;
+    sd.instrs[1].type = IT_NOISE;
+    sd.instrs[1].vol = 0x60;
+    sd.instrs[1].timbre = 7;
+    sd.instrs[1].dcy = 24;
+    sd.instrs[2].type = IT_TONE;
+    sd.instrs[2].vol = 0x70;
+    sd.instrs[2].hold = 8;
+    sd.instrs[2].dcy = 8;
+
     for (i = 0; i < 16; ++i)
         sd.phrases[0][i].note = arp[i];
-    for (i = 0; i < 16; i += 4)
+    for (i = 0; i < 16; i += 4) {
         sd.phrases[1][i].note = N(2,0);            /* C-2 bass */
+        sd.phrases[1][i].instr = 2;
+    }
     for (i = 2; i < 16; i += 4)
         sd.phrases[2][i].note = N(5,7);            /* G-5 blips */
+    for (i = 0; i < 16; i += 2) {
+        sd.phrases[3][i].note = N(6,0);            /* hat clock */
+        sd.phrases[3][i].instr = 1;
+    }
 
     sd.chains[0][0].phrase = 0;
     sd.chains[0][1].phrase = 0;
@@ -133,13 +155,15 @@ static void song_demo(void)
     sd.chains[1][1].phrase = 1;
     sd.chains[2][0].phrase = 2;
     sd.chains[2][1].phrase = 2;
+    sd.chains[3][0].phrase = 3;
+    sd.chains[3][1].phrase = 3;
 
-    sd.song[0][0] = 0;
-    sd.song[0][1] = 1;
-    sd.song[0][2] = 2;
-    sd.song[1][0] = 0;
-    sd.song[1][1] = 1;
-    sd.song[1][2] = 2;
+    for (i = 0; i < 2; ++i) {
+        sd.song[i][0] = 0;
+        sd.song[i][1] = 1;
+        sd.song[i][2] = 2;
+        sd.song[i][3] = 3;
+    }
 }
 
 void main(void)

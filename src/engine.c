@@ -30,15 +30,24 @@ struct voice {
     unsigned char env_level;
     unsigned char env_peak;
     unsigned char hold_left;
+    unsigned char e_atk, e_dcy; /* latched from the instrument at trigger */
     unsigned char sh_vol, sh_feedback, sh_bkup, sh_ctl;
     unsigned char dirty;
 };
 
-#define ENV_ATTACK  64
-#define ENV_HOLD    2
-#define ENV_DECAY   32
-
 static struct voice voices[NCH];
+
+/* LFSR tap presets (feedback register values) — the timbre banks.
+ * Preset 0 of the tone bank is the proven square; the rest are a spread of
+ * short-loop (buzzy, pitched) to long-loop (noisy) tap sets. Curated on
+ * real hardware at the Q4 pass — Handy's shifter is the reference until
+ * then. Taps: bits 0-5 = LFSR taps 0-5, bit 6 = tap 10, bit 7 = tap 11. */
+static const unsigned char timbre_tone[8] = {
+    0x01, 0x03, 0x07, 0x0F, 0x1F, 0x3F, 0x43, 0xC1,
+};
+static const unsigned char timbre_noise[8] = {
+    0x81, 0x83, 0x87, 0x8F, 0x9F, 0xBF, 0xC3, 0xFF,
+};
 
 static const unsigned char groove[2] = {6, 6};
 
@@ -52,15 +61,26 @@ static volatile struct _mikey_audio *const CHAN[NCH] = {
     &MIKEY.channel_a, &MIKEY.channel_b, &MIKEY.channel_c, &MIKEY.channel_d,
 };
 
-static void trigger(unsigned char ch, unsigned char note)
+static void trigger(unsigned char ch, unsigned char note, unsigned char inum)
 {
     struct voice *v = &voices[ch];
+    struct instr *in = &sd.instrs[inum < NINSTR ? inum : 0];
+
     v->note = note;
-    v->env_phase = 1;
-    v->env_level = 0;
-    v->env_peak = 0x7F;
-    v->hold_left = ENV_HOLD;
-    v->sh_feedback = 0x01;                       /* square (M2 recipe) */
+    v->env_peak = in->vol;
+    v->e_atk = in->atk;
+    v->e_dcy = in->dcy;
+    v->hold_left = in->hold;
+    if (in->atk) {
+        v->env_phase = 1;
+        v->env_level = 0;
+    } else {
+        v->env_phase = 2;                        /* instant attack */
+        v->env_level = in->vol;
+    }
+    v->sh_feedback = (in->type == IT_NOISE)
+                     ? timbre_noise[in->timbre & 7]
+                     : timbre_tone[in->timbre & 7];
     v->sh_bkup = note_bkup[note - 1];
     v->sh_ctl = AUD_ENABLE_COUNT | AUD_ENABLE_RELOAD | note_clock[note - 1];
     v->dirty = 1;
@@ -73,11 +93,11 @@ static void envelope(unsigned char ch)
 
     switch (v->env_phase) {
     case 1:
-        if (l >= v->env_peak - ENV_ATTACK) {
+        if (l >= v->env_peak - v->e_atk) {
             l = v->env_peak;
             v->env_phase = 2;
         } else
-            l += ENV_ATTACK;
+            l += v->e_atk;
         break;
     case 2:
         if (v->hold_left == 0)
@@ -86,11 +106,13 @@ static void envelope(unsigned char ch)
             --v->hold_left;
         return;
     case 3:
-        if (l <= ENV_DECAY) {
+        if (v->e_dcy == 0)
+            return;                              /* sustain until next note */
+        if (l <= v->e_dcy) {
             l = 0;
             v->env_phase = 0;
         } else
-            l -= ENV_DECAY;
+            l -= v->e_dcy;
         break;
     default:
         return;
@@ -216,7 +238,7 @@ static unsigned char row_trigger(unsigned char ch)
     n = s->note + w->tsp;
     if (n < NOTE_MIN || n > NOTE_MAX)
         n = s->note;
-    trigger(ch, n);
+    trigger(ch, n, s->instr);
     return 1;
 }
 
@@ -284,9 +306,9 @@ void engine_play_phrase(unsigned char track, unsigned char phrase)
 
 /* Editor prelisten on voice 0; envelope keeps ticking while stopped so the
  * note decays naturally. */
-void engine_audition(unsigned char note)
+void engine_audition(unsigned char note, unsigned char inum)
 {
-    trigger(0, note);
+    trigger(0, note, inum);
     flush(0);
     voices[0].dirty = 0;
 }

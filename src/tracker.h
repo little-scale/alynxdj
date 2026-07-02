@@ -8,7 +8,14 @@
 #define SONG_ROWS   128
 #define NCHAINS     32
 #define NPHRASES    64
+#define NINSTR      32
 #define EMPTY       0xFF
+
+#define IT_TONE  0
+#define IT_NOISE 1
+#define IT_WAV   2      /* M8 */
+#define IT_KIT   3      /* M7 */
+#define NTYPES   2      /* editable range today */
 
 struct step {
     unsigned char note;     /* 0 = empty, 1..96 = C-1..B-8 */
@@ -22,10 +29,25 @@ struct chainstep {
     signed char   tsp;      /* semitone transpose for the whole phrase */
 };
 
+/* 16-byte fixed record, union-by-type later (DESIGN.md §6) */
+struct instr {
+    unsigned char type;     /* IT_* */
+    unsigned char vol;      /* envelope peak, $00-$7F */
+    unsigned char atk;      /* level += atk/tick; 0 = instant */
+    unsigned char hold;     /* ticks at peak */
+    unsigned char dcy;      /* level -= dcy/tick; 0 = sustain */
+    unsigned char timbre;   /* LFSR tap preset 0-7 within the type's bank */
+    unsigned char table;    /* $FF = none (M6b) */
+    unsigned char pan;      /* L/R nibbles (M8) */
+    signed char   fine;     /* (M9) */
+    unsigned char pad[7];
+};
+
 struct songdata {
     unsigned char    song[SONG_ROWS][NCH];
     struct chainstep chains[NCHAINS][PHRASE_ROWS];
     struct step      phrases[NPHRASES][PHRASE_ROWS];
+    struct instr     instrs[NINSTR];
 };
 extern struct songdata sd;
 
@@ -51,7 +73,7 @@ void engine_stop(void);
 void engine_play_song(unsigned char row);
 void engine_play_chain(unsigned char track, unsigned char chain);
 void engine_play_phrase(unsigned char track, unsigned char phrase);
-void engine_audition(unsigned char note);
+void engine_audition(unsigned char note, unsigned char inum);
 
 void sound_init(void);
 

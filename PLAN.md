@@ -40,7 +40,7 @@ and data model live in cc65 C, the driver/render/IRQ paths in ca65 asm
 | M3 | ✅ **DONE** — note table (maketables.py: 96 notes C-1..B-8 as clocksel+BKUP pairs, worst error 9.5 cents at F#8 only), engine pipeline (groove → row → trigger → AHD envelope → shadow → flush, voice-0 scope), A = play/stop. **FFT-verified**: 16-row C-major arp plays all pitches within cents (261/329/393/523/658/786 Hz), 100 ms rows, clean loop. Flush discipline: full channel reprogram on trigger only; envelope ticks are volume-only writes (never restart the oscillator) | The sequencer |
 | M4 | ✅ **DONE** — PHRASE editor: 16-step grid (row/note/instr/cmd columns), inverse-video cursor + DAS key repeat, A-hold+dpad edit (±semitone/±octave, verified: C-4→C#4 auditioned at 278 Hz), A-tap-on-release insert (chord-consumption rule ported), B-held+A transport with PLAY/STOP label + accent playhead. All verified headless via scripted BTN input + RAM mirrors ($C001/2 cursor) + FFT. **Boot-to-mainloop ≈ 124 frames (cc65 C render, D2 risk on record — optimize the clear/grid paint when it matters)** | First playable build |
 | M5 | ✅ **DONE** — flat song block (`struct songdata sd`: 128×4 song, 32 chains, 64 phrases, $FF sentinels), per-track walkers (song→chain→phrase, chain-end song-row advance, wrap-once loop), contextual transport (SONG=play from cursor row / CHAIN=loop chain / PHRASE=loop phrase), SONG+CHAIN screens with shared cursor/edit/insert machinery, B-held+L/R screen nav with drill-down (loads chain/phrase under cursor), B-tap back, per-screen playheads, src/tracker.h single-source data model. **FFT-verified**: 3 tracks play together (bass C-2 + odd harmonics, arp, G-5 blips); chain step 2's +12 transpose audible (C4 vanishes, C6 appears). Nav verified via screen-id RAM mirror | Song structure |
-| M6 | Instruments: TONE timbre presets + NOISE preset list (curates Q4), INSTR screen, tables + TABLE screen, shared command executor | The voice model |
+| M6 | ✅ **instruments DONE** — 16-byte records in the song block (type/vol/AHD/timbre + reserved table/pan/fine), per-instrument AHD latched at trigger (atk 0 = instant, dcy 0 = sustain), LFSR timbre banks (8 tone + 8 noise feedback presets — hardware curation stays Q4), INSTR screen (PHRASE→INSTR drill, field edit w/ audition). **Verified**: NOISE hats on track 4 are spectrally noise-like (top-bin share 0.018), pulse at 4.8 Hz as sequenced, bandwidth follows the note clock (C-6 → ~3.9 kHz shift rate — hiss wants higher notes); TYPE field edit TONE→NOISE on-screen. ◻️ **tables + TABLE screen + shared command executor → folded into M9** (one command pass) | The voice model |
 | M7 | **PCM** — KIT instruments: sample pool tool + cart directory, timer-IRQ DAC feed, cart block streaming, voice-steal cap (resolves Q2), `S` rate command; factory kits from `samples/` | The flagship — samples |
 | M8 | WAV voices: integrate-mode shapes + 32-byte wavetable loop, WAVE screen; stereo `O` command (ATTEN) | Synthesis depth |
 | M9 | Full command set + GROOVE screen; copy/paste/clone, block select/cut/paste; mute/solo (Option 1 layer) | Editing power |
@@ -72,8 +72,9 @@ second-opinion core.
 
 ## Status
 
-**M0–M5 done** (2026-07-02): toolchain + headless harness; boot + 59.90 Hz
-tick; squares, sequencer core, and full SONG→CHAIN→PHRASE playback all
-FFT-verified; three screens with nav/drill-down/playheads verified via
-scripted input. Next: M6 instruments (TONE timbre + NOISE presets, INSTR
-screen, tables, command executor).
+**M0–M6(instruments) done** (2026-07-02): toolchain + headless harness;
+boot + 59.90 Hz tick; squares, sequencer, full song hierarchy, and
+TONE/NOISE instruments all verified headless (FFT + scripted input). Four
+screens: SONG/CHAIN/PHRASE/INSTR. Next: M7 PCM samples (the flagship), or
+M9-part (tables + command executor) — either order works; M7 is the
+higher-risk item (Q2), so it goes first.

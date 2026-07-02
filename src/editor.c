@@ -19,6 +19,7 @@
 #define SCR_SONG   0
 #define SCR_CHAIN  1
 #define SCR_PHRASE 2
+#define SCR_INSTR  3
 
 #define GRID_TOP 1
 
@@ -26,11 +27,13 @@ static unsigned char screen;
 static unsigned char cur_track;         /* set by the SONG cursor column */
 static unsigned char edit_chain;        /* what CHAIN shows */
 static unsigned char edit_phrase;       /* what PHRASE shows */
+static unsigned char edit_instr;        /* what INSTR shows */
 
 /* per-screen cursors */
 static unsigned char s_row, s_col;      /* SONG: 0-127 x 0-3 */
 static unsigned char c_row, c_col;      /* CHAIN: 0-15 x {phrase,tsp} */
 static unsigned char p_row, p_col;      /* PHRASE: 0-15 x {note,instr,cmd} */
+static unsigned char i_row;             /* INSTR: field index */
 
 /* last-entered memory (insert repeats it, ported) */
 static unsigned char last_note = 37;    /* C-4 */
@@ -63,6 +66,10 @@ static void top_bar(void)
     case SCR_PHRASE:
         draw_text(1, 0, "PHRASE", PEN_ACCENT, PEN_BG);
         draw_hex8(8, 0, edit_phrase, PEN_TEXT, PEN_BG);
+        break;
+    case SCR_INSTR:
+        draw_text(1, 0, "INSTR", PEN_ACCENT, PEN_BG);
+        draw_hex8(7, 0, edit_instr, PEN_TEXT, PEN_BG);
         break;
     }
     draw_text(12, 0, "T", PEN_DIM, PEN_BG);
@@ -180,6 +187,50 @@ static void draw_phrase_screen(void)
         draw_phrase_row(r, r == p_row);
 }
 
+/* --- INSTR screen: field rows --- */
+
+#define NIFIELDS 6
+static const char *const ifield_name[NIFIELDS] = {
+    "TYPE", "VOL", "ATK", "HOLD", "DCY", "TIMBRE",
+};
+static const char *const itype_name[4] = { "TONE", "NOISE", "WAV", "KIT" };
+
+static unsigned char *ifield_ptr(unsigned char f)
+{
+    struct instr *in = &sd.instrs[edit_instr];
+    switch (f) {
+    case 0: return &in->type;
+    case 1: return &in->vol;
+    case 2: return &in->atk;
+    case 3: return &in->hold;
+    case 4: return &in->dcy;
+    default: return &in->timbre;
+    }
+}
+
+static void draw_instr_row(unsigned char r, unsigned char cursor_here)
+{
+    unsigned char y = GRID_TOP + r;
+    unsigned char fg = cursor_here ? PEN_BG : PEN_TEXT;
+    unsigned char bg = cursor_here ? PEN_TEXT : PEN_BG;
+
+    if (r >= NIFIELDS)
+        return;
+    draw_text(1, y, ifield_name[r], PEN_DIM, PEN_BG);
+    if (r == 0) {
+        draw_text(8, y, "     ", PEN_BG, PEN_BG);
+        draw_text(8, y, itype_name[sd.instrs[edit_instr].type & 3], fg, bg);
+    } else
+        draw_hex8(8, y, *ifield_ptr(r), fg, bg);
+}
+
+static void draw_instr_screen(void)
+{
+    unsigned char r;
+    for (r = 0; r < NIFIELDS; ++r)
+        draw_instr_row(r, r == i_row);
+}
+
 /* --- dispatch --- */
 
 static void draw_row(unsigned char r, unsigned char cursor_here)
@@ -188,6 +239,7 @@ static void draw_row(unsigned char r, unsigned char cursor_here)
     case SCR_SONG:   draw_song_row(r, cursor_here); break;
     case SCR_CHAIN:  draw_chain_row(r, cursor_here); break;
     case SCR_PHRASE: draw_phrase_row(r, cursor_here); break;
+    case SCR_INSTR:  draw_instr_row(r, cursor_here); break;
     }
 }
 
@@ -200,6 +252,7 @@ static void draw_screen(void)
     case SCR_SONG:   draw_song_screen(); break;
     case SCR_CHAIN:  draw_chain_screen(); break;
     case SCR_PHRASE: draw_phrase_screen(); break;
+    case SCR_INSTR:  draw_instr_screen(); break;
     }
     MIRROR_SCREEN = screen;
 }
@@ -209,6 +262,7 @@ static unsigned char cursor_vrow(void)
     switch (screen) {
     case SCR_SONG:  return s_row & 0x0F;
     case SCR_CHAIN: return c_row;
+    case SCR_INSTR: return i_row;
     default:        return p_row;
     }
 }
@@ -218,6 +272,7 @@ static void mirror_cursor(void)
     switch (screen) {
     case SCR_SONG:  MIRROR_ROW = s_row; MIRROR_COL = s_col; break;
     case SCR_CHAIN: MIRROR_ROW = c_row; MIRROR_COL = c_col; break;
+    case SCR_INSTR: MIRROR_ROW = i_row; MIRROR_COL = 0; break;
     default:        MIRROR_ROW = p_row; MIRROR_COL = p_col; break;
     }
 }
@@ -254,6 +309,12 @@ static void move_cursor(unsigned char dir)
         case 1: if (c_row < 15) ++c_row; else c_row = 0; break;
         case 2: if (c_col) --c_col; break;
         case 3: if (c_col < 1) ++c_col; break;
+        }
+        break;
+    case SCR_INSTR:
+        switch (dir) {
+        case 0: if (i_row) --i_row; else i_row = NIFIELDS - 1; break;
+        case 1: if (i_row < NIFIELDS - 1) ++i_row; else i_row = 0; break;
         }
         break;
     default:
@@ -329,7 +390,7 @@ static void edit_phrase_cell(unsigned char dir)
         s->note = n;
         last_note = n;
         if (!eng_mode)
-            engine_audition(n);
+            engine_audition(n, s->instr);
     } else if (p_col == 1 && s->note) {
         switch (dir) {
         case 0: s->instr += 16; break;
@@ -340,12 +401,40 @@ static void edit_phrase_cell(unsigned char dir)
     }
 }
 
+/* clamp table per field: {max, small step, big step} */
+static const unsigned char ifield_lim[NIFIELDS][3] = {
+    {NTYPES - 1, 1, 1},     /* TYPE cycles the shipped types */
+    {0x7F, 1, 16},          /* VOL */
+    {0x7F, 1, 16},          /* ATK */
+    {0x7F, 1, 16},          /* HOLD */
+    {0x7F, 1, 16},          /* DCY */
+    {7, 1, 1},              /* TIMBRE */
+};
+
+static void edit_instr_cell(unsigned char dir)
+{
+    unsigned char *p = ifield_ptr(i_row);
+    unsigned char max = ifield_lim[i_row][0];
+    unsigned char stp = (dir < 2) ? ifield_lim[i_row][2]
+                                  : ifield_lim[i_row][1];
+    unsigned char v = *p;
+
+    if (dir == 0 || dir == 3)
+        v = (v + stp <= max) ? v + stp : max;
+    else
+        v = (v >= stp) ? v - stp : 0;
+    *p = v;
+    if (!eng_mode)
+        engine_audition(last_note, edit_instr);
+}
+
 static void edit_cell(unsigned char dir)
 {
     switch (screen) {
     case SCR_SONG:   edit_song_cell(dir); break;
     case SCR_CHAIN:  edit_chain_cell(dir); break;
     case SCR_PHRASE: edit_phrase_cell(dir); break;
+    case SCR_INSTR:  edit_instr_cell(dir); break;
     }
     draw_row(cursor_vrow(), 1);
 }
@@ -365,7 +454,8 @@ static void insert_cell(void)
         if (p_col == 0 && !sd.phrases[edit_phrase][p_row].note) {
             sd.phrases[edit_phrase][p_row].note = last_note;
             if (!eng_mode)
-                engine_audition(last_note);
+                engine_audition(last_note,
+                                sd.phrases[edit_phrase][p_row].instr);
         }
         break;
     }
@@ -390,10 +480,17 @@ static void nav(unsigned char to_right)
             if (pn != EMPTY)
                 edit_phrase = pn;
             screen = SCR_PHRASE;
+        } else if (screen == SCR_PHRASE) {
+            struct step *s = &sd.phrases[edit_phrase][p_row];
+            if (s->note)
+                edit_instr = s->instr < NINSTR ? s->instr : 0;
+            screen = SCR_INSTR;
         } else
             return;
     } else {
-        if (screen == SCR_PHRASE)
+        if (screen == SCR_INSTR)
+            screen = SCR_PHRASE;
+        else if (screen == SCR_PHRASE)
             screen = SCR_CHAIN;
         else if (screen == SCR_CHAIN)
             screen = SCR_SONG;
@@ -429,6 +526,8 @@ static void playhead_update(void)
         return;
     }
 
+    if (screen == SCR_INSTR)
+        return;
     r = 0xFF;
     if (screen == SCR_CHAIN) {
         if (eng_mode && eng_walk[cur_track].active
