@@ -156,6 +156,32 @@ unsigned char save_load(void)
     return ST_OK;
 }
 
+/* --- machine config: the top 4 EEPROM cells (1020-1023), written on
+ * OPTIONS edits, loaded at boot. Layout: 1020 = 'C'|'F'<<8,
+ * 1021 = palette | prelisten<<8, 1022 = repeat | sync<<8, 1023 spare. */
+
+void config_save(void)
+{
+    ee_write(1020, 'C' | ('F' << 8));
+    ee_write(1021, opt_palette | ((unsigned)opt_prelisten << 8));
+    ee_write(1022, opt_repeat | ((unsigned)sync_mode << 8));
+}
+
+void config_load(void)
+{
+    unsigned v;
+    if (ee_read(1020) != ('C' | ('F' << 8)))
+        return;
+    v = ee_read(1021);
+    opt_palette = (unsigned char)v % NPALETTES;
+    opt_prelisten = (v >> 8) ? 1 : 0;
+    v = ee_read(1022);
+    opt_repeat = (unsigned char)v;
+    if (opt_repeat < 4 || opt_repeat > 30)
+        opt_repeat = 12;
+    sync_mode = (v >> 8) % NSYNC;
+}
+
 /* 16-bit additive checksum of the song block (harness verification) */
 unsigned save_sum(void)
 {

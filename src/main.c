@@ -294,6 +294,7 @@ void main(void)
     unsigned char last = 0xFF;
     unsigned char joy, prev_joy = 0;
 
+    config_load();
     palette_init();
     screen_clear();
     MIKEY.scrbase = SCREEN;

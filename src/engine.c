@@ -78,6 +78,7 @@ const unsigned char env_rate[16] = {
 
 unsigned char eng_mode;
 unsigned char eng_mute;         /* per-track mute bitmask (editor-owned) */
+unsigned char eng_level[NCH];   /* live per-track levels (meters) */
 #define eng_playing (eng_mode)
 
 static unsigned char eng_tick;
@@ -757,6 +758,7 @@ void engine_tick(void)
             wave_stop();
         }
         flush(ch);
+        eng_level[ch] = (eng_mute & (1 << ch)) ? 0 : v->env_level;
     }
 
     if (!eng_playing)

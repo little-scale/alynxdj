@@ -56,6 +56,10 @@ swing is preserved. Plus free-chain/phrase counters.
 
 **OPTIONS:** SYNC (ComLynx OFF/OUT/IN), PRELIS (audition-on-edit on/off),
 REPEAT (key-repeat delay), PALETTE (six colour schemes, applied live).
+OPTIONS settings persist in the cart EEPROM alongside the song.
+
+Below the map indicator, four **channel meters** show live per-track
+levels during playback.
 
 The map rows also navigate horizontally: B-held+←/→ moves FILES↔GROOVE
 and OPTIONS↔PROJECT↔WAVE.

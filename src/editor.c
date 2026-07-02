@@ -98,6 +98,9 @@ static unsigned char last_note = 37;    /* C-4 */
 static unsigned char last_chain = 0;
 static unsigned char last_phrase = 0;
 
+/* channel activity meters (right column): cached bar heights */
+static unsigned char meter_h[NCH] = {0xFF, 0xFF, 0xFF, 0xFF};
+
 /* playhead bookkeeping: what's currently accented, per screen */
 static unsigned char ph_song[NCH];      /* drawn song row per track, $FF none */
 static unsigned char ph_row = 0xFF;     /* CHAIN/PHRASE drawn row */
@@ -724,6 +727,7 @@ static void draw_screen(void)
     case SCR_OPTS:   draw_opts_screen(); break;
     }
     draw_map();
+    meter_h[0] = meter_h[1] = meter_h[2] = meter_h[3] = 0xFF;
     MIRROR_SCREEN = screen;
 }
 
@@ -1134,6 +1138,7 @@ static void edit_cell(unsigned char dir)
             palette_apply();
             break;
         }
+        config_save();
         draw_opts_row(o_row, 1);
         return;
     case SCR_WAVE: {
@@ -1605,12 +1610,31 @@ void editor_init(void)
     mirror_cursor();
 }
 
+static void meters_update(void)
+{
+    unsigned char t, h, i;
+    char b[2];
+
+    b[1] = 0;
+    for (t = 0; t < NCH; ++t) {
+        h = eng_level[t] >> 5;          /* 0-3 bar cells */
+        if (h == meter_h[t])
+            continue;
+        meter_h[t] = h;
+        for (i = 0; i < 3; ++i) {
+            b[0] = (i < h) ? '#' : ' ';
+            draw_text(MAP_X + 1 + t, GRID_TOP + 7 - i, b, PEN_ACCENT, PEN_BG);
+        }
+    }
+}
+
 void editor_frame(unsigned char joy, unsigned char prev)
 {
     unsigned char pressed = joy & ~prev;
     unsigned char dir = 0xFF;
 
     playhead_update();
+    meters_update();
     if (a_release_age != 0xFF)
         ++a_release_age;
 

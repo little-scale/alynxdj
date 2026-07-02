@@ -130,6 +130,7 @@ extern struct walk eng_walk[NCH];
 extern unsigned char eng_mode;
 extern unsigned char eng_mute;
 extern unsigned char eng_gpos, eng_groove;
+extern unsigned char eng_level[NCH];
 void __fastcall__ engine_set_mute(unsigned char mask);
 
 extern const unsigned char env_rate[16];
@@ -184,13 +185,16 @@ void __fastcall__ ee_write(unsigned cell, unsigned val);
  * Full 93C86 capacity (1020 payload words) — needs the repo-built Handy
  * core (stock truncates EEPROM file loads to 1024 bytes, eeprom.cpp:59
  * — fix applied in our build; PR upstream pending). */
-#define SAVE_CAP_BYTES 2040
+#define SAVE_CAP_BYTES 2032  /* cells 1020-1023 hold the config block */
 #define ST_NONE   0
 #define ST_OK     1
 #define ST_TOOBIG 2
 #define ST_NODATA 3
 #define ST_BADSUM 4
 unsigned save_pack(void);       /* dry run: packed length, 0 = too big */
+void config_save(void);
+void config_load(void);
+extern unsigned char opt_prelisten, opt_repeat;
 unsigned char save_do(void);
 unsigned char save_load(void);
 unsigned save_sum(void);
