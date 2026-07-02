@@ -180,7 +180,10 @@ beside the ROM (format: [SAVEFORMAT.md](SAVEFORMAT.md)).
 
 ## The demo song
 
-Boots when no save exists: an arp with a table macro, a sustained bass
-(panned left), triangle blips (panned right), and 808 drums. Instruments
-6–8 (song rows 16–18) are LFSR exploration rigs — play with their TAPS
-and SEED.
+Boots when no save exists: an eight-bar A-minor groove on a 7/5 swing —
+buzzy-taps bass with `Z` ghost notes and a `J` lift, chord-shimmer arps
+(`C37`), a vibrato lead with `L` slides, sawtooth wavetable pads, seed-
+timbre plucks morphed live with `N`, and drums that move from the 808 to
+the 909 with an `R` retrig fill and speech cuts. Song rows 16+ hold the
+engine verification rigs — leave them or wipe them, they never play in
+the demo loop.

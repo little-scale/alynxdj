@@ -2,9 +2,23 @@
 
 ## V0.1 (dev, unreleased)
 
-Initial development cycle, 2026-07-02 onward. Milestones M0–M10 built and
-verified headlessly (FFT / cross-correlation / RAM-dump forensics via the
-retroshot harness); details per milestone in [PLAN.md](PLAN.md).
+Initial development cycle, 2026-07-02 onward; feature-complete against
+the design brief by 2026-07-03. Everything verified headlessly (FFT /
+cross-correlation / RAM-dump forensics via the retroshot harness);
+details per milestone in [PLAN.md](PLAN.md).
+
+### Since the first push
+- Raw LFSR exposure per instrument (9-bit TAPS + 12-bit SEED) and the
+  `N` live-morph command; nibble time-semantic envelopes + `E`
+- Cart-streamed sample pool (all 8 kits, 256 KB cart image) replacing
+  RAM-resident samples; 32-byte wavetables + WAVE screen
+- Full 22-command set (`T`/`I`/`J` with per-phrase pass counts)
+- PROJECT (TMPO rungs) + OPTIONS (sync/prelisten/repeat/palette) screens,
+  block ops, LIVE clip-launcher mode, channel meters, config persistence
+- Engine tick moved into the VBlank IRQ — tempo unaffected by rendering
+- Repo-built emulator core (EEPROM fix + ComLynx bridge exports);
+  two-unit sync lock verified at 0 ms; cc65 lynx.h _UART_TIMER bug found
+- A composed demo song (swung Am groove touring the whole instrument)
 
 ### Sound engine
 - Four voices on Mikey's four symmetric channels; per-tick pipeline

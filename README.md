@@ -26,22 +26,27 @@ as a multi-drop sync bus (planned).
 
 ## Status
 
-**V0.1 dev** — milestones M0–M10 built and verified (see
+**V0.1 dev — feature-complete against the design brief** (see
 [PLAN.md](PLAN.md) for the full table, [DESIGN.md](DESIGN.md) for the
 design contract and decision log):
 
-- Full SONG → CHAIN → PHRASE hierarchy, 7 screens
-  (SONG/CHAIN/PHRASE/INSTR/TABLE/FILES/GROOVE) + the map indicator
-- All four voice types sounding, verified by FFT / cross-correlation
-  against source samples in a headless emulator harness
-- 11 commands (`A C D G H K O P V W X`), tables, grooves,
-  1/16-semitone pitch engine (bends, vibrato, chords)
-- Cut/paste/clone, mute/solo, DAS key repeat
-- Packed save to the cart's 93C86 EEPROM with autoload
-  ([SAVEFORMAT.md](SAVEFORMAT.md))
+- Full SONG → CHAIN → PHRASE hierarchy, **all ten screens** + map
+  indicator + channel meters; engine tick in the VBlank IRQ (tempo is
+  render-independent)
+- All four voice types, with the **12-bit LFSR fully exposed** (raw taps
+  + seed per instrument) and 32-byte wavetables; everything verified by
+  FFT / cross-correlation in the headless harness
+- The **full 22-command set**, tables, grooves, block select/cut/paste,
+  clipboard, mute/solo, LIVE clip-launcher mode
+- **Cart-streamed sample pool**: all eight `samples/` kits at full
+  quality (808/909/C78/606 + four speech banks), kit-per-instrument
+- Packed save + machine config in the cart's 93C86 EEPROM with autoload
+  ([SAVEFORMAT.md](SAVEFORMAT.md)); **two-unit ComLynx sync** verified in
+  a bridged-core harness (0 ms lock)
 
-Remaining to 1.0: block ops + remaining commands (M9c), ComLynx sync
-(M11), LIVE mode + polish + a real-hardware pass (M12).
+Remaining to 1.0: the real-hardware pass (Q2/Q4, ComLynx cable, cart
+streaming on silicon) and upstream PRs (libretro-handy EEPROM fix, cc65
+`_UART_TIMER`).
 
 ## Building
 
