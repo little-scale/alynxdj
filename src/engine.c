@@ -552,7 +552,7 @@ static void row_start(unsigned char ch)
         exec_cmd(ch, s->cmd, s->param);
 }
 
-void engine_stop(void)
+static void stop_nolock(void)
 {
     unsigned char ch;
     if (eng_mode)
@@ -583,23 +583,37 @@ static void play_common(void)
     prng |= 1;                          /* never the LFSR zero state */
 }
 
+/* the engine tick runs in the VBlank IRQ: every main-thread mutation of
+ * engine state sits inside a brief IRQ-masked window */
+void engine_stop(void)
+{
+    __asm__("sei");
+    stop_nolock();
+    __asm__("cli");
+}
+
 void engine_play_song(unsigned char row)
 {
     unsigned char ch;
-    engine_stop();
+    __asm__("sei");
+    stop_nolock();
     for (ch = 0; ch < NCH; ++ch)
         walk_load_song(ch, row);
     play_common();
     eng_mode = MODE_SONG;
     sync_tx(SYNC_OP_START);
+    __asm__("cli");
 }
 
 void engine_play_chain(unsigned char track, unsigned char chain)
 {
     struct walk *w = &eng_walk[track];
-    engine_stop();
-    if (sd.chains[chain][0].phrase == EMPTY)
+    __asm__("sei");
+    stop_nolock();
+    if (sd.chains[chain][0].phrase == EMPTY) {
+        __asm__("cli");
         return;
+    }
     w->chain = chain;
     w->cpos = 0;
     w->phrase = sd.chains[chain][0].phrase;
@@ -609,12 +623,14 @@ void engine_play_chain(unsigned char track, unsigned char chain)
     w->active = 1;
     play_common();
     eng_mode = MODE_CHAIN;
+    __asm__("cli");
 }
 
 void engine_play_phrase(unsigned char track, unsigned char phrase)
 {
     struct walk *w = &eng_walk[track];
-    engine_stop();
+    __asm__("sei");
+    stop_nolock();
     w->chain = 0;
     w->cpos = 0;
     w->phrase = phrase;
@@ -624,19 +640,25 @@ void engine_play_phrase(unsigned char track, unsigned char phrase)
     w->active = 1;
     play_common();
     eng_mode = MODE_PHRASE;
+    __asm__("cli");
 }
 
 void engine_audition(unsigned char note, unsigned char inum)
 {
+    __asm__("sei");
     trigger(0, note, inum);
     flush(0);
+    __asm__("cli");
 }
 
 /* prelisten a phrase row's command too, so editing C/V/P/N... is audible */
 void __fastcall__ engine_audition_cmd(unsigned char cmd, unsigned char param)
 {
-    if (cmd && cmd != CMD_D && cmd != CMD_Z && cmd != CMD_H && cmd != CMD_L)
+    if (cmd && cmd != CMD_D && cmd != CMD_Z && cmd != CMD_H && cmd != CMD_L) {
+        __asm__("sei");
         exec_cmd(0, cmd, param);
+        __asm__("cli");
+    }
 }
 
 /* HIRAM segments are NOT cleared by cc65's zerobss — call once at boot */
@@ -644,7 +666,7 @@ void engine_init(void)
 {
     memset(voices, 0, sizeof(voices));
     memset(eng_walk, 0, sizeof(eng_walk));
-    engine_stop();
+    stop_nolock();
 }
 
 void engine_tick(void)

@@ -675,13 +675,17 @@ static void draw_opts_row(unsigned char r, unsigned char cursor_here)
         draw_text(1, GRID_TOP + 5, "REPEAT", PEN_DIM, PEN_BG);
         draw_hex8(9, GRID_TOP + 5, opt_repeat, fg, bg);
         break;
+    case 3:
+        draw_text(1, GRID_TOP + 7, "PALETTE", PEN_DIM, PEN_BG);
+        draw_hex8(9, GRID_TOP + 7, opt_palette, fg, bg);
+        break;
     }
 }
 
 static void draw_opts_screen(void)
 {
     unsigned char r;
-    for (r = 0; r < 3; ++r)
+    for (r = 0; r < 4; ++r)
         draw_opts_row(r, r == o_row);
 }
 
@@ -819,8 +823,8 @@ static void move_cursor(unsigned char dir)
     case SCR_OPTS:
         if (dir == 0 || dir == 1) {
             unsigned char old = o_row;
-            o_row = (dir == 1) ? (o_row < 2 ? o_row + 1 : 0)
-                               : (o_row ? o_row - 1 : 2);
+            o_row = (dir == 1) ? (o_row < 3 ? o_row + 1 : 0)
+                               : (o_row ? o_row - 1 : 3);
             draw_opts_row(old, 0);
             draw_opts_row(o_row, 1);
         }
@@ -1123,6 +1127,12 @@ static void edit_cell(unsigned char dir)
             else if ((dir == 1 || dir == 2) && opt_repeat > 4)
                 --opt_repeat;
             break;
+        case 3:
+            opt_palette = (dir == 0 || dir == 3)
+                          ? (opt_palette + 1) % NPALETTES
+                          : (opt_palette + NPALETTES - 1) % NPALETTES;
+            palette_apply();
+            break;
         }
         draw_opts_row(o_row, 1);
         return;
@@ -1188,6 +1198,18 @@ static void insert_cell(void)
 static void nav(unsigned char to_right)
 {
     if (to_right) {
+        if (screen == SCR_FILES) {
+            screen = SCR_GROOVE;
+            goto moved;
+        }
+        if (screen == SCR_OPTS) {
+            screen = SCR_PROJ;
+            goto moved;
+        }
+        if (screen == SCR_PROJ) {
+            screen = SCR_WAVE;
+            goto moved;
+        }
         if (screen == SCR_SONG) {
             unsigned char cn = sd.song[s_row][s_col];
             cur_track = s_col;
@@ -1212,10 +1234,20 @@ static void nav(unsigned char to_right)
         } else
             return;
     } else {
-        if (screen == SCR_WAVE)
-            screen = SCR_INSTR;
-        else if (screen == SCR_OPTS || screen == SCR_PROJ)
-            screen = (screen == SCR_OPTS) ? SCR_SONG : SCR_CHAIN;
+        if (screen == SCR_GROOVE) {
+            screen = SCR_FILES;
+            goto moved;
+        }
+        if (screen == SCR_PROJ) {
+            screen = SCR_OPTS;
+            goto moved;
+        }
+        if (screen == SCR_WAVE) {
+            screen = SCR_PROJ;
+            goto moved;
+        }
+        if (screen == SCR_OPTS)
+            screen = SCR_SONG;
         else if (screen == SCR_TABLE)
             screen = SCR_INSTR;
         else if (screen == SCR_INSTR)
@@ -1227,7 +1259,9 @@ static void nav(unsigned char to_right)
         else
             return;
     }
+moved:
     ph_row = 0xFF;
+    groove_ph = 0xFF;
     draw_screen();
     mirror_cursor();
 }

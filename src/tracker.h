@@ -207,6 +207,11 @@ void clear_grid(void);
 #define PEN_DIM     2
 #define PEN_ACCENT  3
 
+/* palettes (main.c) */
+#define NPALETTES 6
+extern unsigned char opt_palette;
+void palette_apply(void);
+
 /* editor */
 void editor_init(void);
 void editor_frame(unsigned char joy, unsigned char prev);

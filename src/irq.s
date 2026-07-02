@@ -17,7 +17,10 @@
         .export         _pcm_head
         .export         _pcm_done
         .import         _sd
+        .import         _engine_tick
         .import         popa
+
+        .include        "zeropage.inc"
 
 INTRST   := $FD80
 INTSET   := $FD81
@@ -44,6 +47,8 @@ wav_ptr: .res 2                 ; base of the active 32-byte wavetable
         .bss
 _pcm_head: .res 2               ; ring head — owned by the C pump
 _pcm_done: .res 1               ; pump: no more stream bytes coming
+in_tick: .res 1                 ; VBL tick re-entrancy guard
+zpbuf:   .res 32                ; cc65 runtime zp save (tick runs C in IRQ)
 wav_pos: .res 1                 ; table read position (wraps & $1F)
 wav_step: .res 1                ; entries per IRQ (pitch step-doubling)
 _frames: .res 2                 ; u16 frame counter (read by C)
@@ -172,8 +177,29 @@ handler:
         beq     @out
         sta     INTRST
         inc     _frames
-        bne     @out
+        bne     :+
         inc     _frames+1
+:       lda     in_tick         ; engine tick, re-entrancy guarded
+        bne     @out
+        inc     in_tick
+        phx
+        phy
+        ldx     #zpspace-1  ; the cc65 runtime zeropage block
+@save:  lda     sp,x
+        sta     zpbuf,x
+        dex
+        bpl     @save
+        cli                     ; let PCM/wave IRQs nest during the tick
+        jsr     _engine_tick
+        sei
+        ldx     #zpspace-1
+@rest:  lda     zpbuf,x
+        sta     sp,x
+        dex
+        bpl     @rest
+        ply
+        plx
+        stz     in_tick
 @out:
         pla
         rti

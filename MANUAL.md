@@ -55,7 +55,10 @@ WAVE above INSTR, FILES and GROOVE below).
 swing is preserved. Plus free-chain/phrase counters.
 
 **OPTIONS:** SYNC (ComLynx OFF/OUT/IN), PRELIS (audition-on-edit on/off),
-REPEAT (key-repeat delay).
+REPEAT (key-repeat delay), PALETTE (six colour schemes, applied live).
+
+The map rows also navigate horizontally: B-held+←/→ moves FILES↔GROOVE
+and OPTIONS↔PROJECT↔WAVE.
 
 **WAVE screen:** 32-column bar editor for the 8 wavetables. ←/→ move,
 ↑/↓ page waves, A-held + d-pad draws (↑/↓ coarse, ←/→ fine). Waves 0–3

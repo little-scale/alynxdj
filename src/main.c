@@ -22,22 +22,35 @@ void vbl_install(void);
 /* raw pad byte mirrored here for the harness's RAM-dump probes */
 #define JOY_MIRROR (*(volatile unsigned char *)0xC000)
 
-/* 12-bit GBR palette entries, {green, blue<<4|red} per pen */
-static const unsigned char palette[16][2] = {
-    {0x2, 0x32}, /* 0 bg: deep blue-grey */
-    {0xF, 0xEE}, /* 1 text: near-white */
-    {0x8, 0x97}, /* 2 dim chrome */
-    {0xC, 0x2F}, /* 3 accent: warm orange */
-    /* pens 4-15 settle with the real UI */
+/* 12-bit GBR palettes, {green, blue<<4|red} x {bg, text, dim, accent} */
+#define NPALETTES 6
+static const unsigned char palettes[NPALETTES][4][2] = {
+    { {0x2,0x32}, {0xF,0xEE}, {0x8,0x97}, {0xC,0x2F} },  /* 0 lynx night  */
+    { {0x3,0x11}, {0xE,0x9E}, {0x8,0x46}, {0xF,0x4F} },  /* 1 game boy    */
+    { {0x1,0x10}, {0xB,0x2F}, {0x5,0x14}, {0xF,0x6F} },  /* 2 amber crt   */
+    { {0x0,0x00}, {0xF,0xFF}, {0x7,0x77}, {0x0,0xFF} },  /* 3 paperwhite  */
+    { {0x0,0x31}, {0xD,0xFC}, {0x6,0x85}, {0x4,0xFF} },  /* 4 vapor       */
+    { {0x2,0x10}, {0xF,0xCF}, {0x7,0x58}, {0xE,0xF2} },  /* 5 swamp       */
 };
+unsigned char opt_palette;
+
+void palette_apply(void)
+{
+    unsigned char i;
+    for (i = 0; i < 4; ++i) {
+        MIKEY.palette[i]      = palettes[opt_palette][i][0];
+        MIKEY.palette[i + 16] = palettes[opt_palette][i][1];
+    }
+}
 
 static void palette_init(void)
 {
     unsigned char i;
-    for (i = 0; i < 16; ++i) {
-        MIKEY.palette[i]      = palette[i][0];  /* $FDA0+i green */
-        MIKEY.palette[i + 16] = palette[i][1];  /* $FDB0+i blue|red */
+    for (i = 4; i < 16; ++i) {          /* unused pens: black */
+        MIKEY.palette[i] = 0;
+        MIKEY.palette[i + 16] = 0;
     }
+    palette_apply();
 }
 
 static void screen_clear(void)
@@ -304,8 +317,6 @@ void main(void)
         if (f == last)
             continue;
         last = f;
-
-        engine_tick();
 
         joy = SUZY.joystick;
         JOY_MIRROR = joy;

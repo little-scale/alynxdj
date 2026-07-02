@@ -28,6 +28,7 @@ static unsigned char pool_nkits;
 
 static unsigned stream_left;
 static unsigned char stream_block;      /* resync info for S/eeprom races */
+static volatile unsigned char trig_kit = 0xFF, trig_slot;
 
 unsigned char pool_kits(void)
 {
@@ -79,15 +80,31 @@ static void pump_chunk(unsigned char max)
         pcm_done = 1;
 }
 
+static void do_trigger(unsigned char kit, unsigned char slot);
+
 /* called every frame from the main loop */
 void pool_pump(void)
 {
+    if (trig_kit != 0xFF) {
+        unsigned char k = trig_kit, s = trig_slot;
+        trig_kit = 0xFF;
+        do_trigger(k, s);
+    }
     pump_chunk(64);
     pump_chunk(64);
     pump_chunk(64);
 }
 
+/* Called from the engine tick (IRQ context): just latch the request —
+ * the slow cart seek + prefill runs from the main-loop pump. Costs up to
+ * one frame of drum-onset latency, buys a race-free cart bus. */
 void __fastcall__ pool_trigger(unsigned char kit, unsigned char slot)
+{
+    trig_kit = kit;
+    trig_slot = slot;
+}
+
+static void do_trigger(unsigned char kit, unsigned char slot)
 {
     const unsigned char *e;
     unsigned long abs_;
