@@ -22,7 +22,10 @@
 #define AUD_ENABLE_RELOAD 0x08
 #define AUD_INTEGRATE     0x20
 
+/* the flat song block lives in HIRAM ($C900, SONG segment) — MAIN is full */
+#pragma bss-name (push, "SONG")
 struct songdata sd;
+#pragma bss-name (pop)
 struct walk eng_walk[NCH];
 
 struct voice {

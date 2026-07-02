@@ -11,8 +11,8 @@ BUILD := build
 ROM   := $(BUILD)/alynxdj.lnx
 CFG   := alynxdj.cfg
 
-SRC_C := src/main.c src/sound.c src/engine.c src/editor.c
-SRC_S := src/lowcode.s src/irq.s $(BUILD)/kit.s
+SRC_C := src/main.c src/sound.c src/engine.c src/editor.c src/save.c
+SRC_S := src/lowcode.s src/irq.s src/eeprom.s $(BUILD)/kit.s
 
 # cc65 2.18 gotcha: lynx/defdir.s references __LOWCODE_SIZE__, but marks the
 # LOWCODE segment optional, so a build with no LOWCODE data fails to link.
@@ -38,7 +38,7 @@ $(BUILD)/font.h: tools/makefont.py
 
 $(ROM): $(SRC_C) $(SRC_S) $(CFG) $(BUILD)/font.h $(BUILD)/notes.h $(BUILD)/buildid.h
 	cl65 -t lynx -O -C $(CFG) -o $@ $(SRC_C) $(SRC_S)
-	python3 -c "p='$@'; d=bytearray(open(p,'rb').read()); d[60]=1; open(p,'wb').write(d)"  # .lnx byte 60: 93C46 EEPROM
+	python3 -c "p='$@'; d=bytearray(open(p,'rb').read()); d[60]=5; open(p,'wb').write(d)"  # .lnx byte 60: 93C86 EEPROM (2KB)
 
 # --- headless screenshot + audio capture (no GUI / permissions needed) ---
 EMUDIR    := tools/emu

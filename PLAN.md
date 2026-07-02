@@ -44,7 +44,7 @@ and data model live in cc65 C, the driver/render/IRQ paths in ca65 asm
 | M7 | ✅ **core DONE** — alynxdj_sample.py (WAV→8-bit signed PCM @7812.5 Hz, silence-trim + budget caps: the 808 kit fits 12.1 KB RAM-resident, linked into the ROM), src/pcm.s-in-irq.s (timer-7 IRQ feeds channel D OUTPUT, ~45 cyc/byte ≈ 9% CPU, APPZP pointer, self-stopping), IT_KIT (note semitone → kit slot, mono sample bus on channel D, SMSGGDJ T3 policy). **Verified: captured audio cross-correlates with the source 808 WAVs at 1.11 (BD) / 0.83 (SD) / 0.69 (HH); full 4-track mix keeps all melodic components (engine unstarved).** ◻️ remaining: cart-streamed multi-kit pool + kit-select, `S` rate command, 2-voice cap measurement on hardware (Q2) | The flagship — samples |
 | M8 | ✅ **core DONE** — IT_WAV = **hardware triangle** (integrate mode + tap-11-only feedback: inverted parity cycles the zero shifter through 12 ones/12 zeros → triangle at shiftrate/24; note lookup +43 semitones via the extended 139-entry table; instrument vol ≤10 or the 8-bit accumulator wraps). **Instrument pan**: pan nibbles → per-channel ATTEN at trigger, PAN reg enabled, write-always (D8). **Verified solo: 786 Hz for G-5, H2 0.002 / H3 0.113 (textbook triangle), R/L rms 3.75 = exactly the $4F ATTEN ratio — Handy models Lynx II stereo.** ◻️ remaining: 32-byte wavetable loop mode + WAVE screen, `O` command (needs M9 executor) | Synthesis depth |
 | M9 | ✅ **commands+tables DONE** — grooves pool + shared executor + 11 commands (`A C D G H K O P V W X`): tables (16×16 vol/tsp/cmd/param, 1 row/tick, `H` loop, stick-at-end), 1/16-semitone pitch engine (bend/vibrato/chord/table-tsp resolved to interpolated BACKUP, reload-only writes — no phase restarts; clock-boundary crossings do a full retime), `D` delayed trigger via the peek, `W` row shorten, `G` groove switch, `O` live pan, `X` env-peak accent, `K` tick-kill. PHRASE cmd/param columns + TABLE screen + INSTR TABLE field. **Verified by rig battery**: K 100/33 ms alternation, P +3.1 semis/0.45 s, V ±0.5 semis, C & A-table arps spectrally present, G rate switch. (`D` code-complete, no rig yet.) ◻️ remaining → M9b: GROOVE screen, copy/paste/clone + block ops, mute/solo, phrase-level `H`, `T`/`L`/`R`/`F`/`M`/`N`/`S`/`Z`/`I`/`J` | Editing power |
-| M10 | 🔶 **plumbing proven (M10a, Q5 ✅)** — `.lnx` header byte 60 patched in the Makefile (93C46), cc65 `lynx_eeprom_*` driver works against Handy (writes byte-exact in the `.eeprom` file), harness calls `retro_unload_game` so the file flushes, **write→power-cycle→read-back round trip verified**. Read path returns low byte only through Handy (byte-per-cell convention for now; hardware recheck). ◻️ remaining (M10b): custom 10-bit-address 93C86 driver (2 KB), the RLE packer + size meter (Q1), SAVE/LOAD UI + slot header, SAVEFORMAT.md, browser savetool | Songs survive |
+| M10 | ✅ **DONE (Q1 ✅ Q5 ✅)** — custom 93C86 driver (src/eeprom.s, 13-bit commands; **full 16-bit reads work** — the M10a low-byte quirk was cc65-driver-specific), RLE packer + ALDJ header + checksum (src/save.c), FILES screen (SAVE/LOAD, PACK meter, status; B+Down from SONG, F lit in the map), boot autoload. **Round trip checksum-verified across power cycles; the demo packs to 480 of 1016 bytes.** Capacity capped at 508 words by a **stock-Handy bug found on the way** (eeprom.cpp:59 loads 1024 bytes, not Size(): cells ≥512 lost on reload; one-line core fix identified — building the cloned core awaits user authorization); lift to 2 KB when fixed/hardware-verified. Pack-ratio lever: **FF-FF empty-chain sentinels** (FF 00 alternation defeated RLE: 1469 B → 480 B). SAVEFORMAT.md written. ◻️ deferred: browser savetool, multi-slot | Songs survive |
 | M11 | ComLynx sync: OUT/IN row clock + transport bytes, two-unit lock in emulator, hardware pass; IN24 reserved for the ESP32 bridge | Sync |
 | M12 | LIVE mode, activity meters, demo song, control hints, hardware verification pass, MANUAL.md | Release-ready |
 
@@ -72,11 +72,12 @@ second-opinion core.
 
 ## Status
 
-**M0–M10a done** (2026-07-02): toolchain + headless harness; boot + 59.90 Hz
+**M0–M10 done** (2026-07-02): toolchain + headless harness; boot + 59.90 Hz
 tick; squares, sequencer, song hierarchy, TONE/NOISE instruments, 8-bit PCM
 drums (xcorr-verified), hardware-triangle WAV voices, stereo pan, tables +
-the shared executor + 11 commands (rig-battery-verified), and the EEPROM
-save plumbing (power-cycle round trip, Q5). Five screens:
-SONG/CHAIN/PHRASE/INSTR/TABLE. Next: M10b (93C86 driver + RLE packer +
-SAVE/LOAD UI — resolves Q1) or M9b editing power (copy/paste/clone, block
-ops, mute/solo, remaining commands).
+the shared executor + 11 commands (rig-battery-verified), and **full
+persistence** (93C86 driver, RLE pack, FILES screen, autoload — round trip
+checksum-verified; design risks Q1/Q3/Q5 + the PCM path all retired).
+Six screens: SONG/CHAIN/PHRASE/INSTR/TABLE/FILES + the map indicator.
+Next: M9b editing power (copy/paste/clone, block ops, mute/solo, GROOVE
+screen, remaining commands), then M11 ComLynx sync, M12 polish.

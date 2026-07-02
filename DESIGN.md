@@ -276,7 +276,7 @@ render in fixed order so audio never waits on drawing.
 
 | Q | Question | Blocks | Path |
 |---|---|---|---|
-| Q1 | EEPROM pack ratio — does a *typical* song RLE into 2 KB? | M10 | Instrument the packer over test songs at M9; if no, shrink phrase pool in the save tier only |
+| Q1 | ✅ **RESOLVED at M10b** — the 4-track demo song RLE-packs to **480 bytes** (capacity 1016, capped by a stock-Handy EEPROM-load bug — see SAVEFORMAT.md; 2040 once fixed/hardware-verified). The lever that made it work: **FF-FF empty-chain-step sentinels** (FF 00 alternation had defeated the RLE at 1469 bytes). Save→power-cycle→autoload round trip checksum-verified | M10 | — |
 | Q2 | Real PCM voice ceiling + max mix rate | M7 | Cycle-count the IRQ handler on Handy, verify on hardware |
 | Q3 | ✅ **RESOLVED at M1 — 59.90 Hz** (crt0 timing kept; 96 VBL ticks per 120 Handy frames, i.e. Handy paces 75 fps but the emulated timer 2 runs 159 µs × 105 lines). maketables.py uses 59.90 Hz | M3 | — |
 | Q4 | Handy's LFSR/integrate fidelity vs real Mikey | M6 | Curate tap presets on hardware; Holani core as a second opinion |

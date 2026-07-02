@@ -106,6 +106,25 @@ void sound_init(void);
 void __fastcall__ pcm_play(unsigned char slot);
 void pcm_stop(void);
 
+/* 93C86 EEPROM (src/eeprom.s), full 16-bit words per cell */
+unsigned __fastcall__ ee_read(unsigned cell);
+void __fastcall__ ee_write(unsigned cell, unsigned val);
+
+/* packed save (src/save.c); ST codes shared with the FILES screen.
+ * Capacity capped at 508 words while stock Handy truncates EEPROM file
+ * loads to 1024 bytes (eeprom.cpp:59) — lift to 1020 words with the core
+ * fix / hardware verification. */
+#define SAVE_CAP_BYTES 1016
+#define ST_NONE   0
+#define ST_OK     1
+#define ST_TOOBIG 2
+#define ST_NODATA 3
+#define ST_BADSUM 4
+unsigned save_pack(void);       /* dry run: packed length, 0 = too big */
+unsigned char save_do(void);
+unsigned char save_load(void);
+unsigned save_sum(void);
+
 /* render (main.c) */
 void draw_text(unsigned char cx, unsigned char cy, const char *s,
                unsigned char fg, unsigned char bg);

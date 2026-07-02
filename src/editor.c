@@ -21,6 +21,7 @@
 #define SCR_PHRASE 2
 #define SCR_INSTR  3
 #define SCR_TABLE  4
+#define SCR_FILES  5
 
 /* command letters, indexed by CMD_* id */
 static const char cmd_chars[NCMDS] = {
@@ -42,6 +43,12 @@ static unsigned char c_row, c_col;      /* CHAIN: 0-15 x {phrase,tsp} */
 static unsigned char p_row, p_col;      /* PHRASE: note,instr,cmd,param */
 static unsigned char i_row;             /* INSTR: field index */
 static unsigned char t_row, t_col;      /* TABLE: 0-15 x vol,tsp,cmd,param */
+static unsigned char f_row;             /* FILES: SAVE / LOAD */
+static unsigned char f_status;          /* last save/load ST_* result */
+
+#define MIRROR_PACKLEN (*(volatile unsigned int *)0xC01A)
+#define MIRROR_STATUS  (*(volatile unsigned char *)0xC01C)
+#define MIRROR_SDSUM   (*(volatile unsigned int *)0xC018)
 
 /* last-entered memory (insert repeats it, ported) */
 static unsigned char last_note = 37;    /* C-4 */
@@ -83,6 +90,9 @@ static void top_bar(void)
         draw_text(1, 0, "TABLE", PEN_ACCENT, PEN_BG);
         draw_hex8(7, 0, edit_table, PEN_TEXT, PEN_BG);
         break;
+    case SCR_FILES:
+        draw_text(1, 0, "FILES", PEN_ACCENT, PEN_BG);
+        break;
     }
     draw_text(12, 0, "T", PEN_DIM, PEN_BG);
     draw_hex8(13, 0, cur_track + 1, PEN_DIM, PEN_BG);
@@ -110,10 +120,12 @@ static void draw_map(void)
     b[1] = 0;
     for (r = 0; r < 3; ++r)
         for (c = 0; c < 5; ++c) {
-            unsigned char cur = (r == 1 && c == screen);
+            unsigned char cur = (r == 1 && c == screen)
+                || (r == 2 && c == 0 && screen == SCR_FILES);
+            unsigned char shipped = (r == 1) || (r == 2 && c == 0);
             b[0] = rows[r][c];
             draw_text(MAP_X + c, GRID_TOP + r, b,
-                      cur ? PEN_BG : (r == 1 ? PEN_TEXT : PEN_DIM),
+                      cur ? PEN_BG : (shipped ? PEN_TEXT : PEN_DIM),
                       cur ? PEN_ACCENT : PEN_BG);
         }
 }
@@ -326,6 +338,46 @@ static void draw_table_screen(void)
         draw_table_row(r, r == t_row);
 }
 
+/* --- FILES screen: SAVE / LOAD + packed-size meter (D10) --- */
+
+static void draw_files_status(void)
+{
+    static const char *const st[5] = {
+        "     ", "OK   ", "FULL!", "EMPTY", "BAD! ",
+    };
+    unsigned len = save_pack();
+
+    draw_text(1, 6, "PACK $", PEN_DIM, PEN_BG);
+    draw_hex8(7, 6, (unsigned char)(len >> 8), len ? PEN_TEXT : PEN_ACCENT,
+              PEN_BG);
+    draw_hex8(9, 6, (unsigned char)len, len ? PEN_TEXT : PEN_ACCENT, PEN_BG);
+    draw_text(12, 6, "OF $", PEN_DIM, PEN_BG);
+    draw_hex8(16, 6, (unsigned char)(SAVE_CAP_BYTES >> 8), PEN_DIM, PEN_BG);
+    draw_hex8(18, 6, (unsigned char)SAVE_CAP_BYTES, PEN_DIM, PEN_BG);
+    draw_text(1, 8, st[f_status], f_status == ST_OK ? PEN_ACCENT : PEN_TEXT,
+              PEN_BG);
+    MIRROR_PACKLEN = len;
+    MIRROR_STATUS = f_status;
+}
+
+static void draw_files_row(unsigned char r, unsigned char cursor_here)
+{
+    unsigned char fg = cursor_here ? PEN_BG : PEN_TEXT;
+    unsigned char bg = cursor_here ? PEN_TEXT : PEN_BG;
+
+    if (r == 0)
+        draw_text(1, GRID_TOP + 1, "SAVE", fg, bg);
+    else if (r == 1)
+        draw_text(1, GRID_TOP + 3, "LOAD", fg, bg);
+}
+
+static void draw_files_screen(void)
+{
+    draw_files_row(0, f_row == 0);
+    draw_files_row(1, f_row == 1);
+    draw_files_status();
+}
+
 /* --- dispatch --- */
 
 static void draw_row(unsigned char r, unsigned char cursor_here)
@@ -336,6 +388,7 @@ static void draw_row(unsigned char r, unsigned char cursor_here)
     case SCR_PHRASE: draw_phrase_row(r, cursor_here); break;
     case SCR_INSTR:  draw_instr_row(r, cursor_here); break;
     case SCR_TABLE:  draw_table_row(r, cursor_here); break;
+    case SCR_FILES:  draw_files_row(r, cursor_here); break;
     }
 }
 
@@ -350,6 +403,7 @@ static void draw_screen(void)
     case SCR_PHRASE: draw_phrase_screen(); break;
     case SCR_INSTR:  draw_instr_screen(); break;
     case SCR_TABLE:  draw_table_screen(); break;
+    case SCR_FILES:  draw_files_screen(); break;
     }
     draw_map();
     MIRROR_SCREEN = screen;
@@ -362,6 +416,7 @@ static unsigned char cursor_vrow(void)
     case SCR_CHAIN: return c_row;
     case SCR_INSTR: return i_row;
     case SCR_TABLE: return t_row;
+    case SCR_FILES: return f_row;
     default:        return p_row;
     }
 }
@@ -425,6 +480,10 @@ static void move_cursor(unsigned char dir)
         case 3: if (t_col < 3) ++t_col; break;
         }
         break;
+    case SCR_FILES:
+        if (dir == 0 || dir == 1)
+            f_row ^= 1;
+        break;
     default:
         switch (dir) {
         case 0: if (p_row) --p_row; else p_row = 15; break;
@@ -471,6 +530,8 @@ static void edit_chain_cell(unsigned char dir)
         case 2: v = v ? v - 1 : 0; break;
         case 3: v = (v + 1 < NPHRASES) ? v + 1 : NPHRASES - 1; break;
         }
+        if (cs->phrase == EMPTY)
+            cs->tsp = 0;        /* was the FF-FF empty sentinel */
         cs->phrase = v;
         last_phrase = v;
     } else {
@@ -614,8 +675,10 @@ static void insert_cell(void)
             sd.song[s_row][s_col] = last_chain;
         break;
     case SCR_CHAIN:
-        if (c_col == 0 && sd.chains[edit_chain][c_row].phrase == EMPTY)
+        if (c_col == 0 && sd.chains[edit_chain][c_row].phrase == EMPTY) {
             sd.chains[edit_chain][c_row].phrase = last_phrase;
+            sd.chains[edit_chain][c_row].tsp = 0;
+        }
         break;
     case SCR_PHRASE:
         if (p_col == 0 && !sd.phrases[edit_phrase][p_row].note) {
@@ -624,6 +687,13 @@ static void insert_cell(void)
                 engine_audition(last_note,
                                 sd.phrases[edit_phrase][p_row].instr);
         }
+        break;
+    case SCR_FILES:
+        engine_stop();
+        transport_label();
+        f_status = f_row ? save_load() : save_do();
+        MIRROR_SDSUM = save_sum();
+        draw_files_status();
         break;
     }
     draw_row(cursor_vrow(), 1);
@@ -666,11 +736,25 @@ static void nav(unsigned char to_right)
             screen = SCR_PHRASE;
         else if (screen == SCR_PHRASE)
             screen = SCR_CHAIN;
-        else if (screen == SCR_CHAIN)
+        else if (screen == SCR_CHAIN || screen == SCR_FILES)
             screen = SCR_SONG;
         else
             return;
     }
+    ph_row = 0xFF;
+    draw_screen();
+    mirror_cursor();
+}
+
+/* B-held + Up/Down: vertical hops on the 2D map (SONG <-> FILES today) */
+static void nav_v(unsigned char down)
+{
+    if (down && screen == SCR_SONG)
+        screen = SCR_FILES;
+    else if (!down && screen == SCR_FILES)
+        screen = SCR_SONG;
+    else
+        return;
     ph_row = 0xFF;
     draw_screen();
     mirror_cursor();
@@ -700,7 +784,7 @@ static void playhead_update(void)
         return;
     }
 
-    if (screen == SCR_INSTR || screen == SCR_TABLE)
+    if (screen >= SCR_INSTR)
         return;
     r = 0xFF;
     if (screen == SCR_CHAIN) {
@@ -779,6 +863,8 @@ void editor_frame(unsigned char joy, unsigned char prev)
                 nav(0);
             else if (dir == 3)
                 nav(1);
+            else
+                nav_v(dir == 1);
         } else if (joy & JOY_BTN_A_MASK) {   /* A chord: edit */
             a_used = 1;
             edit_cell(dir);
