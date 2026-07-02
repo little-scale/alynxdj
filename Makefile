@@ -11,7 +11,7 @@ BUILD := build
 ROM   := $(BUILD)/alynxdj.lnx
 CFG   := alynxdj.cfg
 
-SRC_C := src/main.c src/sound.c src/engine.c
+SRC_C := src/main.c src/sound.c src/engine.c src/editor.c
 SRC_S := src/lowcode.s src/irq.s
 
 # cc65 2.18 gotcha: lynx/defdir.s references __LOWCODE_SIZE__, but marks the

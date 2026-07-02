@@ -38,7 +38,7 @@ and data model live in cc65 C, the driver/render/IRQ paths in ca65 asm
 | M1 | ✅ **DONE** — boot: palette + SCRBASE + framebuffer at $A000 (alynxdj.cfg RAM map), 4×6 font (makefont.py, 40×17 grid, legibility screenshot-verified), splash with version + git-hash build stamp, VBlank IRQ (timer 2) + live frame counter. **Q3 resolved: VBL = 59.90 Hz with crt0 timing** (96 ticks/120 Handy frames) | The board comes up |
 | M2 | ✅ **DONE** — pad read (raw + edge; DAS repeat deferred to the M4 editor), pad→note squares on channel A, **FFT-verified 220.0/293.0/440.0 Hz** from the WAV capture. Proven square recipe: `FEEDBACK=$01, SHIFT=0` (Mikey shifts in inverted tap parity, so it self-starts from 0), `f = 1/(2·(BKUP+1)·clock)` exact. RetroPad→Lynx button map probed and recorded in CLAUDE.md; `$C000` debug mirror + RAM-dump verification pattern established | The sound path |
 | M3 | ✅ **DONE** — note table (maketables.py: 96 notes C-1..B-8 as clocksel+BKUP pairs, worst error 9.5 cents at F#8 only), engine pipeline (groove → row → trigger → AHD envelope → shadow → flush, voice-0 scope), A = play/stop. **FFT-verified**: 16-row C-major arp plays all pitches within cents (261/329/393/523/658/786 Hz), 100 ms rows, clean loop. Flush discipline: full channel reprogram on trigger only; envelope ticks are volume-only writes (never restart the oscillator) | The sequencer |
-| M4 | PHRASE editor: 16-step grid, cursor + key-repeat, A-hold edit / A-tap insert, prelisten, live playback | First playable build |
+| M4 | ✅ **DONE** — PHRASE editor: 16-step grid (row/note/instr/cmd columns), inverse-video cursor + DAS key repeat, A-hold+dpad edit (±semitone/±octave, verified: C-4→C#4 auditioned at 278 Hz), A-tap-on-release insert (chord-consumption rule ported), B-held+A transport with PLAY/STOP label + accent playhead. All verified headless via scripted BTN input + RAM mirrors ($C001/2 cursor) + FFT. **Boot-to-mainloop ≈ 124 frames (cc65 C render, D2 risk on record — optimize the clear/grid paint when it matters)** | First playable build |
 | M5 | Structure: 4-voice engine, CHAIN + SONG walkers and screens, 2D screen map nav, transport (B+A), playheads, drill-down | Song structure |
 | M6 | Instruments: TONE timbre presets + NOISE preset list (curates Q4), INSTR screen, tables + TABLE screen, shared command executor | The voice model |
 | M7 | **PCM** — KIT instruments: sample pool tool + cart directory, timer-IRQ DAC feed, cart block streaming, voice-steal cap (resolves Q2), `S` rate command; factory kits from `samples/` | The flagship — samples |
@@ -72,8 +72,8 @@ second-opinion core.
 
 ## Status
 
-**M0–M3 done** (2026-07-02): toolchain + headless harness; boot splash with
-build stamp + live VBlank counter (59.90 Hz, Q3 resolved); pad→note squares
-FFT-verified; sequencer core plays a 16-row arp with correct pitch/tempo,
-FFT-verified. Next: M4 PHRASE editor (grid, cursor, edit, insert,
-prelisten).
+**M0–M4 done** (2026-07-02): toolchain + headless harness; boot splash +
+59.90 Hz tick; squares FFT-verified; sequencer core FFT-verified; PHRASE
+editor (cursor/DAS/edit/insert/prelisten/transport) verified via scripted
+input. **First playable build.** Next: M5 song structure (CHAIN/SONG
+walkers, screen map, 4-voice engine).

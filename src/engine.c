@@ -170,15 +170,22 @@ void engine_play(void)
     eng_playing = 1;
 }
 
+/* Audition a note on voice 0 outside playback (editor prelisten). The
+ * envelope keeps ticking from engine_tick, which runs every frame whether
+ * or not the sequencer is playing, so the note decays naturally. */
+void engine_audition(unsigned char note)
+{
+    trigger(0, note);
+    flush(0);
+    voices[0].dirty = 0;
+}
+
 void engine_tick(void)
 {
     unsigned char ch;
     unsigned char triggered = 0;
 
-    if (!eng_playing)
-        return;
-
-    if (eng_tick == 0) {                         /* row start */
+    if (eng_playing && eng_tick == 0) {          /* row start */
         struct step *s = &phrase[eng_row];
         if (s->note) {
             trigger(0, s->note);
@@ -194,6 +201,9 @@ void engine_tick(void)
         else
             flush_vol(ch);
     }
+
+    if (!eng_playing)
+        return;
 
     if (++eng_tick >= groove[eng_gpos]) {        /* row advance */
         eng_tick = 0;

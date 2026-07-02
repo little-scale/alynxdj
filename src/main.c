@@ -1,4 +1,4 @@
-/* ALYNXDJ — M1: boot, display init, 4x6 font, splash + build stamp.
+/* ALYNXDJ — boot, display init, text render, main loop.
  *
  * crt0 already ran the Mikey init table (display timers, DISPCTL=$0D 4bpp
  * color DMA, audio muted); what it does not set is the screen address,
@@ -22,24 +22,22 @@
 extern volatile unsigned int frames;
 void vbl_install(void);
 void sound_init(void);
-void tone_on(unsigned char clocksel, unsigned char bkup);
-void tone_off(void);
 
 struct step {
     unsigned char note, instr, cmd, param;
 };
 extern struct step phrase[16];
-extern unsigned char eng_playing, eng_row;
-void engine_play(void);
-void engine_stop(void);
 void engine_tick(void);
+
+void editor_init(void);
+void editor_frame(unsigned char joy, unsigned char prev);
 
 #define N(oct, semi) ((unsigned char)(((oct) - 1) * 12 + (semi) + 1))
 #define NC(o) N(o, 0)
 #define NE(o) N(o, 4)
 #define NG(o) N(o, 7)
 
-/* raw pad byte mirrored here for the harness's RAM-dump mapping probe */
+/* raw pad byte mirrored here for the harness's RAM-dump probes */
 #define JOY_MIRROR (*(volatile unsigned char *)0xC000)
 
 /* 12-bit GBR palette entries, {green, blue<<4|red} per pen */
@@ -55,8 +53,8 @@ static void palette_init(void)
 {
     unsigned char i;
     for (i = 0; i < 16; ++i) {
-        MIKEY.palette[i]     = palette[i][0];  /* $FDA0+i green */
-        MIKEY.palette[i + 16] = palette[i][1]; /* $FDB0+i blue|red */
+        MIKEY.palette[i]      = palette[i][0];  /* $FDA0+i green */
+        MIKEY.palette[i + 16] = palette[i][1];  /* $FDB0+i blue|red */
     }
 }
 
@@ -93,15 +91,15 @@ static void draw_char(unsigned char cx, unsigned char cy, char ch,
     }
 }
 
-static void draw_text(unsigned char cx, unsigned char cy, const char *s,
-                      unsigned char fg, unsigned char bg)
+void draw_text(unsigned char cx, unsigned char cy, const char *s,
+               unsigned char fg, unsigned char bg)
 {
     while (*s)
         draw_char(cx++, cy, *s++, fg, bg);
 }
 
-static void draw_hex8(unsigned char cx, unsigned char cy, unsigned char v,
-                      unsigned char fg, unsigned char bg)
+void draw_hex8(unsigned char cx, unsigned char cy, unsigned char v,
+               unsigned char fg, unsigned char bg)
 {
     static const char hexd[] = "0123456789ABCDEF";
     draw_char(cx, cy, hexd[v >> 4], fg, bg);
@@ -118,14 +116,7 @@ void main(void)
     MIKEY.scrbase = SCREEN;
     sound_init();
 
-    draw_text(14, 5, "ALYNXDJ", PEN_ACCENT, PEN_BG);
-    draw_text(14, 7, "V0.1", PEN_TEXT, PEN_BG);
-    draw_text(14, 8, BUILDID, PEN_DIM, PEN_BG);
-    draw_text(14, 10, "FRAME", PEN_DIM, PEN_BG);
-    draw_text(14, 11, "JOY", PEN_DIM, PEN_BG);
-    draw_text(14, 12, "ROW", PEN_DIM, PEN_BG);
-
-    /* M3 demo phrase: C-major arp up and back, one note per row */
+    /* demo phrase until M5 brings the song hierarchy: C-major arp */
     {
         static const unsigned char arp[16] = {
             NC(4), NE(4), NG(4), NC(5), NE(5), NC(5), NG(4), NE(4),
@@ -137,29 +128,20 @@ void main(void)
     }
 
     vbl_install();
-    engine_play();
+    editor_init();
+    draw_text(18, 0, BUILDID, PEN_DIM, PEN_BG);
 
     for (;;) {
         unsigned char f = (unsigned char)frames;
         if (f == last)
             continue;
         last = f;
-        engine_tick();
 
-        draw_hex8(20, 10, f, PEN_TEXT, PEN_BG);
+        engine_tick();
 
         joy = SUZY.joystick;
         JOY_MIRROR = joy;
-        draw_hex8(20, 11, joy, PEN_TEXT, PEN_BG);
-        draw_hex8(20, 12, eng_row, PEN_TEXT, PEN_BG);
-
-        /* A toggles play/stop (edge) */
-        if ((joy & JOY_BTN_A_MASK) && !(prev_joy & JOY_BTN_A_MASK)) {
-            if (eng_playing)
-                engine_stop();
-            else
-                engine_play();
-        }
+        editor_frame(joy, prev_joy);
         prev_joy = joy;
     }
 }
