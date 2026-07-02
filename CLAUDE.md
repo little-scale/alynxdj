@@ -38,6 +38,18 @@ make clean
   `handy_libretro.dylib` with **no lynxboot.img** — Handy HLE-boots the cart
   and logs a harmless BIOS warning. It captures the last frame (PPM→PNG) and
   the full audio (WAV) — the WAV is how sound milestones get FFT-verified.
+- The core dylib is **repo-built from libretro-handy master +
+  `tools/emu/handy-alynxdj.patch`** (two fixes: EEPROM file loads truncated
+  to 1024 bytes at eeprom.cpp:59, and `handy_comlynx_*` C exports for the
+  bridge). Rebuild: clone libretro-handy, `git apply` the patch,
+  `make platform=osx`, copy the dylib into tools/emu/. Both fixes are
+  upstream-PR-worthy (the EEPROM one especially).
+- `tools/emu/duoshot` runs **two bridged core instances** (ComLynx
+  cross-wired TX→RX) for two-unit sync tests: needs two *file copies* of
+  the dylib (dlopen dedups identical paths). Per-unit scripts, WAV/PPM/RAM
+  outputs. Verified: OUT→IN lock at −1.4 ms envelope lag.
+- **cc65 lynx.h bug:** `_UART_TIMER` points at $FD14 = **timer 5**; timer 4
+  (the real UART clock) is $FD10 — use explicit addresses (src/sync.c).
 - BTN mask bits (RetroPad→Lynx, probed at M2): `$100`=A, `$1`=B, `$400`=Opt1,
   `$800`=Opt2, `$10`=Up, `$20`=Down, `$40`=Left, `$80`=Right, `$8`=Pause
   (START; lands in `SUZY.switches` bit 0, not the joystick byte).

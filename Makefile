@@ -36,7 +36,7 @@ $(BUILD)/notes.h: tools/maketables.py
 $(BUILD)/font.h: tools/makefont.py
 	python3 tools/makefont.py $@
 
-$(ROM): $(SRC_C) $(SRC_S) $(CFG) $(BUILD)/font.h $(BUILD)/notes.h $(BUILD)/buildid.h
+$(ROM): $(SRC_C) $(SRC_S) src/tracker.h $(CFG) $(BUILD)/font.h $(BUILD)/notes.h $(BUILD)/buildid.h
 	cl65 -t lynx -O -C $(CFG) -o $@ $(SRC_C) $(SRC_S)
 	python3 -c "p='$@'; d=bytearray(open(p,'rb').read()); d[60]=5; open(p,'wb').write(d)"  # .lnx byte 60: 93C86 EEPROM (2KB)
 
@@ -49,6 +49,9 @@ BTN       ?=
 
 $(RETROSHOT): $(EMUDIR)/harness.c $(EMUDIR)/libretro.h
 	clang -O2 -o $@ $(EMUDIR)/harness.c -I$(EMUDIR)
+
+$(EMUDIR)/duoshot: $(EMUDIR)/duoshot.c $(EMUDIR)/libretro.h
+	clang -O2 -o $@ $(EMUDIR)/duoshot.c -I$(EMUDIR)
 
 shot: $(ROM) $(RETROSHOT)
 	$(RETROSHOT) $(EMUCORE) $(ROM) $(BUILD)/shot.ppm $(FRAMES) $(BTN)

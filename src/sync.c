@@ -22,11 +22,16 @@ static unsigned char rx_count;
 
 #define MIRROR_RXCOUNT (*(volatile unsigned char *)0xC020)
 
+/* NOTE: cc65 2.18's lynx.h _UART_TIMER points at $FD14 = timer 5 (its
+ * comment says timer 4, whose registers are $FD10) — explicit addresses. */
+#define TIM4BKUP (*(volatile unsigned char *)0xFD10)
+#define TIM4CTLA (*(volatile unsigned char *)0xFD11)
+
 void sync_init(void)
 {
     /* timer 4 is the UART bit clock: ~62.5 kbaud, the ComLynx standard */
-    _UART_TIMER.reload = 1;
-    _UART_TIMER.control = 0x18;     /* reload | count, 1 us clock */
+    TIM4BKUP = 1;
+    TIM4CTLA = 0x18;                /* reload | count, 1 us clock */
     MIKEY.serctl = 0x08;            /* clear errors; polled, no IRQs */
 }
 

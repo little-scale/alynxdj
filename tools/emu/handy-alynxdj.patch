@@ -1,0 +1,42 @@
+diff --git a/libretro/libretro.cpp b/libretro/libretro.cpp
+index ad4efd7..381411c 100644
+--- a/libretro/libretro.cpp
++++ b/libretro/libretro.cpp
+@@ -21,6 +21,24 @@ static retro_input_state_t input_state_cb;
+ 
+ static CSystem *lynx = NULL;
+ 
++/* ComLynx bridge exports (ALYNXDJ duo harness): plain-C entry points so a
++ * host can wire two core instances TX->RX for two-unit sync testing. */
++extern "C" {
++   void handy_comlynx_cable(int status)
++   {
++      if (lynx) lynx->ComLynxCable(status);
++   }
++   void handy_comlynx_rx(int data)
++   {
++      if (lynx) lynx->ComLynxRxData(data);
++   }
++   void handy_comlynx_set_tx(void (*cb)(int data, ULONG ref), ULONG ref)
++   {
++      if (lynx) lynx->ComLynxTxCallback(cb, ref);
++   }
++}
++
++
+ static int16_t *soundBuffer = NULL;
+ 
+ #define RETRO_LYNX_WIDTH  160
+diff --git a/lynx/eeprom.cpp b/lynx/eeprom.cpp
+index c3439bb..4097d3b 100644
+--- a/lynx/eeprom.cpp
++++ b/lynx/eeprom.cpp
+@@ -56,7 +56,7 @@ void CEEPROM::Load(void)
+    {
+       handy_log(RETRO_LOG_INFO, "EEPROM LOAD %s\n", filename);
+       memset(romdata, 0xff, sizeof(romdata));
+-      filestream_read(fe, romdata, 1024);
++      filestream_read(fe, romdata, Size());
+       filestream_close(fe);
+    }
+ }

@@ -11,11 +11,10 @@ CLK = A1, data = AUDIN). Emulator images: Handy writes `<rom>.eeprom`
 beside its save dir — 2048 bytes, words little-endian, so the file *is*
 the cell array.
 
-**Capacity cap:** stock libretro-handy truncates EEPROM file *loads* to
-1024 bytes (`lynx/eeprom.cpp:59` reads 1024 instead of `Size()`), so
-cells ≥ 512 do not survive a power cycle in the emulator. The save
-therefore uses words 0–511 (`SAVE_CAP_BYTES` 1016 payload). Lift to the
-full 2 KB when the core fix ships / real hardware verifies.
+**Capacity:** the full part — 1020 payload words (`SAVE_CAP_BYTES` 2040).
+Requires the repo-built core (stock libretro-handy truncates EEPROM file
+*loads* to 1024 bytes, `lynx/eeprom.cpp:59`; fixed in
+`tools/emu/handy-alynxdj.patch`, verified with a boundary-crossing save).
 
 ## Layout (word cells)
 

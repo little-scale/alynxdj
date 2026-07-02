@@ -150,10 +150,10 @@ unsigned __fastcall__ ee_read(unsigned cell);
 void __fastcall__ ee_write(unsigned cell, unsigned val);
 
 /* packed save (src/save.c); ST codes shared with the FILES screen.
- * Capacity capped at 508 words while stock Handy truncates EEPROM file
- * loads to 1024 bytes (eeprom.cpp:59) — lift to 1020 words with the core
- * fix / hardware verification. */
-#define SAVE_CAP_BYTES 1016
+ * Full 93C86 capacity (1020 payload words) — needs the repo-built Handy
+ * core (stock truncates EEPROM file loads to 1024 bytes, eeprom.cpp:59
+ * — fix applied in our build; PR upstream pending). */
+#define SAVE_CAP_BYTES 2040
 #define ST_NONE   0
 #define ST_OK     1
 #define ST_TOOBIG 2
