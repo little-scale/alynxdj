@@ -21,6 +21,12 @@
 
 extern volatile unsigned int frames;
 void vbl_install(void);
+void sound_init(void);
+void tone_on(unsigned char clocksel, unsigned char bkup);
+void tone_off(void);
+
+/* raw pad byte mirrored here for the harness's RAM-dump mapping probe */
+#define JOY_MIRROR (*(volatile unsigned char *)0xC000)
 
 /* 12-bit GBR palette entries, {green, blue<<4|red} per pen */
 static const unsigned char palette[16][2] = {
@@ -91,23 +97,43 @@ static void draw_hex8(unsigned char cx, unsigned char cy, unsigned char v,
 void main(void)
 {
     unsigned char last = 0xFF;
+    unsigned char joy, prev_joy = 0;
 
     palette_init();
     screen_clear();
     MIKEY.scrbase = SCREEN;
+    sound_init();
 
     draw_text(14, 5, "ALYNXDJ", PEN_ACCENT, PEN_BG);
     draw_text(14, 7, "V0.1", PEN_TEXT, PEN_BG);
     draw_text(14, 8, BUILDID, PEN_DIM, PEN_BG);
     draw_text(14, 10, "FRAME", PEN_DIM, PEN_BG);
+    draw_text(14, 11, "JOY", PEN_DIM, PEN_BG);
 
     vbl_install();
 
     for (;;) {
         unsigned char f = (unsigned char)frames;
-        if (f != last) {
-            last = f;
-            draw_hex8(20, 10, f, PEN_TEXT, PEN_BG);
+        if (f == last)
+            continue;
+        last = f;
+        draw_hex8(20, 10, f, PEN_TEXT, PEN_BG);
+
+        joy = SUZY.joystick;
+        JOY_MIRROR = joy;
+        draw_hex8(20, 11, joy, PEN_TEXT, PEN_BG);
+
+        /* M2 sound probe: A=440Hz, B=294Hz, OPT1=220Hz while held */
+        if (joy != prev_joy) {
+            if (joy & JOY_BTN_A_MASK)
+                tone_on(3, 141);        /* 8us, 440.1 Hz */
+            else if (joy & JOY_BTN_B_MASK)
+                tone_on(3, 212);        /* 8us, 293.4 Hz */
+            else if (joy & BUTTON_OPTION1)
+                tone_on(4, 141);        /* 16us, 220.0 Hz */
+            else
+                tone_off();
+            prev_joy = joy;
         }
     }
 }

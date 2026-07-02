@@ -38,6 +38,11 @@ make clean
   `handy_libretro.dylib` with **no lynxboot.img** — Handy HLE-boots the cart
   and logs a harmless BIOS warning. It captures the last frame (PPM→PNG) and
   the full audio (WAV) — the WAV is how sound milestones get FFT-verified.
+- BTN mask bits (RetroPad→Lynx, probed at M2): `$100`=A, `$1`=B, `$400`=Opt1,
+  `$800`=Opt2, `$10`=Up, `$20`=Down, `$40`=Left, `$80`=Right, `$8`=Pause
+  (START; lands in `SUZY.switches` bit 0, not the joystick byte).
+- `RETROSHOT_RAM_OUT=<path>` dumps the full 64 KB RAM after a run — read any
+  fixed address (e.g. debug mirrors) instead of scraping pixels.
 - Handy is dev-speed, not silicon: its LFSR-timbre and DAC-timing fidelity is
   suspect (DESIGN.md Q4) — hardware passes at M6/M7.
 

@@ -36,7 +36,7 @@ and data model live in cc65 C, the driver/render/IRQ paths in ca65 asm
 |---|---|---|
 | M0 | ✅ **DONE** — toolchain: cc65 lynx target builds a bootable `.lnx`; headless Handy retroshot harness (PNG + audio WAV capture), `make`/`make shot` | The pipeline |
 | M1 | ✅ **DONE** — boot: palette + SCRBASE + framebuffer at $A000 (alynxdj.cfg RAM map), 4×6 font (makefont.py, 40×17 grid, legibility screenshot-verified), splash with version + git-hash build stamp, VBlank IRQ (timer 2) + live frame counter. **Q3 resolved: VBL = 59.90 Hz with crt0 timing** (96 ticks/120 Handy frames) | The board comes up |
-| M2 | First sound + input: pad read (edge + DAS repeat), pad→note on a TONE square (LFSR tap set), audio-capture FFT verification of pitch | The sound path |
+| M2 | ✅ **DONE** — pad read (raw + edge; DAS repeat deferred to the M4 editor), pad→note squares on channel A, **FFT-verified 220.0/293.0/440.0 Hz** from the WAV capture. Proven square recipe: `FEEDBACK=$01, SHIFT=0` (Mikey shifts in inverted tap parity, so it self-starts from 0), `f = 1/(2·(BKUP+1)·clock)` exact. RetroPad→Lynx button map probed and recorded in CLAUDE.md; `$C000` debug mirror + RAM-dump verification pattern established | The sound path |
 | M3 | Engine core: note table (maketables.py, 59.9 Hz constants — Q3 resolved at M1), phrase playback pipeline (groove → row → trigger → AHD → shadow → flush), demo arp FFT-verified | The sequencer |
 | M4 | PHRASE editor: 16-step grid, cursor + key-repeat, A-hold edit / A-tap insert, prelisten, live playback | First playable build |
 | M5 | Structure: 4-voice engine, CHAIN + SONG walkers and screens, 2D screen map nav, transport (B+A), playheads, drill-down | Song structure |
@@ -72,6 +72,7 @@ second-opinion core.
 
 ## Status
 
-**M0 + M1 done** (2026-07-02): toolchain + headless harness, boot splash
-with build stamp and live VBlank frame counter, all screenshot-verified;
-VBL tick measured at 59.90 Hz (Q3). Next: M2 first sound + input.
+**M0–M2 done** (2026-07-02): toolchain + headless harness; boot splash with
+build stamp + live VBlank counter (59.90 Hz, Q3 resolved); pad→note squares
+FFT-verified at 220/293/440 Hz. Next: M3 engine core (note table + phrase
+playback pipeline).
