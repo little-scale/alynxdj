@@ -1,9 +1,10 @@
 # Changelog
 
-## V0.1 (dev, unreleased)
+## v0.1 — 2026-07-03
 
-Initial development cycle, 2026-07-02 onward; feature-complete against
-the design brief by 2026-07-03. Everything verified headlessly (FFT /
+First release: the initial development cycle, 2026-07-02/03 —
+feature-complete against the design brief. Emulator-verified throughout;
+the real-hardware pass is the road to v1.0. Everything verified headlessly (FFT /
 cross-correlation / RAM-dump forensics via the retroshot harness);
 details per milestone in [PLAN.md](PLAN.md).
 

@@ -10,6 +10,7 @@
 BUILD := build
 ROM   := $(BUILD)/alynxdj.lnx
 CFG   := alynxdj.cfg
+VERSION := v0.1
 
 SRC_C := src/main.c src/sound.c src/engine.c src/editor.c src/save.c src/sync.c src/pool.c $(BUILD)/notes.c
 SRC_S := src/lowcode.s src/irq.s src/eeprom.s src/cart.s
@@ -65,7 +66,12 @@ shot: $(ROM) $(RETROSHOT)
 	python3 -c "from PIL import Image; Image.open('$(BUILD)/shot.ppm').save('$(BUILD)/shot.png')"
 	@echo "wrote $(BUILD)/shot.png"
 
+# version-only release copy (attach these to GitHub releases)
+dist: $(ROM)
+	cp $(ROM) $(BUILD)/alynxdj_$(subst .,_,$(VERSION)).lnx
+	@echo "wrote $(BUILD)/alynxdj_$(subst .,_,$(VERSION)).lnx"
+
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: all shot clean
+.PHONY: all shot dist clean
