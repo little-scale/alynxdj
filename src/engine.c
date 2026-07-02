@@ -79,6 +79,8 @@ const unsigned char env_rate[16] = {
 unsigned char eng_mode;
 unsigned char eng_mute;         /* per-track mute bitmask (editor-owned) */
 unsigned char eng_level[NCH];   /* live per-track levels (meters) */
+unsigned char live_q[NCH];      /* LIVE: queued chain, $FF none, $FE stop */
+static unsigned char live_bar;  /* global 16-row bar counter (LIVE grid) */
 #define eng_playing (eng_mode)
 
 static unsigned char eng_tick;
@@ -472,13 +474,29 @@ static void walk_advance(unsigned char ch)
     w->prow = 0;
     if (eng_mode == MODE_PHRASE)
         return;
+    if (eng_mode == MODE_LIVE && live_q[ch] != EMPTY) {
+        unsigned char q = live_q[ch];            /* phrase boundary: launch */
+        live_q[ch] = EMPTY;
+        if (q == 0xFE || q >= NCHAINS || sd.chains[q][0].phrase == EMPTY) {
+            w->active = 0;                       /* queued stop */
+            voices[ch].env_phase = 0;
+            voices[ch].env_level = 0;
+            voices[ch].dirty = 1;
+            return;
+        }
+        w->chain = q;
+        w->cpos = 0;
+        w->phrase = sd.chains[q][0].phrase;
+        w->tsp = sd.chains[q][0].tsp;
+        return;
+    }
     ++w->cpos;
     if (w->cpos < PHRASE_ROWS && sd.chains[w->chain][w->cpos].phrase != EMPTY) {
         w->phrase = sd.chains[w->chain][w->cpos].phrase;
         w->tsp = sd.chains[w->chain][w->cpos].tsp;
         return;
     }
-    if (eng_mode == MODE_CHAIN) {
+    if (eng_mode == MODE_CHAIN || eng_mode == MODE_LIVE) {
         w->cpos = 0;
         w->phrase = sd.chains[w->chain][0].phrase;
         w->tsp = sd.chains[w->chain][0].tsp;
@@ -562,6 +580,7 @@ static void stop_nolock(void)
     pcm_stop();
     wave_stop();
     wave_owner = 0xFF;
+    live_q[0] = live_q[1] = live_q[2] = live_q[3] = EMPTY;
     for (ch = 0; ch < NCH; ++ch) {
         voices[ch].env_phase = 0;
         voices[ch].env_level = 0;
@@ -641,6 +660,35 @@ void engine_play_phrase(unsigned char track, unsigned char phrase)
     w->active = 1;
     play_common();
     eng_mode = MODE_PHRASE;
+    __asm__("cli");
+}
+
+/* LIVE: queue a chain on a track; launches at its next phrase boundary.
+ * From stopped, the first queue starts the engine on that track. */
+void __fastcall__ engine_live_queue(unsigned char track, unsigned char chain)
+{
+    struct walk *w = &eng_walk[track];
+
+    __asm__("sei");
+    if (eng_mode != MODE_LIVE) {
+        stop_nolock();
+        play_common();
+        eng_mode = MODE_LIVE;
+    }
+    if (!w->active && !eng_walk[0].active && !eng_walk[1].active
+        && !eng_walk[2].active && !eng_walk[3].active
+        && chain != 0xFE && chain < NCHAINS
+        && sd.chains[chain][0].phrase != EMPTY) {
+        w->chain = chain;                /* first launch defines the grid */
+        w->cpos = 0;
+        w->phrase = sd.chains[chain][0].phrase;
+        w->tsp = sd.chains[chain][0].tsp;
+        w->prow = 0;
+        w->active = 1;
+        live_bar = 0;
+        live_q[track] = EMPTY;
+    } else
+        live_q[track] = chain;
     __asm__("cli");
 }
 
@@ -775,6 +823,25 @@ void engine_tick(void)
             eng_gpos = 0;
         for (ch = 0; ch < NCH; ++ch)
             walk_advance(ch);
+        if (eng_mode == MODE_LIVE && ++live_bar >= PHRASE_ROWS) {
+            live_bar = 0;
+            for (ch = 0; ch < NCH; ++ch) {   /* idle tracks launch on the bar */
+                struct walk *w = &eng_walk[ch];
+                unsigned char q = live_q[ch];
+                if (!w->active && q != EMPTY) {
+                    live_q[ch] = EMPTY;
+                    if (q != 0xFE && q < NCHAINS
+                        && sd.chains[q][0].phrase != EMPTY) {
+                        w->chain = q;
+                        w->cpos = 0;
+                        w->phrase = sd.chains[q][0].phrase;
+                        w->tsp = sd.chains[q][0].tsp;
+                        w->prow = 0;
+                        w->active = 1;
+                    }
+                }
+            }
+        }
         sync_tx(SYNC_OP_ROW);
     }
 }

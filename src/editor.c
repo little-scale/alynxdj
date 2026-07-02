@@ -54,6 +54,7 @@ static unsigned char f_status;          /* last save/load ST_* result */
 static unsigned char g_row;             /* GROOVE: 0-15 */
 static unsigned char w_col;             /* WAVE: 0-31 */
 static unsigned char edit_wave;         /* what WAVE shows */
+static unsigned char live_mode;         /* SONG screen is a clip launcher */
 static unsigned char pj_row;            /* PROJECT: field index */
 static unsigned char o_row;             /* OPTIONS: field index */
 unsigned char opt_prelisten = 1;        /* audition on edit */
@@ -118,7 +119,7 @@ static void top_bar(void)
     draw_text(1, 0, "          ", PEN_DIM, PEN_BG);
     switch (screen) {
     case SCR_SONG:
-        draw_text(1, 0, "SONG", PEN_ACCENT, PEN_BG);
+        draw_text(1, 0, live_mode ? "LIVE" : "SONG", PEN_ACCENT, PEN_BG);
         break;
     case SCR_CHAIN:
         draw_text(1, 0, "CHAIN", PEN_ACCENT, PEN_BG);
@@ -234,6 +235,11 @@ static void draw_song_row(unsigned char vr, unsigned char cursor_here)
         cn = sd.song[row][c];
         if (ph_song[c] == row && !inv) {
             fg = PEN_ACCENT;
+        }
+        if (live_mode && eng_mode == MODE_LIVE && live_q[c] != EMPTY
+            && sd.song[row][c] == live_q[c] && !inv) {
+            fg = PEN_BG;                /* queued clip: inverted accent */
+            bg = PEN_ACCENT;
         }
         if (cn == EMPTY)
             draw_text(SONG_COLX(c), y, "--", inv ? fg : PEN_DIM, bg);
@@ -1538,6 +1544,12 @@ static void playhead_update(void)
     unsigned char c, r;
 
     if (screen == SCR_SONG) {
+        static unsigned char had_q;
+        unsigned char q_now = (live_q[0] != EMPTY) || (live_q[1] != EMPTY)
+                            || (live_q[2] != EMPTY) || (live_q[3] != EMPTY);
+        if (had_q && !q_now)
+            draw_song_screen();          /* a queued clip launched */
+        had_q = q_now;
         for (c = 0; c < NCH; ++c) {
             unsigned char pr = (eng_mode == MODE_SONG && eng_walk[c].active)
                                ? eng_walk[c].song_row : 0xFF;
@@ -1724,10 +1736,25 @@ void editor_frame(unsigned char joy, unsigned char prev)
         return;
     }
 
+    /* Option 2: LIVE mode toggle (SONG screen is the launcher) */
+    if ((pressed & BUTTON_OPTION2) && screen == SCR_SONG) {
+        live_mode ^= 1;
+        top_bar();
+        draw_song_screen();
+        return;
+    }
+
     /* B held + A pressed = transport, contextual per screen */
     if ((joy & JOY_BTN_B_MASK) && (pressed & JOY_BTN_A_MASK)) {
         b_used = 1;
         a_used = 1;
+        if (live_mode && screen == SCR_SONG) {
+            unsigned char cn = sd.song[s_row][s_col];
+            engine_live_queue(s_col, cn == EMPTY ? 0xFE : cn);
+            transport_label();
+            draw_song_screen();
+            return;
+        }
         if (eng_mode)
             engine_stop();
         else switch (screen) {

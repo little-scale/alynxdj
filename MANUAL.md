@@ -161,6 +161,15 @@ engine rate. Groove 0 defaults to 6/6 (~112 BPM at 4 rows/beat). Swing =
 uneven pairs (e.g. 7/5). `G` switches grooves mid-song. ←/→ pages through
 the 16 grooves.
 
+## LIVE mode (Option 2 on SONG)
+
+The SONG screen becomes a clip launcher: **B-held + A on a cell queues
+that chain on that track**, launching at the next 16-row bar (queued
+cells show inverted-accent until they fire). Queue an **empty** cell to
+stop the track at the bar. Every track loops its chain independently —
+the first launch starts the engine and defines the bar grid. Option 2
+again returns to arrangement SONG mode.
+
 ## Saving (FILES screen)
 
 B-held + ↓ from SONG: SAVE and LOAD. The song packs into the cart's

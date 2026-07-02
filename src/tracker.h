@@ -127,7 +127,10 @@ extern struct walk eng_walk[NCH];
 #define MODE_SONG   1
 #define MODE_CHAIN  2
 #define MODE_PHRASE 3
+#define MODE_LIVE   4
 extern unsigned char eng_mode;
+extern unsigned char live_q[NCH];   /* queued chain, $FF none, $FE stop */
+void __fastcall__ engine_live_queue(unsigned char track, unsigned char chain);
 extern unsigned char eng_mute;
 extern unsigned char eng_gpos, eng_groove;
 extern unsigned char eng_level[NCH];
