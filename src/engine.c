@@ -14,6 +14,7 @@
  * write the reload register only, so the oscillator phase never restarts.
  */
 #include <lynx.h>
+#include <string.h>
 
 #include "tracker.h"
 #include "../build/notes.h"
@@ -284,8 +285,12 @@ static void trigger(unsigned char ch, unsigned char note, unsigned char inum)
     } else {
         /* raw tap mask (D11): user bits 0-5 = taps 0-5 -> FEEDBACK 0-5;
          * user bit 6 = tap 7 -> control bit 7; user bit 7 = tap 10 ->
-         * FEEDBACK 6; user bit 8 = tap 11 -> FEEDBACK 7 */
+         * FEEDBACK 6; user bit 8 = tap 11 -> FEEDBACK 7.
+         * taps 0 = frozen shifter = silence — never useful, and old saves
+         * (pre-D11 timbre byte) land here: fall back to the square. */
         unsigned char lo = in->taps_lo;
+        if (!lo && !(in->taps_hi & 1))
+            lo = TAPS_SQUARE;
         v->sh_feedback = (lo & 0x3F) | ((lo & 0x80) >> 1)
                          | ((in->taps_hi & 0x01) << 7);
         v->sh_ctl = (lo & 0x40) ? AUD_TAP7 : 0;
@@ -562,6 +567,21 @@ void engine_audition(unsigned char note, unsigned char inum)
 {
     trigger(0, note, inum);
     flush(0);
+}
+
+/* prelisten a phrase row's command too, so editing C/V/P/N... is audible */
+void __fastcall__ engine_audition_cmd(unsigned char cmd, unsigned char param)
+{
+    if (cmd && cmd != CMD_D && cmd != CMD_Z && cmd != CMD_H && cmd != CMD_L)
+        exec_cmd(0, cmd, param);
+}
+
+/* HIRAM segments are NOT cleared by cc65's zerobss — call once at boot */
+void engine_init(void)
+{
+    memset(voices, 0, sizeof(voices));
+    memset(eng_walk, 0, sizeof(eng_walk));
+    engine_stop();
 }
 
 void engine_tick(void)

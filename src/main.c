@@ -265,6 +265,7 @@ void main(void)
     MIKEY.scrbase = SCREEN;
     sound_init();
     sync_init();
+    engine_init();
     song_demo();
 
     /* autoload: a valid save replaces the demo song (ported slot-0

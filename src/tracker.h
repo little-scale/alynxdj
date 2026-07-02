@@ -120,12 +120,14 @@ extern unsigned char eng_mute;
 extern unsigned char eng_gpos, eng_groove;
 void __fastcall__ engine_set_mute(unsigned char mask);
 
+void engine_init(void);
 void engine_tick(void);
 void engine_stop(void);
 void engine_play_song(unsigned char row);
 void engine_play_chain(unsigned char track, unsigned char chain);
 void engine_play_phrase(unsigned char track, unsigned char phrase);
 void engine_audition(unsigned char note, unsigned char inum);
+void __fastcall__ engine_audition_cmd(unsigned char cmd, unsigned char param);
 
 void sound_init(void);
 void __fastcall__ pcm_play(unsigned char slot);

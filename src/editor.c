@@ -699,12 +699,19 @@ static void edit_phrase_cell(unsigned char dir)
         case 0: case 3: s->cmd = (s->cmd + 1 < NCMDS) ? s->cmd + 1 : 0; break;
         case 1: case 2: s->cmd = s->cmd ? s->cmd - 1 : NCMDS - 1; break;
         }
+        goto audition_row;
     } else if (p_col == 3 && s->cmd) {
         switch (dir) {
         case 0: s->param += 16; break;
         case 1: s->param -= 16; break;
         case 2: --s->param; break;
         case 3: ++s->param; break;
+        }
+audition_row:
+        /* prelisten the row as it will play: note + command */
+        if (s->note && !eng_mode) {
+            engine_audition(s->note, s->instr);
+            engine_audition_cmd(s->cmd, s->param);
         }
     }
 }
