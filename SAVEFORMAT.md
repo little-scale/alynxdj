@@ -1,7 +1,7 @@
 # ALYNXDJ save format (EEPROM / emulator `.eeprom` images)
 
 Keep in sync with `src/tracker.h` (`struct songdata`) and `src/save.c` —
-the standing sibling rule. Version: **2** (2026-07-03).
+the standing sibling rule. Version: **3** (2026-07-03).
 
 ## Physical layer
 
@@ -31,11 +31,13 @@ Requires the repo-built core (stock libretro-handy truncates EEPROM file
 The payload unpacks to `struct songdata` verbatim (7424 bytes):
 `song[128][4]` (chain #s), `chains[32][16]` ({phrase, tsp} pairs),
 `phrases[64][16]` (4-byte steps), `instrs[32]` (16-byte records),
-`tables[16][16]` (4-byte rows), `grooves[16][16]`.
+`tables[16][16]` (4-byte rows), `grooves[16][16]`, `waves[8][32]`
+(signed 8-bit wavetables, appended in v3 — older payloads simply leave
+the factory waves in place).
 
 Instrument record bytes: 0 type, 1 vol, 2 **env** (ATK<<4 | DCY, 4-bit
 times through the engine's `env_rate[]` curve — v2), 3 hold (low nibble),
-4 reserved (was the v1 dcy rate byte), 5 taps bits 7-0, 6 table, 7 pan,
+4 wave ($FF = hardware triangle, 0-7 = wavetable; v3), 5 taps bits 7-0, 6 table, 7 pan,
 8 fine, 9 taps bit 8, 10 seed bits 7-0, 11 seed bits 11-8, 12-15 reserved.
 
 **v1 → v2 migration** (done automatically at load when the header version

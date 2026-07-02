@@ -16,7 +16,7 @@
 #define HDR_WORDS 4
 #define CAP_BYTES SAVE_CAP_BYTES        /* see tracker.h (Handy load cap) */
 
-#define SAVE_VER  2
+#define SAVE_VER  3
 
 /* nearest time-curve nibble for a v1 per-tick rate (0 stays special) */
 static unsigned char rate_nib(unsigned char rate)

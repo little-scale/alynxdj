@@ -24,11 +24,12 @@
 #define SCR_TABLE  4
 #define SCR_FILES  5
 #define SCR_GROOVE 6
+#define SCR_WAVE   7
 
 /* command letters, indexed by CMD_* id */
 static const char cmd_chars[NCMDS] = {
     '-', 'A', 'C', 'D', 'G', 'H', 'K', 'O', 'P', 'V', 'W', 'X',
-    'F', 'L', 'N', 'R', 'S', 'Z',
+    'F', 'L', 'N', 'R', 'S', 'Z', 'E',
 };
 
 #define GRID_TOP 1
@@ -49,6 +50,8 @@ static unsigned char t_row, t_col;      /* TABLE: 0-15 x vol,tsp,cmd,param */
 static unsigned char f_row;             /* FILES: SAVE / LOAD */
 static unsigned char f_status;          /* last save/load ST_* result */
 static unsigned char g_row;             /* GROOVE: 0-15 */
+static unsigned char w_col;             /* WAVE: 0-31 */
+static unsigned char edit_wave;         /* what WAVE shows */
 static unsigned char edit_groove;       /* what GROOVE shows */
 
 /* single-field clipboard (block select = later pass) */
@@ -116,6 +119,10 @@ static void top_bar(void)
         draw_text(1, 0, "GROOVE", PEN_ACCENT, PEN_BG);
         draw_hex8(8, 0, edit_groove, PEN_TEXT, PEN_BG);
         break;
+    case SCR_WAVE:
+        draw_text(1, 0, "WAVE", PEN_ACCENT, PEN_BG);
+        draw_hex8(6, 0, edit_wave, PEN_TEXT, PEN_BG);
+        break;
     }
     /* mute flags: track digits, muted = inverted */
     {
@@ -158,8 +165,10 @@ static void draw_map(void)
         for (c = 0; c < 5; ++c) {
             unsigned char cur = (r == 1 && c == screen)
                 || (r == 2 && c == 0 && screen == SCR_FILES)
-                || (r == 2 && c == 1 && screen == SCR_GROOVE);
-            unsigned char shipped = (r == 1) || (r == 2 && c <= 1);
+                || (r == 2 && c == 1 && screen == SCR_GROOVE)
+                || (r == 0 && c == 3 && screen == SCR_WAVE);
+            unsigned char shipped = (r == 1) || (r == 2 && c <= 1)
+                || (r == 0 && c == 3);
             b[0] = rows[r][c];
             draw_text(MAP_X + c, GRID_TOP + r, b,
                       cur ? PEN_BG : (shipped ? PEN_TEXT : PEN_DIM),
@@ -283,12 +292,13 @@ static void draw_phrase_screen(void)
 
 /* --- INSTR screen: field rows --- */
 
-#define NIFIELDS 8
+#define NIFIELDS 9
 #define IF_TAPS  5
 #define IF_SEED  6
-#define IF_TABLE 7
+#define IF_WAVE  7
+#define IF_TABLE 8
 static const char *const ifield_name[NIFIELDS] = {
-    "TYPE", "VOL", "ATK", "HOLD", "DCY", "TAPS", "SEED", "TABLE",
+    "TYPE", "VOL", "ATK", "HOLD", "DCY", "TAPS", "SEED", "WAVE", "TABLE",
 };
 static const char *const itype_name[4] = { "TONE", "NOISE", "WAV", "KIT" };
 
@@ -367,6 +377,12 @@ static void draw_instr_row(unsigned char r, unsigned char cursor_here)
             draw_text(8, y, "--", fg, bg);
         else
             draw_hex8(8, y, sd.instrs[edit_instr].table, fg, bg);
+        break;
+    case IF_WAVE:
+        if (sd.instrs[edit_instr].wave >= 8)
+            draw_text(8, y, "--", fg, bg);
+        else
+            draw_hex8(8, y, sd.instrs[edit_instr].wave, fg, bg);
         break;
     case 1:
         draw_hex8(8, y, sd.instrs[edit_instr].vol, fg, bg);
@@ -507,6 +523,30 @@ static void draw_groove_screen(void)
         draw_groove_row(r, r == g_row);
 }
 
+/* --- WAVE screen: 32-column bar graph of the 8-bit wavetable --- */
+
+static void draw_wave_col(unsigned char c, unsigned char cursor_here)
+{
+    unsigned char h = (unsigned char)(sd.waves[edit_wave][c] + 128) >> 4;
+    unsigned char r;
+    char b[2];
+
+    b[1] = 0;
+    for (r = 0; r < 16; ++r) {
+        unsigned char filled = (15 - r) < h || ((15 - r) == 0 && h == 0);
+        b[0] = filled ? '#' : ' ';
+        draw_text(1 + c, GRID_TOP + r, b,
+                  cursor_here ? PEN_TEXT : PEN_ACCENT, PEN_BG);
+    }
+}
+
+static void draw_wave_screen(void)
+{
+    unsigned char c;
+    for (c = 0; c < 32; ++c)
+        draw_wave_col(c, c == w_col);
+}
+
 /* --- dispatch --- */
 
 static void draw_row(unsigned char r, unsigned char cursor_here)
@@ -535,6 +575,7 @@ static void draw_screen(void)
     case SCR_TABLE:  draw_table_screen(); break;
     case SCR_FILES:  draw_files_screen(); break;
     case SCR_GROOVE: draw_groove_screen(); break;
+    case SCR_WAVE:   draw_wave_screen(); break;
     }
     draw_map();
     MIRROR_SCREEN = screen;
@@ -549,6 +590,7 @@ static unsigned char cursor_vrow(void)
     case SCR_TABLE: return t_row;
     case SCR_FILES: return f_row;
     case SCR_GROOVE: return g_row;
+    case SCR_WAVE:  return 0;
     default:        return p_row;
     }
 }
@@ -561,6 +603,7 @@ static void mirror_cursor(void)
     case SCR_INSTR: MIRROR_ROW = i_row; MIRROR_COL = 0; break;
     case SCR_TABLE: MIRROR_ROW = t_row; MIRROR_COL = t_col; break;
     case SCR_GROOVE: MIRROR_ROW = g_row; MIRROR_COL = 0; break;
+    case SCR_WAVE:  MIRROR_ROW = edit_wave; MIRROR_COL = w_col; break;
     default:        MIRROR_ROW = p_row; MIRROR_COL = p_col; break;
     }
 }
@@ -627,6 +670,21 @@ static void move_cursor(unsigned char dir)
         case 3: if (edit_groove < NGROOVES - 1) { ++edit_groove; draw_screen(); } break;
         }
         break;
+    case SCR_WAVE: {
+        unsigned char oc = w_col;
+        switch (dir) {
+        case 0: if (edit_wave < 7) { ++edit_wave; draw_screen(); } break;
+        case 1: if (edit_wave) { --edit_wave; draw_screen(); } break;
+        case 2: if (w_col) --w_col; else w_col = 31; break;
+        case 3: if (w_col < 31) ++w_col; else w_col = 0; break;
+        }
+        if (w_col != oc) {
+            draw_wave_col(oc, 0);
+            draw_wave_col(w_col, 1);
+        }
+        mirror_cursor();
+        return;
+    }
     default:
         switch (dir) {
         case 0: if (p_row) --p_row; else p_row = 15; break;
@@ -825,6 +883,13 @@ static void edit_instr_cell(unsigned char dir)
         else
             in->table = (v == 0 || v >= NTABLES) ? EMPTY : v - 1;
         return;
+    case IF_WAVE:
+        v = in->wave;
+        if (dir == 0 || dir == 3)
+            in->wave = (v >= 8) ? 0 : (v < 7 ? v + 1 : v);
+        else
+            in->wave = (v == 0 || v >= 8) ? EMPTY : v - 1;
+        break;
     case 2:                             /* ATK / HOLD / DCY: 0-F times */
     case 3:
     case 4:
@@ -873,6 +938,21 @@ static void edit_cell(unsigned char dir)
     case SCR_INSTR:  edit_instr_cell(dir); break;
     case SCR_TABLE:  edit_table_cell(dir); break;
     case SCR_GROOVE: edit_groove_cell(dir); break;
+    case SCR_WAVE: {
+        signed char *v = (signed char *)&sd.waves[edit_wave][w_col];
+        int nv = *v;
+        switch (dir) {
+        case 0: nv += 16; break;
+        case 1: nv -= 16; break;
+        case 2: nv -= 4; break;
+        case 3: nv += 4; break;
+        }
+        if (nv > 127) nv = 127;
+        if (nv < -128) nv = -128;
+        *v = (signed char)nv;
+        draw_wave_col(w_col, 1);
+        return;
+    }
     }
     draw_row(cursor_vrow(), 1);
 }
@@ -949,7 +1029,9 @@ static void nav(unsigned char to_right)
         } else
             return;
     } else {
-        if (screen == SCR_TABLE)
+        if (screen == SCR_WAVE)
+            screen = SCR_INSTR;
+        else if (screen == SCR_TABLE)
             screen = SCR_INSTR;
         else if (screen == SCR_INSTR)
             screen = SCR_PHRASE;
@@ -977,6 +1059,13 @@ static void nav_v(unsigned char down)
         screen = SCR_GROOVE;
     else if (!down && screen == SCR_GROOVE)
         screen = SCR_CHAIN;
+    else if (!down && screen == SCR_INSTR) {
+        unsigned char w = sd.instrs[edit_instr].wave;
+        if (w < 8)
+            edit_wave = w;
+        screen = SCR_WAVE;
+    } else if (down && screen == SCR_WAVE)
+        screen = SCR_INSTR;
     else
         return;
     ph_row = 0xFF;

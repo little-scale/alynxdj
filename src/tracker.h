@@ -36,7 +36,9 @@
 #define CMD_S    16     /* S xx  live PCM rate: timer-7 reload (pitch the
                                  playing sample; smaller = faster) */
 #define CMD_Z    17     /* Z xx  probability: note plays if rand8 < xx */
-#define NCMDS    18
+#define CMD_E    18     /* E xy  re-slope the envelope live: ATK x, DCY y
+                                 nibbles (current stage + level untouched) */
+#define NCMDS    19
 
 #define IT_TONE  0
 #define IT_NOISE 1
@@ -71,7 +73,8 @@ struct instr {
                                (0 = instant attack / sustain-forever decay);
                                mapped through env_rate[] in the engine */
     unsigned char hold;     /* low nibble: ticks at peak (0-15) */
-    unsigned char free0;    /* was the dcy byte; reserved */
+    unsigned char wave;     /* WAV type: $FF = hardware triangle,
+                               0-7 = wavetable through the channel-C DAC */
     unsigned char taps_lo;  /* TAPS bits 7..0 */
     unsigned char table;    /* $FF = none */
     unsigned char pan;      /* L/R nibbles */
@@ -99,6 +102,7 @@ struct songdata {
     struct instr     instrs[NINSTR];
     struct tablerow  tables[NTABLES][PHRASE_ROWS];
     unsigned char    grooves[NGROOVES][16];     /* ticks/row, 0 = end */
+    unsigned char    waves[8][32];              /* signed 8-bit wavetables */
 };
 extern struct songdata sd;
 
@@ -149,6 +153,12 @@ extern unsigned char sync_row_pending;
 void sync_init(void);
 void __fastcall__ sync_tx(unsigned char b);
 void sync_poll(void);
+
+/* wavetable feed (irq.s): loops sd.waves[w] through channel C's DAC */
+void __fastcall__ wave_start(unsigned char w);
+void __fastcall__ wave_rate(unsigned char clock, unsigned char bkup,
+                            unsigned char step);
+void wave_stop(void);
 
 /* 93C86 EEPROM (src/eeprom.s), full 16-bit words per cell */
 unsigned __fastcall__ ee_read(unsigned cell);

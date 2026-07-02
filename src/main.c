@@ -109,7 +109,14 @@ static void song_new(void)
     for (c = 0; c < NINSTR; ++c) {
         sd.instrs[c].pan = 0xFF;        /* centre = full both sides */
         sd.instrs[c].table = EMPTY;
+        sd.instrs[c].wave = EMPTY;      /* WAV default: hardware triangle */
         sd.instrs[c].taps_lo = TAPS_SQUARE;  /* no taps = frozen LFSR */
+    }
+    for (c = 0; c < 32; ++c) {          /* factory wavetables 0-3 */
+        sd.waves[0][c] = (c < 16) ? (c * 15 - 120) : (120 - (c - 16) * 15);
+        sd.waves[1][c] = c * 8 - 124;                    /* saw */
+        sd.waves[2][c] = (c < 16) ? 100 : -100;          /* square */
+        sd.waves[3][c] = (c < 8) ? 100 : -100;           /* pulse 25 */
     }
     sd.grooves[0][0] = 6;               /* default groove: straight 6/6 */
     sd.grooves[0][1] = 6;

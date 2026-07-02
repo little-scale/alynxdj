@@ -46,7 +46,11 @@ F G            FILES (below SONG)   GROOVE (below CHAIN)
 
 B-held + →  descends and *drills in* (opens the chain/phrase/instrument
 under the cursor); B-held + ← / B-tap goes back; B-held + ↑/↓ reaches
-FILES and GROOVE.
+FILES, GROOVE and WAVE (above INSTR).
+
+**WAVE screen:** 32-column bar editor for the 8 wavetables. ←/→ move,
+↑/↓ page waves, A-held + d-pad draws (↑/↓ coarse, ←/→ fine). Waves 0–3
+ship as triangle, saw, square, 25% pulse.
 
 ## Instruments (INSTR screen)
 
@@ -83,8 +87,13 @@ Sweep TAPS/SEED with A-held + ←/→ while a note auditions — exploration is
 the point.
 
 - **TONE vs NOISE** are the same machine with different default taps.
-- **WAV** ignores TAPS: it is the hardware triangle (integrate mode).
-  Keep VOL ≤ 10 — the ramp accumulator wraps above that.
+- **WAV** ignores TAPS. With WAVE = `--` it is the hardware triangle
+  (integrate mode; keep VOL ≤ 10 — the ramp accumulator wraps above
+  that). With WAVE = 0–7 it loops that **32-byte wavetable** through a
+  channel DAC — draw your own on the WAVE screen. Wavetable notes share
+  one output channel (like KIT), the envelope gates length only (the DAC
+  is full-amplitude), and very high notes read the table coarser to keep
+  the feed rate sane.
 - **KIT** plays the sample kit through the channel DAC; the note's
   semitone picks the kit slot (C=1, C#=2, …). Samples share one output
   channel.
@@ -110,6 +119,8 @@ the point.
 | `W xx` | wait | shorten this row to xx ticks |
 | `X xx` | volume | this note's envelope peak |
 | `Z xx` | chance | the note plays if an 8-bit roll < xx (`Z80` ≈ 50/50) |
+
+| `E xy` | envelope | re-slope live: attack x, decay y (times, like the INSTR fields; current stage and level untouched) |
 
 (`T` tempo and the `I`/`J` variation pair are planned — see PLAN.md.)
 

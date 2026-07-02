@@ -58,8 +58,11 @@ struct voice {
     /* Mikey shadow */
     unsigned char sh_feedback, sh_bkup, sh_ctl, sh_pan;
     unsigned char sh_shiftlo, sh_shifthi;   /* LFSR seed (OTHER hi nibble) */
+    unsigned char wmode;        /* WAV: playing a wavetable (channel C bus) */
     unsigned char dirty, retime;
 };
+
+static unsigned char wave_owner = 0xFF; /* which voice holds the wave bus */
 
 #pragma bss-name (push, "SONG")
 static struct voice voices[NCH];
@@ -95,7 +98,7 @@ static void pitch_update(unsigned char ch)
     unsigned char n, frac, b0, b1, clk, ctl;
     signed char vib = 0;
 
-    if (v->type == IT_KIT || v->env_phase == 0)
+    if (v->type == IT_KIT || v->wmode || v->env_phase == 0)
         return;
     if (v->vib_depth) {
         unsigned char ph = v->vib_phase;
@@ -204,6 +207,10 @@ static void exec_cmd(unsigned char ch, unsigned char cmd, unsigned char param)
     case CMD_S:
         *(volatile unsigned char *)0xFD1C = param;  /* TIM7BKUP live */
         break;
+    case CMD_E:
+        v->e_atk = env_rate[param >> 4];
+        v->e_dcy = env_rate[param & 0x0F];
+        break;
     /* CMD_H (table loop / phrase end), CMD_D and CMD_Z live in the peek */
     }
 }
@@ -284,6 +291,23 @@ static void trigger(unsigned char ch, unsigned char note, unsigned char inum)
     v->tpos = 0;
     v->tbl_tsp = 0;
 
+    v->wmode = 0;
+    if (in->type == IT_WAV && in->wave < 8) {
+        /* 32-byte wavetable through channel C's DAC (mono wave bus, like
+         * KIT on channel D). Envelope gates note length only — the DAC
+         * writes are full-amplitude (no per-sample scaling on a 65C02). */
+        if (wave_owner != EMPTY && wave_owner != ch)
+            voices[wave_owner].wmode = 0;
+        wave_owner = ch;
+        v->wmode = 1;
+        wave_start(in->wave);
+        wave_rate(wave_clock[note - 1], wave_bkup[note - 1],
+                  wave_step[note - 1]);
+        v->sh_pan = in->pan;
+        (&MIKEY.attena)[2] = in->pan;   /* the wave bus is channel C */
+        v->dirty = 0;
+        return;
+    }
     if (in->type == IT_WAV) {
         v->sh_feedback = 0x80;          /* tap-11 triangle carrier */
         v->sh_ctl = AUD_INTEGRATE;
@@ -506,6 +530,8 @@ void engine_stop(void)
         sync_tx(SYNC_OP_STOP);
     eng_mode = MODE_STOP;
     pcm_stop();
+    wave_stop();
+    wave_owner = 0xFF;
     for (ch = 0; ch < NCH; ++ch) {
         voices[ch].env_phase = 0;
         voices[ch].env_level = 0;
@@ -668,6 +694,11 @@ void engine_tick(void)
                 } else
                     --v->kill_in;
             }
+        }
+        if (v->wmode && v->env_phase == 0) {
+            v->wmode = 0;
+            wave_owner = 0xFF;
+            wave_stop();
         }
         flush(ch);
     }
