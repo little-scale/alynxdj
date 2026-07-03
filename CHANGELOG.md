@@ -2,11 +2,13 @@
 
 ## Unreleased
 
-- Channel meters now track the **real DAC amplitude** for KIT (PCM) and
-  WAV voices — peak-held per frame in the sample/wave IRQ and routed to
-  the owning track — instead of the envelope, which for KIT was always
-  zero (drum meters were dead) and for WAV ignored the full-scale DAC.
-  TONE/NOISE still read the envelope, which does scale their output.
+- Channel meters now track a per-frame **RMS** of the real DAC output for
+  KIT (PCM) and WAV voices — the sample/wave IRQ sums squares (via a
+  boot-built square table) and the engine tick takes sqrt(mean), routed
+  to the owning track. Previously KIT read the envelope, which is always
+  zero for samples (drum meters were dead), and WAV ignored the
+  full-scale DAC. TONE/NOISE still read the envelope, which scales their
+  VOLUME output directly.
 - FILES screen grows **NEW** (blank the song, with a SURE confirm step)
   and **PURGE** (drop unreferenced chains, then unreferenced phrases —
   shrinks the packed save; the PACK meter shows the gain)

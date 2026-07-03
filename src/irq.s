@@ -16,8 +16,11 @@
         .export         _pcm_ptr
         .export         _pcm_head
         .export         _pcm_done
-        .export         _pcm_peak
-        .export         _wav_peak
+        .export         _pcm_ss
+        .export         _pcm_n
+        .export         _wav_ss
+        .export         _wav_n
+        .export         _sq_tbl
         .import         _sd
         .import         _engine_tick
         .import         popa
@@ -49,8 +52,13 @@ wav_ptr: .res 2                 ; base of the active 32-byte wavetable
         .bss
 _pcm_head: .res 2               ; ring head — owned by the C pump
 _pcm_done: .res 1               ; pump: no more stream bytes coming
-_pcm_peak: .res 1               ; per-frame peak |sample| on channel D (meter)
-_wav_peak: .res 1               ; per-frame peak |entry| on channel C (meter)
+; per-frame RMS accumulators for the KIT/WAV meters (sum of squares + count,
+; snapshot & zeroed by the engine tick; sq_tbl[i] = i*i filled by C at boot)
+_pcm_ss: .res 3                 ; channel D sum of squares (24-bit)
+_pcm_n:  .res 2                 ; channel D sample count
+_wav_ss: .res 3                 ; channel C sum of squares
+_wav_n:  .res 2                 ; channel C sample count
+_sq_tbl: .res 256               ; 128 words: square lookup (little-endian)
 in_tick: .res 1                 ; VBL tick re-entrancy guard
 zpbuf:   .res 32                ; cc65 runtime zp save (tick runs C in IRQ)
 wav_pos: .res 1                 ; table read position (wraps & $1F)
@@ -152,11 +160,24 @@ handler:
         bra     @wave
 @feed:  lda     (_pcm_ptr)
         sta     AUD3DAC
-        bpl     @pp             ; peak-hold |sample| for the meter
+        phx                     ; RMS: accumulate |sample|^2 and count
+        bpl     @pp
         eor     #$ff
-@pp:    cmp     _pcm_peak
-        bcc     @pd
-        sta     _pcm_peak
+@pp:    asl     a               ; word index into sq_tbl
+        tax
+        lda     _sq_tbl,x
+        clc
+        adc     _pcm_ss
+        sta     _pcm_ss
+        lda     _sq_tbl+1,x
+        adc     _pcm_ss+1
+        sta     _pcm_ss+1
+        bcc     @pc
+        inc     _pcm_ss+2
+@pc:    plx
+        inc     _pcm_n
+        bne     @pd
+        inc     _pcm_n+1
 @pd:    inc     _pcm_ptr
         bne     @wave
         lda     _pcm_ptr+1
@@ -174,11 +195,24 @@ handler:
         ldy     wav_pos
         lda     (wav_ptr),y
         sta     AUD2DAC
-        bpl     @wp             ; peak-hold |entry| for the meter
+        phx                     ; RMS: accumulate |entry|^2 and count
+        bpl     @wp
         eor     #$ff
-@wp:    cmp     _wav_peak
-        bcc     @wd
-        sta     _wav_peak
+@wp:    asl     a
+        tax
+        lda     _sq_tbl,x
+        clc
+        adc     _wav_ss
+        sta     _wav_ss
+        lda     _sq_tbl+1,x
+        adc     _wav_ss+1
+        sta     _wav_ss+1
+        bcc     @wc
+        inc     _wav_ss+2
+@wc:    plx
+        inc     _wav_n
+        bne     @wd
+        inc     _wav_n+1
 @wd:    tya
         clc
         adc     wav_step

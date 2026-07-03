@@ -65,7 +65,36 @@ struct voice {
 static unsigned char wave_owner = 0xFF; /* which voice holds the wave bus */
 static unsigned char pcm_owner = 0xFF;  /* which track's KIT holds channel D */
 
-extern unsigned char pcm_peak, wav_peak;   /* per-frame DAC peaks (irq.s) */
+/* per-frame RMS accumulators fed by the sample/wave IRQ (irq.s) */
+extern unsigned char pcm_ss[3], wav_ss[3];  /* sum of squares (24-bit LE) */
+extern unsigned int pcm_n, wav_n;           /* sample counts */
+extern unsigned int sq_tbl[128];            /* i*i, filled at boot */
+
+/* meter level = sqrt(sum-of-squares / count), 0-127 */
+static unsigned char dac_rms(const unsigned char *ss, unsigned n)
+{
+    unsigned long sum;
+    unsigned mean, r, bit;
+
+    if (!n)
+        return 0;
+    sum = (unsigned long)ss[0] | ((unsigned long)ss[1] << 8)
+        | ((unsigned long)ss[2] << 16);
+    mean = (unsigned)(sum / n);             /* 0..16129 */
+    r = 0;
+    bit = 1u << 14;
+    while (bit > mean)
+        bit >>= 2;
+    while (bit) {
+        if (mean >= r + bit) {
+            mean -= r + bit;
+            r = (r >> 1) + bit;
+        } else
+            r >>= 1;
+        bit >>= 2;
+    }
+    return (unsigned char)r;
+}
 
 #pragma bss-name (push, "SONG")
 static struct voice voices[NCH];
@@ -717,18 +746,31 @@ void __fastcall__ engine_audition_cmd(unsigned char cmd, unsigned char param)
 /* HIRAM segments are NOT cleared by cc65's zerobss — call once at boot */
 void engine_init(void)
 {
+    unsigned i;
+
     memset(voices, 0, sizeof(voices));
     memset(eng_walk, 0, sizeof(eng_walk));
+    for (i = 0; i < 128; ++i)               /* square table for meter RMS */
+        sq_tbl[i] = i * i;
     stop_nolock();
 }
 
 void engine_tick(void)
 {
     unsigned char ch;
-    /* snapshot + clear the IRQ DAC peaks for KIT/WAV meters (this frame) */
-    unsigned char pcm_lvl = pcm_peak, wav_lvl = wav_peak;
-    pcm_peak = 0;
-    wav_peak = 0;
+    unsigned char pcm_lvl, wav_lvl;
+    unsigned char pss[3], wss[3];
+    unsigned pn, wn;
+
+    /* snapshot + clear the IRQ RMS accumulators atomically (this frame) */
+    __asm__("sei");
+    pss[0] = pcm_ss[0]; pss[1] = pcm_ss[1]; pss[2] = pcm_ss[2]; pn = pcm_n;
+    wss[0] = wav_ss[0]; wss[1] = wav_ss[1]; wss[2] = wav_ss[2]; wn = wav_n;
+    pcm_ss[0] = pcm_ss[1] = pcm_ss[2] = 0; pcm_n = 0;
+    wav_ss[0] = wav_ss[1] = wav_ss[2] = 0; wav_n = 0;
+    __asm__("cli");
+    pcm_lvl = dac_rms(pss, pn);
+    wav_lvl = dac_rms(wss, wn);
 
     /* sync slave: rows are granted by received ROW bytes, not the groove */
     if (eng_playing && sync_mode == SYNC_IN && eng_tick && sync_row_pending) {
