@@ -1714,7 +1714,7 @@ static void meters_update(void)
             continue;
         meter_h[t] = h;
         for (i = 0; i < 3; ++i) {
-            b[0] = (i < h) ? '#' : ' ';
+            b[0] = (i < h) ? '`' : ' ';   /* solid block glyph */
             draw_text(MAP_X + 1 + t, MAP_Y + 7 - i, b, PEN_ACCENT, PEN_BG);
         }
     }
