@@ -203,9 +203,9 @@ static void transport_label(void)
  * §4) so vertical B-nav can land here later. */
 #define MAP_X 30
 #define MAP_Y (GRID_TOP + 1)
-#define METER_H     8               /* channel meter height in cells */
-#define METER_BOT   (MAP_Y + 14)    /* baseline row (bars grow upward) */
-#define METER_X(t)  (MAP_X + 1 + (t))       /* 4 adjacent bars */
+#define METER_H     16              /* channel meter height in cells */
+#define METER_BOT   (MAP_Y + 14)    /* baseline row 16 (bars grow upward) */
+#define METER_X(t)  (40 - NCH + (t))        /* 4 bars against the right edge */
 static void draw_map(void)
 {
     static const char rows[3][6] = { "OP W ", "SCPIT", "FG   " };
@@ -1712,8 +1712,8 @@ static void meters_update(void)
 
     b[1] = 0;
     for (t = 0; t < NCH; ++t) {
-        /* 0-127 envelope -> 0-METER_H cells (rounded so full VOL fills) */
-        h = (unsigned char)((eng_level[t] + 8) >> 4);
+        /* 0-127 level -> 0-METER_H (16) cells (rounded so full VOL fills) */
+        h = (unsigned char)((eng_level[t] + 4) >> 3);
         if (h > METER_H)
             h = METER_H;
         if (h == meter_h[t])
