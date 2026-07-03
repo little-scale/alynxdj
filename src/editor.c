@@ -204,8 +204,8 @@ static void transport_label(void)
 #define MAP_X 30
 #define MAP_Y (GRID_TOP + 1)
 #define METER_H     8               /* channel meter height in cells */
-#define METER_BOT   (MAP_Y + 12)    /* baseline row (bars grow upward) */
-#define METER_X(t)  (MAP_X + 1 + (t) * 2)   /* 4 bars, 1 blank col apart */
+#define METER_BOT   (MAP_Y + 14)    /* baseline row (bars grow upward) */
+#define METER_X(t)  (MAP_X + 1 + (t))       /* 4 adjacent bars */
 static void draw_map(void)
 {
     static const char rows[3][6] = { "OP W ", "SCPIT", "FG   " };
