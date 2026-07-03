@@ -1,22 +1,30 @@
 # Changelog
 
-## Unreleased
+## v0.2 — 2026-07-03
 
-- Channel meters now track the **real DAC amplitude** for KIT (PCM) and
-  WAV voices — peak-held per frame in the sample/wave IRQ and routed to
-  the owning track — instead of the envelope, which for KIT was always
-  zero (drum meters were dead) and for WAV ignored the full-scale DAC.
-  TONE/NOISE still read the envelope, which does scale their output.
-- FILES screen grows **NEW** (blank the song, with a SURE confirm step)
-  and **PURGE** (drop unreferenced chains, then unreferenced phrases —
-  shrinks the packed save; the PACK meter shows the gain)
+Editor/UX polish pass on top of the feature-complete v0.1. Still
+emulator-verified throughout (retroshot headless harness).
+
+- **Channel meters reworked.** Four full-height bars down the right-hand
+  border, one per track, drawn as solid blocks with a dim track behind
+  each so all four are always visible. KIT (PCM) and WAV voices now show
+  a peak of the **real DAC output** (routed to the owning track) instead
+  of the envelope — which for KIT was always zero, so drum meters were
+  dead. TONE/NOISE keep the envelope level, which does scale their output.
+- **FILES gains NEW and PURGE.** NEW blanks the song back to a clean
+  slate (with a SURE confirm step; it doesn't touch the EEPROM, so your
+  last save survives). PURGE drops chains no song row references, then
+  phrases no surviving chain references, and repacks — the PACK meter
+  shows the bytes reclaimed.
 - **Eight palettes** ported from SMSGGDJ's COLR presets — WHT / WB / AMBR
-  / CYAN / PINK / NEON / KIDD / MINT — named on the OPTIONS screen (was
-  six numbered schemes)
+  / CYAN / PINK / NEON / KIDD / MINT — shown by name on OPTIONS (was six
+  numbered schemes).
 - **Single global groove** (D13): the groove pool and the `G` command are
-  gone; the GROOVE screen edits one groove that drives the whole song
-- INSTR screen regrouped with blank rows (TYPE / envelope / LFSR /
-  routing); the screen-map indicator moved left 4 and down 1
+  retired; the GROOVE screen edits one groove that drives the whole song,
+  and PROJECT's TMPO steps it. The command set is now 20.
+- **INSTR screen regrouped** with blank rows between TYPE / envelope /
+  LFSR / routing bands; the screen-map indicator moved left and down.
+- Save slot fixed at one packed song per the 2 KB EEPROM budget (D12).
 
 ## v0.1 — 2026-07-03
 

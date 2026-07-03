@@ -59,8 +59,10 @@ REPEAT (key-repeat delay), PALETTE (eight colour schemes ported from
 SMSGGDJ — WHT / WB / AMBR / CYAN / PINK / NEON / KIDD / MINT, applied live).
 OPTIONS settings persist in the cart EEPROM alongside the song.
 
-Below the map indicator, four **channel meters** show live per-track
-levels during playback.
+Four full-height **channel meters** run down the right-hand border, one
+per track. TONE/NOISE show the envelope level (which scales their
+output); KIT and WAV show a peak of the actual DAC output, so sample and
+wavetable voices register too.
 
 The map rows also navigate horizontally: B-held+←/→ moves FILES↔GROOVE
 and OPTIONS↔PROJECT↔WAVE.

@@ -10,7 +10,7 @@
 BUILD := build
 ROM   := $(BUILD)/alynxdj.lnx
 CFG   := alynxdj.cfg
-VERSION := v0.1
+VERSION := v0.2
 
 SRC_C := src/main.c src/sound.c src/engine.c src/editor.c src/save.c src/sync.c src/pool.c $(BUILD)/notes.c
 SRC_S := src/lowcode.s src/irq.s src/eeprom.s src/cart.s

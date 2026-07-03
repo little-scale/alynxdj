@@ -26,9 +26,10 @@ as a multi-drop sync bus (planned).
 
 ## Status
 
-**V0.1 dev — feature-complete against the design brief** (see
-[PLAN.md](PLAN.md) for the full table, [DESIGN.md](DESIGN.md) for the
-design contract and decision log):
+**V0.2 dev — feature-complete against the design brief, plus an
+editor/UX polish pass** (see [CHANGELOG.md](CHANGELOG.md) for what
+changed, [PLAN.md](PLAN.md) for the milestone table, [DESIGN.md](DESIGN.md)
+for the design contract and decision log):
 
 - Full SONG → CHAIN → PHRASE hierarchy, **all ten screens** + map
   indicator + channel meters; engine tick in the VBlank IRQ (tempo is
@@ -47,6 +48,14 @@ design contract and decision log):
 Remaining to 1.0: the real-hardware pass (Q2/Q4, ComLynx cable, cart
 streaming on silicon) and upstream PRs (libretro-handy EEPROM fix, cc65
 `_UART_TIMER`).
+
+## Download
+
+Grab the latest [release](https://github.com/little-scale/alynxdj/releases):
+the `.lnx` ROM, the patched macOS-arm64 libretro-Handy core used for
+verification, and a demo-song WAV rendered by the headless harness. No
+Lynx hardware yet — everything so far is emulator-verified. Run the ROM
+in RetroArch (Handy core) or build the harness below.
 
 ## Building
 
