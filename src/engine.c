@@ -63,6 +63,9 @@ struct voice {
 };
 
 static unsigned char wave_owner = 0xFF; /* which voice holds the wave bus */
+static unsigned char pcm_owner = 0xFF;  /* which track's KIT holds channel D */
+
+extern unsigned char pcm_peak, wav_peak;   /* per-frame DAC peaks (irq.s) */
 
 #pragma bss-name (push, "SONG")
 static struct voice voices[NCH];
@@ -272,6 +275,7 @@ static void trigger(unsigned char ch, unsigned char note, unsigned char inum)
         /* PCM: note semitone picks the kit slot; plays on channel D's DAC
          * regardless of track (mono sample bus, SMSGGDJ T3 policy). */
         pool_trigger(in->wave < 8 ? in->wave : 0, ((note - 1) % 12) & 7);
+        pcm_owner = ch;                 /* this track drives the sample meter */
         v->type = IT_KIT;
         v->inum = inum;
         v->base_note = note;
@@ -721,6 +725,10 @@ void engine_init(void)
 void engine_tick(void)
 {
     unsigned char ch;
+    /* snapshot + clear the IRQ DAC peaks for KIT/WAV meters (this frame) */
+    unsigned char pcm_lvl = pcm_peak, wav_lvl = wav_peak;
+    pcm_peak = 0;
+    wav_peak = 0;
 
     /* sync slave: rows are granted by received ROW bytes, not the groove */
     if (eng_playing && sync_mode == SYNC_IN && eng_tick && sync_row_pending) {
@@ -771,6 +779,7 @@ void engine_tick(void)
                                                  ? v->inum : 0].wave;
                     pool_trigger(kb < 8 ? kb : 0,
                                  ((v->base_note - 1) % 12) & 7);
+                    pcm_owner = ch;
                 }
                 else {
                     unsigned char fade = v->rt_fade << 3;
@@ -806,7 +815,18 @@ void engine_tick(void)
             wave_stop();
         }
         flush(ch);
-        eng_level[ch] = (eng_mute & (1 << ch)) ? 0 : v->env_level;
+        /* meter source: TONE/NOISE use the envelope (it scales VOLUME);
+         * KIT/WAV play the DAC full-amplitude, so use the real DAC peak */
+        {
+            unsigned char lvl;
+            if (v->type == IT_KIT)
+                lvl = (ch == pcm_owner) ? pcm_lvl : 0;
+            else if (v->wmode)
+                lvl = wav_lvl;
+            else
+                lvl = v->env_level;
+            eng_level[ch] = (eng_mute & (1 << ch)) ? 0 : lvl;
+        }
     }
 
     if (!eng_playing)

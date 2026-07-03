@@ -16,6 +16,8 @@
         .export         _pcm_ptr
         .export         _pcm_head
         .export         _pcm_done
+        .export         _pcm_peak
+        .export         _wav_peak
         .import         _sd
         .import         _engine_tick
         .import         popa
@@ -47,6 +49,8 @@ wav_ptr: .res 2                 ; base of the active 32-byte wavetable
         .bss
 _pcm_head: .res 2               ; ring head — owned by the C pump
 _pcm_done: .res 1               ; pump: no more stream bytes coming
+_pcm_peak: .res 1               ; per-frame peak |sample| on channel D (meter)
+_wav_peak: .res 1               ; per-frame peak |entry| on channel C (meter)
 in_tick: .res 1                 ; VBL tick re-entrancy guard
 zpbuf:   .res 32                ; cc65 runtime zp save (tick runs C in IRQ)
 wav_pos: .res 1                 ; table read position (wraps & $1F)
@@ -148,7 +152,12 @@ handler:
         bra     @wave
 @feed:  lda     (_pcm_ptr)
         sta     AUD3DAC
-        inc     _pcm_ptr
+        bpl     @pp             ; peak-hold |sample| for the meter
+        eor     #$ff
+@pp:    cmp     _pcm_peak
+        bcc     @pd
+        sta     _pcm_peak
+@pd:    inc     _pcm_ptr
         bne     @wave
         lda     _pcm_ptr+1
         inc     a
@@ -165,7 +174,12 @@ handler:
         ldy     wav_pos
         lda     (wav_ptr),y
         sta     AUD2DAC
-        tya
+        bpl     @wp             ; peak-hold |entry| for the meter
+        eor     #$ff
+@wp:    cmp     _wav_peak
+        bcc     @wd
+        sta     _wav_peak
+@wd:    tya
         clc
         adc     wav_step
         and     #$1F            ; 32-entry loop
