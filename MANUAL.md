@@ -172,11 +172,19 @@ again returns to arrangement SONG mode.
 
 ## Saving (FILES screen)
 
-B-held + ↓ from SONG: SAVE and LOAD. The song packs into the cart's
-EEPROM — the PACK meter shows the packed size against capacity; a song
-that doesn't fit is refused, never truncated. The last saved song
-autoloads at boot. In an emulator the save lives in the `.eeprom` file
-beside the ROM (format: [SAVEFORMAT.md](SAVEFORMAT.md)).
+B-held + ↓ from SONG: **SAVE / LOAD / NEW / PURGE**. The song packs into
+the cart's EEPROM — the PACK meter shows the packed size against
+capacity; a song that doesn't fit is refused, never truncated. The last
+saved song autoloads at boot. In an emulator the save lives in the
+`.eeprom` file beside the ROM (format: [SAVEFORMAT.md](SAVEFORMAT.md)).
+
+**NEW** wipes the whole song back to a blank slate (it does not touch the
+EEPROM — your last save survives until you SAVE over it). It asks for a
+second A-press: the row turns to SURE, moving the cursor disarms it.
+
+**PURGE** deletes every chain no song row references, then every phrase
+no remaining chain references, and repacks — the PACK meter shows the
+bytes reclaimed. Run it before saving a tight song.
 
 ## The demo song
 

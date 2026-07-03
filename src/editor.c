@@ -49,8 +49,10 @@ static unsigned char c_row, c_col;      /* CHAIN: 0-15 x {phrase,tsp} */
 static unsigned char p_row, p_col;      /* PHRASE: note,instr,cmd,param */
 static unsigned char i_row;             /* INSTR: field index */
 static unsigned char t_row, t_col;      /* TABLE: 0-15 x vol,tsp,cmd,param */
-static unsigned char f_row;             /* FILES: SAVE / LOAD */
+static unsigned char f_row;             /* FILES: SAVE/LOAD/NEW/PURGE */
 static unsigned char f_status;          /* last save/load ST_* result */
+static unsigned char f_confirm;         /* NEW: armed, awaiting 2nd tap */
+static void purge(void);
 static unsigned char g_row;             /* GROOVE: 0-15 */
 static unsigned char w_col;             /* WAVE: 0-31 */
 static unsigned char edit_wave;         /* what WAVE shows */
@@ -499,17 +501,48 @@ static void draw_files_status(void)
     };
     unsigned len = save_pack();
 
-    draw_text(1, 6, "PACK $", PEN_DIM, PEN_BG);
-    draw_hex8(7, 6, (unsigned char)(len >> 8), len ? PEN_TEXT : PEN_ACCENT,
+    draw_text(1, 10, "PACK $", PEN_DIM, PEN_BG);
+    draw_hex8(7, 10, (unsigned char)(len >> 8), len ? PEN_TEXT : PEN_ACCENT,
               PEN_BG);
-    draw_hex8(9, 6, (unsigned char)len, len ? PEN_TEXT : PEN_ACCENT, PEN_BG);
-    draw_text(12, 6, "OF $", PEN_DIM, PEN_BG);
-    draw_hex8(16, 6, (unsigned char)(SAVE_CAP_BYTES >> 8), PEN_DIM, PEN_BG);
-    draw_hex8(18, 6, (unsigned char)SAVE_CAP_BYTES, PEN_DIM, PEN_BG);
-    draw_text(1, 8, st[f_status], f_status == ST_OK ? PEN_ACCENT : PEN_TEXT,
+    draw_hex8(9, 10, (unsigned char)len, len ? PEN_TEXT : PEN_ACCENT, PEN_BG);
+    draw_text(12, 10, "OF $", PEN_DIM, PEN_BG);
+    draw_hex8(16, 10, (unsigned char)(SAVE_CAP_BYTES >> 8), PEN_DIM, PEN_BG);
+    draw_hex8(18, 10, (unsigned char)SAVE_CAP_BYTES, PEN_DIM, PEN_BG);
+    draw_text(1, 12, st[f_status], f_status == ST_OK ? PEN_ACCENT : PEN_TEXT,
               PEN_BG);
     MIRROR_PACKLEN = len;
     MIRROR_STATUS = f_status;
+}
+
+/* PURGE: drop chains no song row references, then phrases no remaining
+ * chain references (rig rows included in the scan, so they survive) */
+static void purge(void)
+{
+    unsigned char used[NPHRASES];
+    unsigned char r, c, s, n;
+
+    __asm__("sei");
+    memset(used, 0, NCHAINS);
+    for (r = 0; r < SONG_ROWS; ++r)
+        for (c = 0; c < NCH; ++c) {
+            n = sd.song[r][c];
+            if (n < NCHAINS)
+                used[n] = 1;
+        }
+    for (c = 0; c < NCHAINS; ++c)
+        if (!used[c])
+            memset(sd.chains[c], EMPTY, sizeof(sd.chains[0]));
+    memset(used, 0, NPHRASES);
+    for (c = 0; c < NCHAINS; ++c)
+        for (s = 0; s < PHRASE_ROWS; ++s) {
+            n = sd.chains[c][s].phrase;
+            if (n < NPHRASES)
+                used[n] = 1;
+        }
+    for (c = 0; c < NPHRASES; ++c)
+        if (!used[c])
+            memset(sd.phrases[c], 0, sizeof(sd.phrases[0]));
+    __asm__("cli");
 }
 
 static void draw_files_row(unsigned char r, unsigned char cursor_here)
@@ -521,12 +554,17 @@ static void draw_files_row(unsigned char r, unsigned char cursor_here)
         draw_text(1, GRID_TOP + 1, "SAVE", fg, bg);
     else if (r == 1)
         draw_text(1, GRID_TOP + 3, "LOAD", fg, bg);
+    else if (r == 2)
+        draw_text(1, GRID_TOP + 5, f_confirm ? "SURE" : "NEW ", fg, bg);
+    else if (r == 3)
+        draw_text(1, GRID_TOP + 7, "PURGE", fg, bg);
 }
 
 static void draw_files_screen(void)
 {
-    draw_files_row(0, f_row == 0);
-    draw_files_row(1, f_row == 1);
+    unsigned char r;
+    for (r = 0; r < 4; ++r)
+        draw_files_row(r, r == f_row);
     draw_files_status();
 }
 
@@ -817,8 +855,12 @@ static void move_cursor(unsigned char dir)
         }
         break;
     case SCR_FILES:
-        if (dir == 0 || dir == 1)
-            f_row ^= 1;
+        if (dir == 0 || dir == 1) {
+            f_confirm = 0;
+            draw_files_row(2, f_row == 2);
+            f_row = (dir == 1) ? (f_row < 3 ? f_row + 1 : 0)
+                               : (f_row ? f_row - 1 : 3);
+        }
         break;
     case SCR_GROOVE:
         switch (dir) {
@@ -1190,7 +1232,27 @@ static void insert_cell(void)
     case SCR_FILES:
         engine_stop();
         transport_label();
-        f_status = f_row ? save_load() : save_do();
+        switch (f_row) {
+        case 0: f_status = save_do(); break;
+        case 1: f_status = save_load(); break;
+        case 2:
+            if (!f_confirm) {           /* two taps to wipe the song */
+                f_confirm = 1;
+                draw_files_row(2, 1);
+                return;
+            }
+            f_confirm = 0;
+            __asm__("sei");
+            song_clear();
+            __asm__("cli");
+            f_status = ST_OK;
+            draw_files_row(2, 1);
+            break;
+        case 3:
+            purge();
+            f_status = ST_OK;
+            break;
+        }
         MIRROR_SDSUM = save_sum();
         draw_files_status();
         break;

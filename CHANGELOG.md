@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- FILES screen grows **NEW** (blank the song, with a SURE confirm step)
+  and **PURGE** (drop unreferenced chains, then unreferenced phrases —
+  shrinks the packed save; the PACK meter shows the gain)
+
 ## v0.1 — 2026-07-03
 
 First release: the initial development cycle, 2026-07-02/03 —

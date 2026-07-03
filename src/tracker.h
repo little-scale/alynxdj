@@ -214,6 +214,8 @@ void clear_grid(void);
 #define PEN_DIM     2
 #define PEN_ACCENT  3
 
+void song_clear(void);          /* blank song + sentinels (main.c) */
+
 /* palettes (main.c) */
 #define NPALETTES 6
 extern unsigned char opt_palette;

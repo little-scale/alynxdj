@@ -109,7 +109,7 @@ void draw_hex8(unsigned char cx, unsigned char cy, unsigned char v,
  * steps are FF FF — tsp is don't-care until a phrase lands, and solid FF
  * runs are what keeps the EEPROM pack small (the editor zeroes tsp on
  * insert). */
-static void song_new(void)
+void song_clear(void)
 {
     unsigned char c;
 
@@ -143,7 +143,7 @@ static void song_demo(void)
 {
     unsigned char i;
 
-    song_new();
+    song_clear();
 
     /* groove 0: 7/5 swing (~150 BPM) */
     sd.grooves[0][0] = 7;
