@@ -203,8 +203,9 @@ static void transport_label(void)
  * §4) so vertical B-nav can land here later. */
 #define MAP_X 30
 #define MAP_Y (GRID_TOP + 1)
-#define METER_H   8                 /* channel meter height in cells */
-#define METER_BOT (MAP_Y + 12)      /* baseline row (bars grow upward) */
+#define METER_H     8               /* channel meter height in cells */
+#define METER_BOT   (MAP_Y + 12)    /* baseline row (bars grow upward) */
+#define METER_X(t)  (MAP_X + 1 + (t) * 2)   /* 4 bars, 1 blank col apart */
 static void draw_map(void)
 {
     static const char rows[3][6] = { "OP W ", "SCPIT", "FG   " };
@@ -1719,8 +1720,9 @@ static void meters_update(void)
             continue;
         meter_h[t] = h;
         for (i = 0; i < METER_H; ++i) {
-            b[0] = (i < h) ? '`' : ' ';   /* solid block glyph */
-            draw_text(MAP_X + 1 + t, METER_BOT - i, b, PEN_ACCENT, PEN_BG);
+            b[0] = '`';               /* solid block; lit above, dim track below */
+            draw_text(METER_X(t), METER_BOT - i, b,
+                      (i < h) ? PEN_ACCENT : PEN_DIM, PEN_BG);
         }
     }
 }
