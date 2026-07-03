@@ -5,6 +5,13 @@
 - FILES screen grows **NEW** (blank the song, with a SURE confirm step)
   and **PURGE** (drop unreferenced chains, then unreferenced phrases —
   shrinks the packed save; the PACK meter shows the gain)
+- **Eight palettes** ported from SMSGGDJ's COLR presets — WHT / WB / AMBR
+  / CYAN / PINK / NEON / KIDD / MINT — named on the OPTIONS screen (was
+  six numbered schemes)
+- **Single global groove** (D13): the groove pool and the `G` command are
+  gone; the GROOVE screen edits one groove that drives the whole song
+- INSTR screen regrouped with blank rows (TYPE / envelope / LFSR /
+  routing); the screen-map indicator moved left 4 and down 1
 
 ## v0.1 — 2026-07-03
 

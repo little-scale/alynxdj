@@ -50,12 +50,13 @@ chain/phrase/instrument under the cursor); B-held + ← / B-tap goes back;
 B-held + ↑/↓ moves vertically (OPTIONS above SONG, PROJECT above CHAIN,
 WAVE above INSTR, FILES and GROOVE below).
 
-**PROJECT:** TMPO — the live BPM readout derived from the active groove
+**PROJECT:** TMPO — the live BPM readout derived from the groove
 (tempo *is* the groove); editing it steps every groove entry together, so
 swing is preserved. Plus free-chain/phrase counters.
 
 **OPTIONS:** SYNC (ComLynx OFF/OUT/IN), PRELIS (audition-on-edit on/off),
-REPEAT (key-repeat delay), PALETTE (six colour schemes, applied live).
+REPEAT (key-repeat delay), PALETTE (eight colour schemes ported from
+SMSGGDJ — WHT / WB / AMBR / CYAN / PINK / NEON / KIDD / MINT, applied live).
 OPTIONS settings persist in the cart EEPROM alongside the song.
 
 Below the map indicator, four **channel meters** show live per-track
@@ -125,7 +126,6 @@ the point.
 | `C xy` | chord | loop +0, +x, +y semitones per tick |
 | `D xx` | delay | trigger after xx ticks |
 | `F xx` | finetune | signed offset in 1/16 semitones (one-shot) |
-| `G xx` | groove | switch the global groove |
 | `H xx` | hop | phrase: end this phrase after this row; table: loop to row x |
 | `K xx` | kill | cut the note after xx ticks (00 = instant) |
 | `L xx` | slide | glide into this row's note from the previous pitch, xx/16 semitone per tick |
@@ -154,12 +154,13 @@ counts accumulate across the whole arrangement and reset at play-start.
 sticking at the last row unless `H` loops. Attach via the instrument's
 TABLE field or a phrase `A` command.
 
-## Grooves (GROOVE screen)
+## Groove (GROOVE screen)
 
-A groove is up to 16 tick counts — ticks per phrase row at the ~60 Hz
-engine rate. Groove 0 defaults to 6/6 (~112 BPM at 4 rows/beat). Swing =
-uneven pairs (e.g. 7/5). `G` switches grooves mid-song. ←/→ pages through
-the 16 grooves.
+The groove is up to 16 tick counts — ticks per phrase row at the ~60 Hz
+engine rate. It defaults to 6/6 (~112 BPM at 4 rows/beat); swing is
+uneven pairs (e.g. 7/5). There is **one global groove** (no pool) — it
+sets the tempo and swing for the whole song, and PROJECT's TMPO steps
+every entry of it together. `T xx` flattens it to a plain hex BPM.
 
 ## LIVE mode (Option 2 on SONG)
 

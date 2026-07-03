@@ -34,6 +34,22 @@ static const char cmd_chars[NCMDS] = {
     'F', 'L', 'N', 'R', 'S', 'Z', 'E', 'T', 'I', 'J',
 };
 
+/* cmd cycling skips CMD_G: with a single groove (D13) there is nothing to
+ * switch, so it never appears in the menu (its id is kept to preserve the
+ * save encoding of every other command) */
+static unsigned char cmd_next(unsigned char c)
+{
+    c = (c + 1 < NCMDS) ? c + 1 : 0;
+    if (c == CMD_G) c = CMD_H;
+    return c;
+}
+static unsigned char cmd_prev(unsigned char c)
+{
+    c = c ? c - 1 : NCMDS - 1;
+    if (c == CMD_G) c = CMD_D;
+    return c;
+}
+
 #define GRID_TOP 1
 
 static unsigned char screen;
@@ -144,7 +160,6 @@ static void top_bar(void)
         break;
     case SCR_GROOVE:
         draw_text(1, 0, "GROOVE", PEN_ACCENT, PEN_BG);
-        draw_hex8(8, 0, edit_groove, PEN_TEXT, PEN_BG);
         break;
     case SCR_WAVE:
         draw_text(1, 0, "WAVE", PEN_ACCENT, PEN_BG);
@@ -186,7 +201,8 @@ static void transport_label(void)
  * exist — OPTIONS/PROJECT above SONG/CHAIN, WAVE above INSTR (SMSGGDJ
  * layout), GROOVE below. Column positions follow the 2D map (DESIGN.md
  * §4) so vertical B-nav can land here later. */
-#define MAP_X 34
+#define MAP_X 30
+#define MAP_Y (GRID_TOP + 1)
 static void draw_map(void)
 {
     static const char rows[3][6] = { "OP W ", "SCPIT", "FG   " };
@@ -205,7 +221,7 @@ static void draw_map(void)
             unsigned char shipped = (r == 1) || (r == 2 && c <= 1)
                 || (r == 0 && c <= 1) || (r == 0 && c == 3);
             b[0] = rows[r][c];
-            draw_text(MAP_X + c, GRID_TOP + r, b,
+            draw_text(MAP_X + c, MAP_Y + r, b,
                       cur ? PEN_BG : (shipped ? PEN_TEXT : PEN_DIM),
                       cur ? PEN_ACCENT : PEN_BG);
         }
@@ -340,6 +356,11 @@ static void draw_phrase_screen(void)
 static const char *const ifield_name[NIFIELDS] = {
     "TYPE", "VOL", "ATK", "HOLD", "DCY", "TAPS", "SEED", "BANK", "TABLE",
 };
+/* display grid row per field (absolute): blank rows group TYPE / envelope /
+ * LFSR / routing, and one blank below the title */
+static const unsigned char ifield_y[NIFIELDS] = {
+    2, 4, 5, 6, 7, 9, 10, 12, 13,
+};
 static const char *const itype_name[4] = { "TONE", "NOISE", "WAV", "KIT" };
 
 static unsigned char ifield_nib(unsigned char f)
@@ -379,13 +400,14 @@ static const char tap_glyph[9] = { '0','1','2','3','4','5','7','A','B' };
 
 static void draw_instr_row(unsigned char r, unsigned char cursor_here)
 {
-    unsigned char y = GRID_TOP + r;
+    unsigned char y;
     unsigned char fg = cursor_here ? PEN_BG : PEN_TEXT;
     unsigned char bg = cursor_here ? PEN_TEXT : PEN_BG;
     unsigned v;
 
     if (r >= NIFIELDS)
         return;
+    y = ifield_y[r];
     draw_text(1, y, ifield_name[r], PEN_DIM, PEN_BG);
     switch (r) {
     case 0:
@@ -679,9 +701,7 @@ static void draw_proj_row(unsigned char r, unsigned char cursor_here)
     case 0:
         draw_text(1, GRID_TOP + 1, "TMPO", PEN_DIM, PEN_BG);
         draw_dec(6, GRID_TOP + 1, proj_bpm(), fg, bg);
-        draw_text(10, GRID_TOP + 1, "BPM (GROOVE", PEN_DIM, PEN_BG);
-        draw_hex8(22, GRID_TOP + 1, eng_groove, PEN_DIM, PEN_BG);
-        draw_text(24, GRID_TOP + 1, ")", PEN_DIM, PEN_BG);
+        draw_text(10, GRID_TOP + 1, "BPM", PEN_DIM, PEN_BG);
         break;
     case 1:
         draw_text(1, GRID_TOP + 3, "FREE CHAINS", PEN_DIM, PEN_BG);
@@ -724,7 +744,7 @@ static void draw_opts_row(unsigned char r, unsigned char cursor_here)
         break;
     case 3:
         draw_text(1, GRID_TOP + 7, "PALETTE", PEN_DIM, PEN_BG);
-        draw_hex8(9, GRID_TOP + 7, opt_palette, fg, bg);
+        draw_text(9, GRID_TOP + 7, palette_label(opt_palette), fg, bg);
         break;
     }
 }
@@ -862,12 +882,10 @@ static void move_cursor(unsigned char dir)
                                : (f_row ? f_row - 1 : 3);
         }
         break;
-    case SCR_GROOVE:
+    case SCR_GROOVE:                        /* single groove (D13): no pool */
         switch (dir) {
         case 0: if (g_row) --g_row; else g_row = 15; break;
         case 1: if (g_row < 15) ++g_row; else g_row = 0; break;
-        case 2: if (edit_groove) { --edit_groove; draw_screen(); } break;
-        case 3: if (edit_groove < NGROOVES - 1) { ++edit_groove; draw_screen(); } break;
         }
         break;
     case SCR_PROJ:
@@ -982,8 +1000,8 @@ static void edit_phrase_cell(unsigned char dir)
         }
     } else if (p_col == 2) {
         switch (dir) {
-        case 0: case 3: s->cmd = (s->cmd + 1 < NCMDS) ? s->cmd + 1 : 0; break;
-        case 1: case 2: s->cmd = s->cmd ? s->cmd - 1 : NCMDS - 1; break;
+        case 0: case 3: s->cmd = cmd_next(s->cmd); break;
+        case 1: case 2: s->cmd = cmd_prev(s->cmd); break;
         }
         goto audition_row;
     } else if (p_col == 3 && s->cmd) {
@@ -1025,8 +1043,8 @@ static void edit_table_cell(unsigned char dir)
         break;
     case 2:
         switch (dir) {
-        case 0: case 3: tr->cmd = (tr->cmd + 1 < NCMDS) ? tr->cmd + 1 : 0; break;
-        case 1: case 2: tr->cmd = tr->cmd ? tr->cmd - 1 : NCMDS - 1; break;
+        case 0: case 3: tr->cmd = cmd_next(tr->cmd); break;
+        case 1: case 2: tr->cmd = cmd_prev(tr->cmd); break;
         }
         break;
     case 3:
@@ -1697,7 +1715,7 @@ static void meters_update(void)
         meter_h[t] = h;
         for (i = 0; i < 3; ++i) {
             b[0] = (i < h) ? '#' : ' ';
-            draw_text(MAP_X + 1 + t, GRID_TOP + 7 - i, b, PEN_ACCENT, PEN_BG);
+            draw_text(MAP_X + 1 + t, MAP_Y + 7 - i, b, PEN_ACCENT, PEN_BG);
         }
     }
 }
