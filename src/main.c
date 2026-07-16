@@ -38,13 +38,6 @@ static const unsigned char palettes[NPALETTES][4][2] = {
     { {0x5,0xE1}, {0xE,0x2F}, {0x9,0x77}, {0xF,0x7F} },  /* 6 KIDD sky    */
     { {0x4,0x40}, {0xE,0xA6}, {0x8,0x62}, {0xF,0xDA} },  /* 7 MINT teal   */
 };
-static const char *const palette_name[NPALETTES] = {
-    "WHT ", "WB  ", "AMBR", "CYAN", "PINK", "NEON", "KIDD", "MINT",
-};
-const char *palette_label(unsigned char i)
-{
-    return palette_name[i < NPALETTES ? i : 0];
-}
 unsigned char opt_palette;
 
 void palette_apply(void)

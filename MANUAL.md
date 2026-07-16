@@ -55,8 +55,8 @@ WAVE above INSTR, FILES and GROOVE below).
 swing is preserved. Plus free-chain/phrase counters.
 
 **OPTIONS:** SYNC (ComLynx OFF/OUT/IN), PRELIS (audition-on-edit on/off),
-REPEAT (key-repeat delay), PALETTE (eight colour schemes ported from
-SMSGGDJ — WHT / WB / AMBR / CYAN / PINK / NEON / KIDD / MINT, applied live).
+REPEAT (key-repeat delay), PALETTE (eight colour schemes numbered 0–7,
+ported from SMSGGDJ's COLR presets, applied live; 0 is the default).
 OPTIONS settings persist in the cart EEPROM alongside the song.
 
 Four full-height **channel meters** run down the right-hand border, one

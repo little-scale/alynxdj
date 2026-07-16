@@ -221,7 +221,6 @@ void song_clear(void);          /* blank song + sentinels (main.c) */
 #define NPALETTES 8
 extern unsigned char opt_palette;
 void palette_apply(void);
-const char *palette_label(unsigned char i);
 
 /* editor */
 void editor_init(void);

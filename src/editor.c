@@ -745,7 +745,8 @@ static void draw_opts_row(unsigned char r, unsigned char cursor_here)
         break;
     case 3:
         draw_text(1, GRID_TOP + 7, "PALETTE", PEN_DIM, PEN_BG);
-        draw_text(9, GRID_TOP + 7, palette_label(opt_palette), fg, bg);
+        draw_hex8(9, GRID_TOP + 7, opt_palette, fg, bg);
+        draw_text(11, GRID_TOP + 7, "  ", PEN_DIM, PEN_BG);
         break;
     }
 }
