@@ -62,7 +62,12 @@ make clean
 - `RETROSHOT_RAM_OUT=<path>` dumps the full 64 KB RAM after a run — read any
   fixed address (e.g. debug mirrors) instead of scraping pixels.
 - Handy is dev-speed, not silicon: its LFSR-timbre and DAC-timing fidelity is
-  suspect (DESIGN.md Q4) — hardware passes at M6/M7.
+  suspect (DESIGN.md Q4) — hardware passes at M6/M7. **Measured 2026-07-16:
+  this core renders every FEEDBACK/tap config identically** (static square
+  vs noise FFTs are bit-identical, cosine 1.0000) — it does not emulate the
+  LFSR feedback at all. So TAPS, the `N` override, and the `G` tap-glide
+  can't be heard or FFT-verified in Handy; verify them at the register level
+  (dump the voice shadow / `sh_feedback`) and on real hardware only.
 - **cc65 comparison gotcha:** `int_var > uchar_var` can compile as an
   *unsigned* compare — a negative int silently becomes huge (bit the L
   slide: it diverged an octave down). Cast explicitly:
