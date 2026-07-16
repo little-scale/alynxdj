@@ -29,7 +29,7 @@ action.** No simultaneous-press timing windows.
 | **B** held + **A** long-hold | **block SELECT** (SONG/CHAIN/PHRASE): anchors at the cursor; ↑/↓ extend; **B** = copy, **B**-held+**A** = cut, **A** = cancel; paste with B double-tap (rows land at the cursor) |
 | **A** tap | back (PHRASE → CHAIN → SONG) |
 | **A** hold + d-pad | move around the screen map (see below) |
-| **A** held + **B** | play / stop — contextual: SONG plays from the cursor row, CHAIN loops the chain, PHRASE loops the phrase |
+| **A** held + **B** | play / stop — contextual: SONG plays from the cursor row, CHAIN loops the chain, PHRASE and INSTR loop the phrase last viewed (audition while editing the instrument) |
 | **Option 1** + ←/→ | select the current track |
 | **Option 1** + **B** | mute the current track (top-bar `1234` flags) |
 | **Option 1** + **A** | solo the current track / un-solo |

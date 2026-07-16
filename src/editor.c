@@ -623,8 +623,8 @@ static void draw_wave_col(unsigned char c, unsigned char cursor_here)
     for (r = 0; r < 16; ++r) {
         unsigned char filled = (15 - r) < h || ((15 - r) == 0 && h == 0);
         b[0] = filled ? '`' : ' ';       /* solid block (same as meters) */
-        draw_text(1 + c, GRID_TOP + r, b,
-                  cursor_here ? PEN_TEXT : PEN_ACCENT, PEN_BG);
+        draw_text(1 + c, GRID_TOP + r, b,      /* edited col brightest, rest mid */
+                  cursor_here ? PEN_ACCENT : PEN_DIM, PEN_BG);
     }
 }
 
@@ -1840,7 +1840,8 @@ void editor_frame(unsigned char joy, unsigned char prev)
         else switch (screen) {
         case SCR_SONG:   engine_play_song(s_row); break;
         case SCR_CHAIN:  engine_play_chain(cur_track, edit_chain); break;
-        case SCR_PHRASE: engine_play_phrase(cur_track, edit_phrase); break;
+        case SCR_PHRASE:                 /* INSTR too: audition last phrase seen */
+        case SCR_INSTR:  engine_play_phrase(cur_track, edit_phrase); break;
         }
         transport_label();
         return;
