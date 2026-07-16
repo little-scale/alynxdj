@@ -1869,8 +1869,10 @@ void editor_frame(unsigned char joy, unsigned char prev)
                 draw_screen();
                 mirror_cursor();
             } else if (screen == SCR_WAVE && dir >= 2) {  /* +left/right: wave # */
-                if (dir == 2) { if (edit_wave) --edit_wave; }
-                else if (edit_wave < 7) ++edit_wave;
+                if (dir == 2)
+                    edit_wave = edit_wave ? edit_wave - 1 : 7;   /* wrap 0->7 */
+                else
+                    edit_wave = (edit_wave < 7) ? edit_wave + 1 : 0; /* wrap 7->0 */
                 draw_screen();
                 mirror_cursor();
             } else if (dir == 2)
