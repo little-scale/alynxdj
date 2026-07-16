@@ -15,7 +15,7 @@ register-level + hardware verified only.)
 - **Boot splash** (SMSGGDJ-style): the ALDJ logo centred, the version on a
   full-width inverted bar, and the build hash below, held ~100 frames
   (~1.7 s). The logo is 1-bit `art/aldj.png` downscaled to 144x38 by
-  `tools/makelogo.py` and drawn in the palette's ink pen, so it follows
+  `tools/makelogo.py` and drawn in the palette's highlight pen, so it follows
   the selected (persistent) palette. VERSION is emitted into the build header.
 
 - **New `B` command — set the WAV wavetable (0–7) live**, so a sustaining

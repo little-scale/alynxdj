@@ -438,9 +438,9 @@ static void splash(void)
     unsigned char row;
 
     screen_clear();
-    /* expand the 1-bit logo: each set bit -> pen PEN_TEXT (0x1) in the 4bpp
-     * framebuffer, so the logo follows the selected palette (SMSGGDJ draws
-     * the logo in the scheme's ink). One src byte (8 px) -> 4 dst bytes. */
+    /* expand the 1-bit logo: each set bit -> pen PEN_ACCENT (0x3) in the
+     * 4bpp framebuffer, so the logo shows in the palette's highlight colour
+     * and follows the selection. One src byte (8 px) -> 4 dst bytes. */
     for (row = 0; row < LOGO_H; ++row) {
         unsigned char *dst = SCREEN + (unsigned int)(LOGO_TOP + row) * LINE_BYTES
                              + LOGO_X / 2;
@@ -448,10 +448,10 @@ static void splash(void)
         unsigned char col;
         for (col = 0; col < LOGO_W / 8; ++col) {
             unsigned char b = src[col];
-            dst[0] = ((b & 0x80) ? 0x10 : 0) | ((b & 0x40) ? 0x01 : 0);
-            dst[1] = ((b & 0x20) ? 0x10 : 0) | ((b & 0x10) ? 0x01 : 0);
-            dst[2] = ((b & 0x08) ? 0x10 : 0) | ((b & 0x04) ? 0x01 : 0);
-            dst[3] = ((b & 0x02) ? 0x10 : 0) | ((b & 0x01) ? 0x01 : 0);
+            dst[0] = ((b & 0x80) ? 0x30 : 0) | ((b & 0x40) ? 0x03 : 0);
+            dst[1] = ((b & 0x20) ? 0x30 : 0) | ((b & 0x10) ? 0x03 : 0);
+            dst[2] = ((b & 0x08) ? 0x30 : 0) | ((b & 0x04) ? 0x03 : 0);
+            dst[3] = ((b & 0x02) ? 0x30 : 0) | ((b & 0x01) ? 0x03 : 0);
             dst += 4;
         }
     }
