@@ -1,7 +1,17 @@
 # Changelog
 
-## Unreleased
+## v0.3 — 2026-07-17
 
+The first hardware-validated release — ALYNXDJ runs well on a real Atari
+Lynx, and this cycle is the round of fixes and features that came out of
+playing it on the device. (Emulator caveat carried over: this build of
+libretro-Handy doesn't emulate the LFSR feedback, so TAPS/`N`/`G` are
+register-level + hardware verified only.)
+
+- **A/B buttons swapped** to match hardware ergonomics: edit/insert is the
+  physical B button, back/navigate is physical A (every derived gesture —
+  transport, cut, paste, block select, LIVE queue, the Option-1 layer —
+  flips with them), done at the single input read in `main.c`.
 - **Boot splash** (SMSGGDJ-style): the ALDJ logo centred, the version on a
   full-width inverted bar, and the build hash below, held ~100 frames
   (~1.7 s). The logo is 1-bit `art/aldj.png` downscaled to 144x38 by
@@ -27,12 +37,10 @@
   audible only on real hardware — this build of libretro-Handy renders all
   tap configs identically (LFSR feedback isn't emulated), so it can't be
   heard in the emulator.
-- **First hardware test passed** — runs well on a real Atari Lynx.
-- **A/B buttons swapped** to match hardware ergonomics: edit/insert is now
-  the physical B button and back/navigate is physical A (and every derived
-  gesture — transport, cut, paste, block select, LIVE queue, the Option-1
-  layer — flips with them). Done at the single input read in `main.c`
-  (exchange joystick bits 0/1); control docs updated to physical labels.
+- Palettes are shown on OPTIONS as a **number 0–7** (was scheme names);
+  default is 0.
+- Small fixes: PHRASE/TABLE close the gap between a command letter and its
+  value; WAVE bars use the solid-block glyph.
 
 ## v0.2 — 2026-07-03
 

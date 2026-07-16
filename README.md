@@ -26,10 +26,11 @@ as a multi-drop sync bus (planned).
 
 ## Status
 
-**V0.2 dev — feature-complete against the design brief, plus an
-editor/UX polish pass** (see [CHANGELOG.md](CHANGELOG.md) for what
-changed, [PLAN.md](PLAN.md) for the milestone table, [DESIGN.md](DESIGN.md)
-for the design contract and decision log):
+**V0.3 — first hardware-validated build** (runs on a real Atari Lynx),
+feature-complete against the design brief with an editor/UX pass on top
+(see [CHANGELOG.md](CHANGELOG.md) for what changed, [PLAN.md](PLAN.md) for
+the milestone table, [DESIGN.md](DESIGN.md) for the design contract and
+decision log):
 
 - Full SONG → CHAIN → PHRASE hierarchy, **all ten screens** + map
   indicator + channel meters; engine tick in the VBlank IRQ (tempo is
