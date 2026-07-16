@@ -53,6 +53,12 @@ make clean
 - BTN mask bits (RetroPad→Lynx, probed at M2): `$100`=A, `$1`=B, `$400`=Opt1,
   `$800`=Opt2, `$10`=Up, `$20`=Down, `$40`=Left, `$80`=Right, `$8`=Pause
   (START; lands in `SUZY.switches` bit 0, not the joystick byte).
+- **A/B are swapped in firmware** (main.c reads `SUZY.joystick` then exchanges
+  bits 0/1 — hardware ergonomics fix): the app's edit/insert (internal "A")
+  fires on the *physical B* button = harness mask `$1`, and back/nav
+  (internal "B") on *physical A* = `$100`. So in scripts the transport
+  gesture is now **physical A-held then B** (`100@n,101@n,...`), the inverse
+  of the old B-then-A. MANUAL/README control tables use physical labels.
 - `RETROSHOT_RAM_OUT=<path>` dumps the full 64 KB RAM after a run — read any
   fixed address (e.g. debug mirrors) instead of scraping pixels.
 - Handy is dev-speed, not silicon: its LFSR-timbre and DAC-timing fidelity is

@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- **First hardware test passed** — runs well on a real Atari Lynx.
+- **A/B buttons swapped** to match hardware ergonomics: edit/insert is now
+  the physical B button and back/navigate is physical A (and every derived
+  gesture — transport, cut, paste, block select, LIVE queue, the Option-1
+  layer — flips with them). Done at the single input read in `main.c`
+  (exchange joystick bits 0/1); control docs updated to physical labels.
+
 ## v0.2 — 2026-07-03
 
 Editor/UX polish pass on top of the feature-complete v0.1. Still

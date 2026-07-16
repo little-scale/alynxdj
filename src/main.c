@@ -444,6 +444,10 @@ void main(void)
         last = f;
 
         joy = SUZY.joystick;
+        /* swap A (bit0) and B (bit1) for hardware button ergonomics — all
+         * downstream gestures read JOY_BTN_A/B_MASK, so this flips them all */
+        joy = (unsigned char)((joy & 0xFC)
+                              | ((joy & 0x01) << 1) | ((joy & 0x02) >> 1));
         JOY_MIRROR = joy;
         sync_poll();
         pool_pump();

@@ -73,10 +73,10 @@ scripting, and toolchain gotchas.
 
 ## Controls (quick reference — full docs in [MANUAL.md](MANUAL.md))
 
-- **D-pad** move · **A** edit/insert · **B** back/navigate
-- **B held + d-pad** screen map · **B held + A** play/stop
-- **A held + d-pad** edit value · **A held + B** cut · **A double-tap** paste
-- **Option 1 + A/B/←→** mute / solo / track select
+- **D-pad** move · **B** edit/insert · **A** back/navigate
+- **A held + d-pad** screen map · **A held + B** play/stop
+- **B held + d-pad** edit value · **B held + A** cut · **B double-tap** paste
+- **Option 1 + B/A/←→** mute / solo / track select
 
 ## License / credits
 

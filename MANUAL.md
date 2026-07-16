@@ -22,17 +22,17 @@ action.** No simultaneous-press timing windows.
 | Input | Action |
 |---|---|
 | D-pad | move the cursor (hold to repeat) |
-| **A** tap | insert on an empty cell (repeats the last value) |
-| **A** hold + d-pad | edit the value under the cursor — ←/→ small step, ↑/↓ big step |
-| **A** double-tap | paste the clipboard; with nothing cut: mint the next free chain/phrase on an empty cell, or clone a populated one |
-| **A** held + **B** tap | cut the field under the cursor into the clipboard |
-| **A** held + **B** long-hold | **block SELECT** (SONG/CHAIN/PHRASE): anchors at the cursor; ↑/↓ extend; **A** = copy, **A**-held+**B** = cut, **B** = cancel; paste with A double-tap (rows land at the cursor) |
-| **B** tap | back (PHRASE → CHAIN → SONG) |
-| **B** hold + d-pad | move around the screen map (see below) |
-| **B** held + **A** | play / stop — contextual: SONG plays from the cursor row, CHAIN loops the chain, PHRASE loops the phrase |
+| **B** tap | insert on an empty cell (repeats the last value) |
+| **B** hold + d-pad | edit the value under the cursor — ←/→ small step, ↑/↓ big step |
+| **B** double-tap | paste the clipboard; with nothing cut: mint the next free chain/phrase on an empty cell, or clone a populated one |
+| **B** held + **A** tap | cut the field under the cursor into the clipboard |
+| **B** held + **A** long-hold | **block SELECT** (SONG/CHAIN/PHRASE): anchors at the cursor; ↑/↓ extend; **B** = copy, **B**-held+**A** = cut, **A** = cancel; paste with B double-tap (rows land at the cursor) |
+| **A** tap | back (PHRASE → CHAIN → SONG) |
+| **A** hold + d-pad | move around the screen map (see below) |
+| **A** held + **B** | play / stop — contextual: SONG plays from the cursor row, CHAIN loops the chain, PHRASE loops the phrase |
 | **Option 1** + ←/→ | select the current track |
-| **Option 1** + **A** | mute the current track (top-bar `1234` flags) |
-| **Option 1** + **B** | solo the current track / un-solo |
+| **Option 1** + **B** | mute the current track (top-bar `1234` flags) |
+| **Option 1** + **A** | solo the current track / un-solo |
 
 ## The screen map
 
@@ -45,9 +45,9 @@ S C P I T   =  SONG > CHAIN > PHRASE > INSTR > TABLE
 F G            FILES (below SONG)   GROOVE (below CHAIN)
 ```
 
-All ten screens are live. B-held + → descends and *drills in* (opens the
-chain/phrase/instrument under the cursor); B-held + ← / B-tap goes back;
-B-held + ↑/↓ moves vertically (OPTIONS above SONG, PROJECT above CHAIN,
+All ten screens are live. A-held + → descends and *drills in* (opens the
+chain/phrase/instrument under the cursor); A-held + ← / A-tap goes back;
+A-held + ↑/↓ moves vertically (OPTIONS above SONG, PROJECT above CHAIN,
 WAVE above INSTR, FILES and GROOVE below).
 
 **PROJECT:** TMPO — the live BPM readout derived from the groove
@@ -64,11 +64,11 @@ per track. TONE/NOISE show the envelope level (which scales their
 output); KIT and WAV show a peak of the actual DAC output, so sample and
 wavetable voices register too.
 
-The map rows also navigate horizontally: B-held+←/→ moves FILES↔GROOVE
+The map rows also navigate horizontally: A-held+←/→ moves FILES↔GROOVE
 and OPTIONS↔PROJECT↔WAVE.
 
 **WAVE screen:** 32-column bar editor for the 8 wavetables. ←/→ move,
-↑/↓ page waves, A-held + d-pad draws (↑/↓ coarse, ←/→ fine). Waves 0–3
+↑/↓ page waves, B-held + d-pad draws (↑/↓ coarse, ←/→ fine). Waves 0–3
 ship as triangle, saw, square, 25% pulse.
 
 ## Instruments (INSTR screen)
@@ -103,7 +103,7 @@ several separate cycles — the same TAPS with a different SEED is a
 `$555`). Some (TAPS, SEED) pairs land on the lock state and go silent;
 that's the real chip, nudge the seed.
 
-Sweep TAPS/SEED with A-held + ←/→ while a note auditions — exploration is
+Sweep TAPS/SEED with B-held + ←/→ while a note auditions — exploration is
 the point.
 
 - **TONE vs NOISE** are the same machine with different default taps.
@@ -166,7 +166,7 @@ every entry of it together. `T xx` flattens it to a plain hex BPM.
 
 ## LIVE mode (Option 2 on SONG)
 
-The SONG screen becomes a clip launcher: **B-held + A on a cell queues
+The SONG screen becomes a clip launcher: **A-held + B on a cell queues
 that chain on that track**, launching at the next 16-row bar (queued
 cells show inverted-accent until they fire). Queue an **empty** cell to
 stop the track at the bar. Every track loops its chain independently —
@@ -175,7 +175,7 @@ again returns to arrangement SONG mode.
 
 ## Saving (FILES screen)
 
-B-held + ↓ from SONG: **SAVE / LOAD / NEW / PURGE**. The song packs into
+A-held + ↓ from SONG: **SAVE / LOAD / NEW / PURGE**. The song packs into
 the cart's EEPROM — the PACK meter shows the packed size against
 capacity; a song that doesn't fit is refused, never truncated. The last
 saved song autoloads at boot. In an emulator the save lives in the
@@ -183,7 +183,7 @@ saved song autoloads at boot. In an emulator the save lives in the
 
 **NEW** wipes the whole song back to a blank slate (it does not touch the
 EEPROM — your last save survives until you SAVE over it). It asks for a
-second A-press: the row turns to SURE, moving the cursor disarms it.
+second B-press: the row turns to SURE, moving the cursor disarms it.
 
 **PURGE** deletes every chain no song row references, then every phrase
 no remaining chain references, and repacks — the PACK meter shows the
