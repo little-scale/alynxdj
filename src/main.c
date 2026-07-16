@@ -9,6 +9,7 @@
 
 #include "tracker.h"
 #include "../build/font.h"
+#include "../build/logo.h"
 #include "../build/buildid.h"
 
 #define SCREEN      ((unsigned char *)0xA000)
@@ -424,14 +425,45 @@ static void draw_centered(unsigned char row, const char *s, unsigned char fg)
 
 /* boot splash: ALYNXDJ / version / build hash, centred; held ~100 VBlanks
  * (~1.7 s, matching SMSGGDJ). Art goes here later. */
+#define LOGO_X   ((160 - LOGO_W) / 2)   /* even pixel x -> byte-aligned blit */
+#define LOGO_TOP 14                      /* top pixel row of the logo */
+
+/* full-width inverted bar with s centred on it (SMSGGDJ version bar) */
+static void draw_bar(unsigned char row, const char *s)
+{
+    static const char blank[] = "                                        ";
+    unsigned char len = 0;
+    while (s[len])
+        ++len;
+    draw_text(0, row, blank, PEN_BG, PEN_TEXT);            /* solid ink bar */
+    draw_text((40 - len) / 2, row, s, PEN_BG, PEN_TEXT);   /* inverse text */
+}
+
 static void splash(void)
 {
     unsigned int t = frames;
+    unsigned char row;
 
     screen_clear();
-    draw_centered(6, "ALYNXDJ", PEN_ACCENT);
-    draw_centered(8, VERSION, PEN_TEXT);
-    draw_centered(10, BUILDID, PEN_DIM);
+    /* expand the 1-bit logo: each set bit -> pen PEN_TEXT (0x1) in the 4bpp
+     * framebuffer, so the logo follows the selected palette (SMSGGDJ draws
+     * the logo in the scheme's ink). One src byte (8 px) -> 4 dst bytes. */
+    for (row = 0; row < LOGO_H; ++row) {
+        unsigned char *dst = SCREEN + (unsigned int)(LOGO_TOP + row) * LINE_BYTES
+                             + LOGO_X / 2;
+        const unsigned char *src = logo_bits[row];
+        unsigned char col;
+        for (col = 0; col < LOGO_W / 8; ++col) {
+            unsigned char b = src[col];
+            dst[0] = ((b & 0x80) ? 0x10 : 0) | ((b & 0x40) ? 0x01 : 0);
+            dst[1] = ((b & 0x20) ? 0x10 : 0) | ((b & 0x10) ? 0x01 : 0);
+            dst[2] = ((b & 0x08) ? 0x10 : 0) | ((b & 0x04) ? 0x01 : 0);
+            dst[3] = ((b & 0x02) ? 0x10 : 0) | ((b & 0x01) ? 0x01 : 0);
+            dst += 4;
+        }
+    }
+    draw_bar(10, VERSION);                 /* version on an inverted bar */
+    draw_centered(12, BUILDID, PEN_TEXT);  /* build hash below (dev aid) */
     while ((unsigned int)(frames - t) < 100)
         ;
 }

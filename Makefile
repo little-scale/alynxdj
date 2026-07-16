@@ -38,7 +38,10 @@ $(BUILD)/notes.h $(BUILD)/notes.c &: tools/maketables.py
 $(BUILD)/font.h: tools/makefont.py
 	python3 tools/makefont.py $@
 
-$(ROM): $(SRC_C) $(SRC_S) src/tracker.h $(CFG) $(BUILD)/font.h $(BUILD)/notes.h $(BUILD)/buildid.h $(BUILD)/pool.bin
+$(BUILD)/logo.h: tools/makelogo.py art/aldj.png
+	python3 tools/makelogo.py
+
+$(ROM): $(SRC_C) $(SRC_S) src/tracker.h $(CFG) $(BUILD)/font.h $(BUILD)/logo.h $(BUILD)/notes.h $(BUILD)/buildid.h $(BUILD)/pool.bin
 	cl65 -t lynx -O -C $(CFG) -m $(BUILD)/alynxdj.map -o $@ $(SRC_C) $(SRC_S)
 	python3 -c "p='$@'; d=bytearray(open(p,'rb').read()); d[60]=5; open(p,'wb').write(d)"  # .lnx byte 60: 93C86 EEPROM (2KB)
 	python3 -c "\

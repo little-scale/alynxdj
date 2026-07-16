@@ -2,9 +2,11 @@
 
 ## Unreleased
 
-- **Boot splash**: ALYNXDJ / version / build hash on three centred lines,
-  held ~100 frames (~1.7 s, matching SMSGGDJ) before the editor. VERSION
-  is now emitted into the build header. (Art to be added.)
+- **Boot splash** (SMSGGDJ-style): the ALDJ logo centred, the version on a
+  full-width inverted bar, and the build hash below, held ~100 frames
+  (~1.7 s). The logo is 1-bit `art/aldj.png` downscaled to 144x38 by
+  `tools/makelogo.py` and drawn in the palette's ink pen, so it follows
+  the selected (persistent) palette. VERSION is emitted into the build header.
 
 - **New `B` command — set the WAV wavetable (0–7) live**, so a sustaining
   WAV note can switch timbre mid-phrase (verified: triangle→square FFT
