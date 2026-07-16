@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **New `G` command — LFSR-tap glide** (D14): a signed per-tick sweep of
+  the 12-bit tap value (`01`–`7F` up, `FF`–`80` down, `00` off), reclaiming
+  the retired groove-switch slot. It writes the FEEDBACK register live each
+  tick without reseeding the shifter, so the timbre morphs continuously.
+  Register-level verified (the tap value advances and maps correctly);
+  audible only on real hardware — this build of libretro-Handy renders all
+  tap configs identically (LFSR feedback isn't emulated), so it can't be
+  heard in the emulator.
 - **First hardware test passed** — runs well on a real Atari Lynx.
 - **A/B buttons swapped** to match hardware ergonomics: edit/insert is now
   the physical B button and back/navigate is physical A (and every derived

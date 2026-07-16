@@ -46,6 +46,8 @@ struct voice {
     int           slide_off;    /* L: offset from previous pitch -> 0 */
     unsigned char slide_rate;
     unsigned char vib_speed, vib_depth, vib_phase;
+    unsigned int  tap_cur;      /* G: current 9-bit tap value being swept */
+    signed char   tap_rate;     /* G: signed per-tick tap step (0 = off) */
     unsigned char chord[3], chord_len, chord_pos;
     unsigned char kill_in;      /* $FF = none */
     unsigned char table, tpos;  /* $FF = none */
@@ -60,6 +62,7 @@ struct voice {
     unsigned char sh_shiftlo, sh_shifthi;   /* LFSR seed (OTHER hi nibble) */
     unsigned char wmode;        /* WAV: playing a wavetable (channel C bus) */
     unsigned char dirty, retime;
+    unsigned char fb_dirty;     /* G: feedback changed live (no reseed) */
 };
 
 static unsigned char wave_owner = 0xFF; /* which voice holds the wave bus */
@@ -141,6 +144,23 @@ static void pitch_update(unsigned char ch)
     }
 }
 
+/* Program a 9-bit tap value (D11 user layout) into the feedback shadow and
+ * remember it as the sweep base. Full reprogram (retime) reseeds — same path
+ * as an N override. Used by trigger, N, and the G sweep. */
+static void set_taps(struct voice *v, unsigned taps9)
+{
+    unsigned char lo = (unsigned char)taps9;
+    v->tap_cur = taps9;
+    v->sh_feedback = (lo & 0x3F) | ((lo & 0x80) >> 1)
+                     | (((taps9 >> 8) & 1) << 7);
+    if (lo & 0x40)
+        v->sh_ctl |= AUD_TAP7;
+    else
+        v->sh_ctl &= ~AUD_TAP7;
+    v->retime = 1;
+    v->dirty = 1;
+}
+
 /* --- executor: one command, phrase or table column --- */
 
 static void exec_cmd(unsigned char ch, unsigned char cmd, unsigned char param)
@@ -163,9 +183,8 @@ static void exec_cmd(unsigned char ch, unsigned char cmd, unsigned char param)
             v->chord_len = 1;
         v->chord_pos = 0;
         break;
-    case CMD_G:
-        if (param < NGROOVES && sd.grooves[param][0])
-            eng_groove = param;
+    case CMD_G:                     /* Glide: signed per-tick tap sweep */
+        v->tap_rate = (signed char)param;
         break;
     case CMD_K:
         v->kill_in = param;
@@ -194,18 +213,11 @@ static void exec_cmd(unsigned char ch, unsigned char cmd, unsigned char param)
     case CMD_F:
         v->bend += (signed char)param;
         break;
-    case CMD_N: {
-        /* live taps morph (D11): bits 0-5 = taps 0-5, 6 = tap 7,
-         * 7 = tap 10; full reprogram reseeds the shifter */
-        v->sh_feedback = (param & 0x3F) | ((param & 0x80) >> 1);
-        if (param & 0x40)
-            v->sh_ctl |= AUD_TAP7;
-        else
-            v->sh_ctl &= ~AUD_TAP7;
-        v->retime = 1;
-        v->dirty = 1;
+    case CMD_N:
+        /* absolute taps override (D11): bits 0-5 = taps 0-5, 6 = tap 7,
+         * 7 = tap 10 (8-bit, so no tap 11); also seeds the G sweep base */
+        set_taps(v, param);
         break;
-    }
     case CMD_R:
         v->rt_rate = param & 0x0F;
         v->rt_fade = param >> 4;
@@ -304,6 +316,7 @@ static void trigger(unsigned char ch, unsigned char note, unsigned char inum)
     v->slide_off = 0;
     v->slide_rate = 0;
     v->vib_speed = v->vib_depth = v->vib_phase = 0;
+    v->tap_rate = 0;                    /* G sweep off until a G command */
     v->chord[0] = 0;
     v->chord_len = 1;
     v->chord_pos = 0;
@@ -347,6 +360,7 @@ static void trigger(unsigned char ch, unsigned char note, unsigned char inum)
         v->sh_feedback = (lo & 0x3F) | ((lo & 0x80) >> 1)
                          | ((in->taps_hi & 0x01) << 7);
         v->sh_ctl = (lo & 0x40) ? AUD_TAP7 : 0;
+        v->tap_cur = lo | ((in->taps_hi & 0x01) << 8);  /* G sweep base */
         v->sh_shiftlo = in->seed_lo;
         v->sh_shifthi = (in->seed_hi & 0x0F) << 4;  /* OTHER bits 7-4 */
     }
@@ -412,6 +426,7 @@ static void flush(unsigned char ch)
     }
     if (v->retime) {
         v->retime = 0;
+        v->fb_dirty = 0;                /* full reprogram writes feedback */
         h->control = 0;                 /* full reprogram (trigger/clock) */
         h->feedback = v->sh_feedback;
         h->dac = 0;
@@ -424,7 +439,12 @@ static void flush(unsigned char ch)
         h->control = v->sh_ctl;
         return;
     }
-    /* running update: reload + volume only — never restart the phase */
+    /* running update: never restart the phase. G sweep writes FEEDBACK
+     * live (taps change without touching the shift register = no reseed) */
+    if (v->fb_dirty) {
+        v->fb_dirty = 0;
+        h->feedback = v->sh_feedback;
+    }
     h->reload = v->sh_bkup;
     h->volume = (eng_mute & (1 << ch)) ? 0 : v->env_level;
 }
@@ -755,6 +775,15 @@ void engine_tick(void)
         }
         if (v->env_phase) {
             table_step(ch);
+            if (v->tap_rate) {                   /* G: live tap sweep (D11) */
+                unsigned char lo;
+                v->tap_cur = (v->tap_cur + v->tap_rate) & 0x1FF;
+                lo = (unsigned char)v->tap_cur;
+                v->sh_feedback = (lo & 0x3F) | ((lo & 0x80) >> 1)
+                                 | (((v->tap_cur >> 8) & 1) << 7);
+                v->fb_dirty = 1;                 /* write feedback, keep the shifter */
+                v->dirty = 1;
+            }
             if (v->bend_rate)
                 v->bend += v->bend_rate;
             if (v->slide_off) {                  /* L: home in on the note */

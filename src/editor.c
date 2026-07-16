@@ -34,20 +34,13 @@ static const char cmd_chars[NCMDS] = {
     'F', 'L', 'N', 'R', 'S', 'Z', 'E', 'T', 'I', 'J',
 };
 
-/* cmd cycling skips CMD_G: with a single groove (D13) there is nothing to
- * switch, so it never appears in the menu (its id is kept to preserve the
- * save encoding of every other command) */
 static unsigned char cmd_next(unsigned char c)
 {
-    c = (c + 1 < NCMDS) ? c + 1 : 0;
-    if (c == CMD_G) c = CMD_H;
-    return c;
+    return (c + 1 < NCMDS) ? c + 1 : 0;
 }
 static unsigned char cmd_prev(unsigned char c)
 {
-    c = c ? c - 1 : NCMDS - 1;
-    if (c == CMD_G) c = CMD_D;
-    return c;
+    return c ? c - 1 : NCMDS - 1;
 }
 
 #define GRID_TOP 1

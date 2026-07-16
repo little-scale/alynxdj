@@ -128,6 +128,7 @@ the point.
 | `C xy` | chord | loop +0, +x, +y semitones per tick |
 | `D xx` | delay | trigger after xx ticks |
 | `F xx` | finetune | signed offset in 1/16 semitones (one-shot) |
+| `G xx` | glide | signed per-tick tap sweep: `01`–`7F` ramps the LFSR taps up, `FF`–`80` down, `00` off — a live timbre morph (wraps 0–511; taps carry over, no reseed) |
 | `H xx` | hop | phrase: end this phrase after this row; table: loop to row x |
 | `K xx` | kill | cut the note after xx ticks (00 = instant) |
 | `L xx` | slide | glide into this row's note from the previous pitch, xx/16 semitone per tick |
