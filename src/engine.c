@@ -186,6 +186,14 @@ static void exec_cmd(unsigned char ch, unsigned char cmd, unsigned char param)
     case CMD_G:                     /* Glide: signed per-tick tap sweep */
         v->tap_rate = (signed char)param;
         break;
+    case CMD_B:                     /* set the WAV wavetable live (0-7) */
+        if (v->wmode && param < 8 && v->base_note >= 1
+            && v->base_note <= 96) {
+            wave_start(param);
+            wave_rate(wave_clock[v->base_note - 1], wave_bkup[v->base_note - 1],
+                      wave_step[v->base_note - 1]);
+        }
+        break;
     case CMD_K:
         v->kill_in = param;
         break;

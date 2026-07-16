@@ -37,7 +37,7 @@ for the design contract and decision log):
 - All four voice types, with the **12-bit LFSR fully exposed** (raw taps
   + seed per instrument) and 32-byte wavetables; everything verified by
   FFT / cross-correlation in the headless harness
-- **21 sequencer commands** (incl. `G`, a live LFSR-tap glide), tables, one global groove, block select/cut/paste,
+- **22 sequencer commands** (incl. `G` LFSR-tap glide, `B` live wavetable set), tables, one global groove, block select/cut/paste,
   clipboard, mute/solo, LIVE clip-launcher mode
 - **Cart-streamed sample pool**: all eight `samples/` kits at full
   quality (808/909/C78/606 + four speech banks), kit-per-instrument

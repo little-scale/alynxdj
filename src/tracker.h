@@ -44,7 +44,8 @@
                                  passes whose bit (count mod 8) is set */
 #define CMD_J    21     /* J xy  variation: transpose x (signed nibble) on
                                  passes whose bit (count mod 4) is set in y */
-#define NCMDS    22
+#define CMD_B    22     /* B 0x  set the WAV wavetable (0-7) live */
+#define NCMDS    23
 
 #define IT_TONE  0
 #define IT_NOISE 1

@@ -31,7 +31,7 @@
 /* command letters, indexed by CMD_* id */
 static const char cmd_chars[NCMDS] = {
     '-', 'A', 'C', 'D', 'G', 'H', 'K', 'O', 'P', 'V', 'W', 'X',
-    'F', 'L', 'N', 'R', 'S', 'Z', 'E', 'T', 'I', 'J',
+    'F', 'L', 'N', 'R', 'S', 'Z', 'E', 'T', 'I', 'J', 'B',
 };
 
 static unsigned char cmd_next(unsigned char c)
@@ -404,7 +404,12 @@ static void draw_instr_row(unsigned char r, unsigned char cursor_here)
     if (r >= NIFIELDS)
         return;
     y = ifield_y[r];
-    draw_text(1, y, ifield_name[r], PEN_DIM, PEN_BG);
+    if (r == IF_WAVE) {                 /* BANK is the wavetable # for WAV */
+        unsigned char ty = sd.instrs[edit_instr].type & 3;
+        draw_text(1, y, ty == IT_WAV ? "WAVE" : (ty == IT_KIT ? "KIT " : "BANK"),
+                  PEN_DIM, PEN_BG);
+    } else
+        draw_text(1, y, ifield_name[r], PEN_DIM, PEN_BG);
     switch (r) {
     case 0:
         draw_text(8, y, "     ", PEN_BG, PEN_BG);

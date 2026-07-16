@@ -81,7 +81,7 @@ ship as triangle, saw, square, 25% pulse.
 | HOLD | ticks held at the peak, 0–F |
 | DCY | decay **time**, 0–F: 0 = sustain until the next note, 1 = instant-ish, F ≈ 2 s |
 | **TAPS** | the raw 12-bit-LFSR tap mask — see below |
-| BANK | WAV: wavetable 0–7 (`--` = hardware triangle); KIT: sample kit 0–7 |
+| BANK | labelled by TYPE — **WAVE** (WAV: wavetable 0–7, `--` = hardware triangle) / **KIT** (sample kit 0–7) / BANK (otherwise) |
 | **SEED** | the shifter start state, $000–$FFF |
 | TABLE | macro table to run on every note (`--` = none) |
 
@@ -125,6 +125,7 @@ the point.
 | Cmd | Name | Param |
 |---|---|---|
 | `A xx` | table | run table xx on this note (one-shot) |
+| `B 0x` | wave | set the WAV wavetable (0–7) live — switch the timbre of a sustaining WAV note |
 | `C xy` | chord | loop +0, +x, +y semitones per tick |
 | `D xx` | delay | trigger after xx ticks |
 | `F xx` | finetune | signed offset in 1/16 semitones (one-shot) |

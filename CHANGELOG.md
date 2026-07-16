@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **New `B` command — set the WAV wavetable (0–7) live**, so a sustaining
+  WAV note can switch timbre mid-phrase (verified: triangle→square FFT
+  change). The INSTR **BANK** field is now labelled by TYPE (WAVE for WAV,
+  KIT for KIT), making the wave number obvious to edit there.
+- Editor gestures: on TABLE, hold A + up/down changes the table number;
+  on WAVE, hold A + left/right changes the wave number. WAVE↔PROJECT
+  screen travel removed. WAVE edited column drawn in the brightest shade,
+  the rest mid. INSTR audition: hold A + tap B loops the last phrase seen.
+- FILES: every action confirms with `SURE?` (tap once to arm, again to
+  run); a lone back-tap no longer leaves the screen.
+
 - **New `G` command — LFSR-tap glide** (D14): a signed per-tick sweep of
   the 12-bit tap value (`01`–`7F` up, `FF`–`80` down, `00` off), reclaiming
   the retired groove-switch slot. It writes the FEEDBACK register live each
