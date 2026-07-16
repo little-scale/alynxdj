@@ -413,6 +413,29 @@ static void song_demo(void)
      * has them; a slim demo keeps the packed save well inside the meter) */
 }
 
+/* draw a string horizontally centred on the 40-char grid */
+static void draw_centered(unsigned char row, const char *s, unsigned char fg)
+{
+    unsigned char len = 0;
+    while (s[len])
+        ++len;
+    draw_text((40 - len) / 2, row, s, fg, PEN_BG);
+}
+
+/* boot splash: ALYNXDJ / version / build hash, centred; held ~100 VBlanks
+ * (~1.7 s, matching SMSGGDJ). Art goes here later. */
+static void splash(void)
+{
+    unsigned int t = frames;
+
+    screen_clear();
+    draw_centered(6, "ALYNXDJ", PEN_ACCENT);
+    draw_centered(8, VERSION, PEN_TEXT);
+    draw_centered(10, BUILDID, PEN_DIM);
+    while ((unsigned int)(frames - t) < 100)
+        ;
+}
+
 void main(void)
 {
     unsigned char last = 0xFF;
@@ -434,6 +457,7 @@ void main(void)
     *(volatile unsigned int *)0xC018 = save_sum();
 
     vbl_install();
+    splash();
     editor_init();
     draw_text(18, 0, BUILDID, PEN_DIM, PEN_BG);
 

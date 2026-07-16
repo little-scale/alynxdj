@@ -25,8 +25,9 @@ all: $(ROM)
 # rewritten when it changes so it doesn't force rebuilds (sibling pattern)
 BUILDID := $(shell git rev-parse --short HEAD 2>/dev/null)$(shell git diff-index --quiet HEAD -- 2>/dev/null || echo +)
 $(shell mkdir -p $(BUILD))
-$(shell [ "`cat $(BUILD)/buildid.h 2>/dev/null`" = '#define BUILDID "$(BUILDID)"' ] || \
-        echo '#define BUILDID "$(BUILDID)"' > $(BUILD)/buildid.h)
+$(shell printf '#define BUILDID "%s"\n#define VERSION "%s"\n' '$(BUILDID)' '$(VERSION)' > $(BUILD)/buildid.h.tmp; \
+        cmp -s $(BUILD)/buildid.h.tmp $(BUILD)/buildid.h 2>/dev/null || cp $(BUILD)/buildid.h.tmp $(BUILD)/buildid.h; \
+        rm -f $(BUILD)/buildid.h.tmp)
 
 $(BUILD)/pool.bin: tools/alynxdj_pool.py
 	python3 tools/alynxdj_pool.py samples $@

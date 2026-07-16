@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Boot splash**: ALYNXDJ / version / build hash on three centred lines,
+  held ~100 frames (~1.7 s, matching SMSGGDJ) before the editor. VERSION
+  is now emitted into the build header. (Art to be added.)
+
 - **New `B` command — set the WAV wavetable (0–7) live**, so a sustaining
   WAV note can switch timbre mid-phrase (verified: triangle→square FFT
   change). The INSTR **BANK** field is now labelled by TYPE (WAVE for WAV,
