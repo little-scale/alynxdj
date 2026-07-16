@@ -335,10 +335,10 @@ static void draw_phrase_row(unsigned char r, unsigned char cursor_here)
     draw_text(12, y, b, inv2 ? PEN_BG : (s->cmd ? PEN_TEXT : PEN_DIM),
               inv2 ? PEN_TEXT : PEN_BG);
     if (s->cmd)
-        draw_hex8(14, y, s->param, inv3 ? PEN_BG : PEN_TEXT,
+        draw_hex8(13, y, s->param, inv3 ? PEN_BG : PEN_TEXT,
                   inv3 ? PEN_TEXT : PEN_BG);
     else
-        draw_text(14, y, "--", inv3 ? PEN_BG : PEN_DIM,
+        draw_text(13, y, "--", inv3 ? PEN_BG : PEN_DIM,
                   inv3 ? PEN_TEXT : PEN_BG);
 }
 
@@ -502,9 +502,9 @@ static void draw_table_row(unsigned char r, unsigned char cursor_here)
             break;
         case 3:
             if (tr->cmd)
-                draw_hex8(12, y, tr->param, fg, bg);
+                draw_hex8(11, y, tr->param, fg, bg);
             else
-                draw_text(12, y, "--", inv ? fg : PEN_DIM, bg);
+                draw_text(11, y, "--", inv ? fg : PEN_DIM, bg);
             break;
         }
     }
