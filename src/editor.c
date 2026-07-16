@@ -565,17 +565,17 @@ static void purge(void)
 
 static void draw_files_row(unsigned char r, unsigned char cursor_here)
 {
+    static const char *const label[4] = { "SAVE ", "LOAD ", "NEW  ", "PURGE" };
     unsigned char fg = cursor_here ? PEN_BG : PEN_TEXT;
     unsigned char bg = cursor_here ? PEN_TEXT : PEN_BG;
+    unsigned char y = GRID_TOP + 1 + r * 2;
 
-    if (r == 0)
-        draw_text(1, GRID_TOP + 1, "SAVE", fg, bg);
-    else if (r == 1)
-        draw_text(1, GRID_TOP + 3, "LOAD", fg, bg);
-    else if (r == 2)
-        draw_text(1, GRID_TOP + 5, f_confirm ? "SURE" : "NEW ", fg, bg);
-    else if (r == 3)
-        draw_text(1, GRID_TOP + 7, "PURGE", fg, bg);
+    if (r >= 4)
+        return;
+    if (f_confirm && r == f_row)
+        draw_text(1, y, "SURE?", fg, bg);
+    else
+        draw_text(1, y, label[r], fg, bg);
 }
 
 static void draw_files_screen(void)
@@ -1246,27 +1246,27 @@ static void insert_cell(void)
     case SCR_FILES:
         engine_stop();
         transport_label();
+        if (!f_confirm) {               /* first tap arms: show SURE? */
+            f_confirm = 1;
+            draw_files_row(f_row, 1);
+            return;
+        }
+        f_confirm = 0;                  /* second tap confirms the action */
         switch (f_row) {
         case 0: f_status = save_do(); break;
         case 1: f_status = save_load(); break;
         case 2:
-            if (!f_confirm) {           /* two taps to wipe the song */
-                f_confirm = 1;
-                draw_files_row(2, 1);
-                return;
-            }
-            f_confirm = 0;
             __asm__("sei");
             song_clear();
             __asm__("cli");
             f_status = ST_OK;
-            draw_files_row(2, 1);
             break;
         case 3:
             purge();
             f_status = ST_OK;
             break;
         }
+        draw_files_row(f_row, 1);       /* SURE? -> label */
         MIRROR_SDSUM = save_sum();
         draw_files_status();
         break;
@@ -1291,10 +1291,6 @@ static void nav(unsigned char to_right)
         }
         if (screen == SCR_OPTS) {
             screen = SCR_PROJ;
-            goto moved;
-        }
-        if (screen == SCR_PROJ) {
-            screen = SCR_WAVE;
             goto moved;
         }
         if (screen == SCR_SONG) {
@@ -1327,10 +1323,6 @@ static void nav(unsigned char to_right)
         }
         if (screen == SCR_PROJ) {
             screen = SCR_OPTS;
-            goto moved;
-        }
-        if (screen == SCR_WAVE) {
-            screen = SCR_PROJ;
             goto moved;
         }
         if (screen == SCR_OPTS)
@@ -1864,15 +1856,25 @@ void editor_frame(unsigned char joy, unsigned char prev)
     }
 
     if (dir != 0xFF) {
-        if (joy & JOY_BTN_B_MASK) {          /* B chord: screen nav */
+        if (joy & JOY_BTN_B_MASK) {          /* nav chord (physical A) */
             b_used = 1;
-            if (dir == 2)
+            if (screen == SCR_TABLE && dir <= 1) {       /* +up/down: table # */
+                edit_table = (dir == 0 ? edit_table + 1
+                                       : edit_table + NTABLES - 1) % NTABLES;
+                draw_screen();
+                mirror_cursor();
+            } else if (screen == SCR_WAVE && dir >= 2) {  /* +left/right: wave # */
+                if (dir == 2) { if (edit_wave) --edit_wave; }
+                else if (edit_wave < 7) ++edit_wave;
+                draw_screen();
+                mirror_cursor();
+            } else if (dir == 2)
                 nav(0);
             else if (dir == 3)
                 nav(1);
             else
                 nav_v(dir == 1);
-        } else if (joy & JOY_BTN_A_MASK) {   /* A chord: edit */
+        } else if (joy & JOY_BTN_A_MASK) {   /* edit chord (physical B) */
             a_used = 1;
             edit_cell(dir);
         } else
@@ -1895,6 +1897,7 @@ void editor_frame(unsigned char joy, unsigned char prev)
             a_release_age = 0;               /* arm the double-tap window */
         }
     }
-    if ((prev & JOY_BTN_B_MASK) && !(joy & JOY_BTN_B_MASK) && !b_used)
+    if ((prev & JOY_BTN_B_MASK) && !(joy & JOY_BTN_B_MASK) && !b_used
+        && screen != SCR_FILES)              /* FILES: back-tap does nothing */
         nav(0);                              /* clean B tap = back */
 }
