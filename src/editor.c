@@ -629,7 +629,7 @@ static void draw_wave_col(unsigned char c, unsigned char cursor_here)
     b[1] = 0;
     for (r = 0; r < 16; ++r) {
         unsigned char filled = (15 - r) < h || ((15 - r) == 0 && h == 0);
-        b[0] = filled ? '#' : ' ';
+        b[0] = filled ? '`' : ' ';       /* solid block (same as meters) */
         draw_text(1 + c, GRID_TOP + r, b,
                   cursor_here ? PEN_TEXT : PEN_ACCENT, PEN_BG);
     }
