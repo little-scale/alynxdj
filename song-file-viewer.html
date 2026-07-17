@@ -1,0 +1,621 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="Inspect, edit, validate, and export ALYNXDJ SRAM and EEPROM song files locally in one HTML file.">
+  <title>ALYNXDJ Song File Viewer</title>
+  <style>
+    :root {
+      --ink:#0f0d18; --ink2:#171321; --panel:#1c1829ef; --panel2:#242033;
+      --line:#e2ddf024; --muted:#aaa4bb; --paper:#f7f4ff; --acid:#d9ff4f;
+      --aqua:#58f3d2; --violet:#a581ff; --red:#ff6f7f; --amber:#ffc85c;
+    }
+    * { box-sizing:border-box }
+    html { min-width:320px; background:var(--ink) }
+    body {
+      min-height:100vh; margin:0; color:var(--paper);
+      background:
+        linear-gradient(#58f3d205 1px,transparent 1px),
+        linear-gradient(90deg,#58f3d205 1px,transparent 1px),
+        radial-gradient(circle at 10% -10%,#a581ff3d,transparent 33rem),var(--ink);
+      background-size:32px 32px,32px 32px,auto,auto;
+      font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    }
+    button,input,select { font:inherit }
+    button,label,[role=tab] { -webkit-tap-highlight-color:transparent }
+    button:focus-visible,input:focus-visible,select:focus-visible,[role=tab]:focus-visible {
+      outline:2px solid var(--acid); outline-offset:2px;
+    }
+    button { cursor:pointer }
+    [hidden] { display:none!important }
+    .shell { width:min(1320px,calc(100% - 38px)); margin:auto; padding:44px 0 28px }
+    .hero { display:flex; justify-content:space-between; align-items:flex-end; gap:30px; margin-bottom:28px }
+    .eyebrow { margin:0 0 9px; color:var(--aqua); letter-spacing:.18em; font:700 11px/1.2 ui-monospace,SFMono-Regular,Menlo,monospace }
+    h1 { margin:0; letter-spacing:-.055em; font:800 clamp(38px,6vw,70px)/.94 ui-sans-serif,system-ui,sans-serif }
+    .lede { max-width:770px; margin:17px 0 0; color:#c9c4d6; font-size:17px; line-height:1.55 }
+    .local-badge { display:flex; flex:none; align-items:center; gap:9px; padding:10px 13px; color:#d7fff7; background:#58f3d212; border:1px solid #58f3d259; text-transform:uppercase; letter-spacing:.06em; font:650 11px/1 ui-monospace,SFMono-Regular,monospace }
+    .local-badge i { width:8px; height:8px; border-radius:50%; background:var(--aqua); box-shadow:0 0 14px var(--aqua) }
+    .panel { background:var(--panel); border:1px solid var(--line); box-shadow:0 24px 80px #00000038 }
+    .load-panel { padding:18px }
+    .dropzone { display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:430px; padding:48px 24px; text-align:center; background:radial-gradient(circle,#a581ff1d,transparent 50%); border:1px dashed #a581ff8f; transition:.2s }
+    .dropzone:hover,.dropzone.dragging { border-color:var(--acid); background:radial-gradient(circle,#d9ff4f12,transparent 50%) }
+    .chip-mark { position:relative; display:grid; width:82px; height:62px; margin-bottom:28px; place-items:center; color:var(--aqua); border:2px solid var(--aqua); box-shadow:inset 0 0 0 7px #58f3d20b,0 0 28px #58f3d222; font:800 18px/1 ui-monospace,monospace }
+    .chip-mark:before,.chip-mark:after { content:""; position:absolute; top:8px; bottom:8px; width:12px; background:repeating-linear-gradient(0deg,var(--acid) 0 3px,transparent 3px 8px) }
+    .chip-mark:before { left:-14px }.chip-mark:after { right:-14px }
+    .dropzone h2 { margin:0 0 10px; letter-spacing:-.03em; font-size:clamp(25px,4vw,38px) }
+    .dropzone p { max-width:660px; margin:0; color:var(--muted); line-height:1.55 }
+    .actions { display:flex; flex-wrap:wrap; justify-content:center; gap:10px; margin-top:24px }
+    .primary,.download { padding:13px 20px; color:#171520; background:var(--acid); border:0; font-weight:800; box-shadow:4px 4px #d9ff4f32 }
+    .primary:hover,.download:hover { background:#e8ff8d; transform:translateY(-1px) }
+    .secondary,.quiet { padding:11px 14px; color:var(--paper); background:#ffffff08; border:1px solid var(--line) }
+    .secondary:hover,.quiet:hover { background:#58f3d210; border-color:var(--aqua) }
+    .quiet { color:var(--muted); background:transparent }
+    .download:disabled,.secondary:disabled,.quiet:disabled { opacity:.35; cursor:not-allowed; transform:none }
+    .load-specs { display:grid; grid-template-columns:repeat(3,1fr); margin-top:18px; border-top:1px solid var(--line) }
+    .load-specs span { padding:17px; color:var(--muted); text-align:center; text-transform:uppercase; letter-spacing:.06em; font:11px/1.45 ui-monospace,monospace }
+    .load-specs b { color:var(--paper) }
+    .filebar { display:grid; grid-template-columns:minmax(280px,1.7fr) repeat(3,minmax(100px,.65fr)) auto; align-items:center; gap:18px; margin-bottom:14px; padding:16px 18px }
+    .file-id { display:flex; align-items:center; gap:12px; min-width:0 }
+    .file-icon { display:grid; flex:0 0 39px; height:39px; place-items:center; color:var(--aqua); background:#58f3d20d; border:1px solid #58f3d244; font:800 11px/1 ui-monospace,monospace }
+    .file-id>div,.stat { display:grid; gap:5px; min-width:0 }
+    .filebar small,.section-kicker,.export-panel small,.card small { color:var(--muted); letter-spacing:.12em; text-transform:uppercase; font:700 9px/1.25 ui-monospace,monospace }
+    .file-id strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+    .stat strong { color:#ddd8e9; font:700 12px/1.2 ui-monospace,monospace }
+    .dirty { display:inline-block; margin-left:7px; padding:3px 5px; color:#21152b; background:var(--violet); vertical-align:2px; font:800 8px/1 ui-monospace,monospace }
+    .tabs { display:flex; overflow-x:auto; background:#12101a; border:1px solid var(--line); scrollbar-width:thin }
+    .tabs button { flex:1 0 auto; min-width:95px; padding:15px 13px; color:#817a91; background:transparent; border:0; border-right:1px solid var(--line); text-transform:uppercase; letter-spacing:.09em; font:750 10px/1 ui-monospace,monospace }
+    .tabs button:last-child { border-right:0 }
+    .tabs button:hover { color:var(--paper); background:#ffffff06 }
+    .tabs button.active { color:var(--paper); background:var(--panel2); box-shadow:inset 0 -3px var(--acid) }
+    .workspace { min-height:550px; margin-top:0; padding:24px }
+    .section-head { display:flex; justify-content:space-between; align-items:flex-end; gap:18px; margin-bottom:21px }
+    .section-head h2 { margin:4px 0 0; letter-spacing:-.025em; font-size:25px }
+    .section-head p { max-width:680px; margin:5px 0 0; color:var(--muted); font-size:13px; line-height:1.5 }
+    .selector { display:flex; align-items:center; gap:10px }
+    .selector label { color:var(--muted); text-transform:uppercase; letter-spacing:.08em; font:700 10px/1 ui-monospace,monospace }
+    select,input { color:var(--paper); background:#11101a; border:1px solid #e2ddf02e; border-radius:0 }
+    select { min-height:37px; padding:8px 31px 8px 10px }
+    input { min-height:34px; padding:7px 8px }
+    input:hover,select:hover { border-color:#58f3d26f }
+    input:disabled,select:disabled { color:#6d6679; background:#0d0c12; cursor:not-allowed }
+    input.invalid { color:#ffd5da; border-color:var(--red); background:#ff6f7f0d }
+    .hex { width:55px; text-align:center; text-transform:uppercase; font:700 12px/1 ui-monospace,SFMono-Regular,monospace }
+    .signed { width:72px; text-align:right; font:700 12px/1 ui-monospace,SFMono-Regular,monospace }
+    .wide-input { width:90px }
+    .data-table { width:100%; border-collapse:collapse; background:#15121e; font-size:12px }
+    .data-table th { position:sticky; top:0; z-index:1; padding:10px 9px; color:#898297; background:#201b2c; border:1px solid var(--line); text-align:left; text-transform:uppercase; letter-spacing:.08em; font:750 9px/1 ui-monospace,monospace }
+    .data-table td { height:43px; padding:5px 8px; border:1px solid var(--line) }
+    .data-table tbody tr:hover { background:#58f3d207 }
+    .row-id { width:48px; color:var(--violet); text-align:center; font:750 11px/1 ui-monospace,monospace }
+    .table-scroll { max-height:620px; overflow:auto; border:1px solid var(--line) }
+    .table-scroll .data-table { border:0 }
+    .note-select { min-width:102px }
+    .cmd-select { min-width:78px }
+    .cards { display:grid; grid-template-columns:repeat(4,1fr); gap:11px }
+    .card { min-width:0; padding:16px; background:#17141f; border:1px solid var(--line) }
+    .card strong { display:block; margin-top:8px; color:var(--paper); font-size:20px }
+    .card p { margin:7px 0 0; color:var(--muted); font-size:12px; line-height:1.45 }
+    button.card { color:inherit; text-align:left }
+    button.card:hover { border-color:var(--aqua); background:#58f3d20a }
+    .overview-grid { display:grid; grid-template-columns:1.2fr .8fr; gap:14px; margin-top:14px }
+    .subpanel { padding:19px; background:#17141f; border:1px solid var(--line) }
+    .subpanel h3 { margin:0 0 15px; font-size:15px }
+    .meta-list { display:grid; grid-template-columns:1fr auto; gap:0; margin:0 }
+    .meta-list dt,.meta-list dd { margin:0; padding:10px 0; border-bottom:1px solid var(--line); font-size:12px }
+    .meta-list dt { color:var(--muted) }.meta-list dd { color:#e3deed; font:700 11px/1.4 ui-monospace,monospace }
+    .meta-list dt:last-of-type,.meta-list dd:last-of-type { border:0 }
+    .form-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:13px }
+    .field { display:grid; gap:7px }
+    .field label { color:var(--muted); text-transform:uppercase; letter-spacing:.08em; font:700 9px/1.25 ui-monospace,monospace }
+    .field .hint { color:#777083; font-size:10px; line-height:1.4 }
+    .instrument-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:13px }
+    .instrument-grid .field { padding:13px; background:#17141f; border:1px solid var(--line) }
+    .instrument-grid input,.instrument-grid select { width:100% }
+    .span-2 { grid-column:span 2 }
+    .warning-list { display:grid; gap:8px; margin:0; padding:0; list-style:none }
+    .warning-list li { padding:10px 12px; color:#ffe0a9; background:#ffc85c0c; border-left:2px solid var(--amber); font-size:11px; line-height:1.45 }
+    .ok-message { padding:14px; color:#bdf8ec; background:#58f3d20a; border-left:2px solid var(--aqua); font-size:12px }
+    .wave-editor { display:grid; grid-template-columns:minmax(300px,.8fr) 1.2fr; gap:18px }
+    .wave-card { padding:18px; background:#15121e; border:1px solid var(--line) }
+    canvas { display:block; width:100%; height:260px; background:#100e17; border:1px solid var(--line) }
+    .wave-values { display:grid; grid-template-columns:repeat(4,1fr); gap:8px }
+    .wave-value { display:grid; grid-template-columns:25px 1fr 62px; align-items:center; gap:7px; padding:6px 7px; background:#15121e; border:1px solid var(--line) }
+    .wave-value b { color:var(--violet); font:700 9px/1 ui-monospace,monospace }
+    .wave-value input[type=range] { min-height:0; width:100%; padding:0; accent-color:var(--aqua); border:0 }
+    .wave-value .signed { width:62px }
+    .raw { margin:0; padding:17px; overflow:auto; color:#b9f7eb; background:#0d0b13; border:1px solid var(--line); font:11px/1.7 ui-monospace,SFMono-Regular,Menlo,monospace; white-space:pre }
+    .export-panel { display:grid; grid-template-columns:1fr auto; align-items:center; gap:30px; margin-top:14px; padding:19px 21px }
+    .capacity-head { display:flex; justify-content:space-between; gap:15px; margin-bottom:9px }
+    .capacity-head strong { color:var(--acid); font:750 12px/1 ui-monospace,monospace }
+    .meter { height:8px; overflow:hidden; background:#0b0a10 }
+    .meter span { display:block; height:100%; background:linear-gradient(90deg,var(--aqua),var(--acid)); transition:width .2s }
+    .capacity p { margin:8px 0 0; color:var(--muted); font-size:11px }
+    .capacity.over .meter span { background:var(--red) }.capacity.over p { color:#ffbac2 }
+    .export-actions { display:flex; align-items:center; gap:10px }
+    .notice { position:fixed; right:20px; bottom:20px; z-index:10; max-width:min(460px,calc(100% - 40px)); padding:12px 15px; color:#cbfff5; background:#1a2b29; border:1px solid #58f3d25c; box-shadow:0 15px 55px #0008; font-size:12px; line-height:1.45 }
+    .notice.error { color:#ffdce0; background:#321b24; border-color:#ff6f7f7a }
+    footer { display:flex; justify-content:space-between; gap:20px; padding:23px 2px 0; color:#625b70; text-transform:uppercase; letter-spacing:.1em; font:9px/1.4 ui-monospace,monospace }
+    @media (max-width:1050px) {
+      .filebar { grid-template-columns:minmax(240px,1.5fr) repeat(2,1fr) auto }.stat:nth-of-type(3) { display:none }
+      .cards { grid-template-columns:repeat(2,1fr) }.instrument-grid { grid-template-columns:repeat(3,1fr) }
+      .wave-editor { grid-template-columns:1fr }.wave-values { grid-template-columns:repeat(2,1fr) }
+    }
+    @media (max-width:720px) {
+      .shell { width:min(100% - 20px,1320px); padding-top:26px }.hero { flex-direction:column; align-items:flex-start }.lede { font-size:15px }
+      .load-panel { padding:8px }.dropzone { min-height:390px; padding:38px 16px }.load-specs { grid-template-columns:1fr }.load-specs span { padding:10px; border-bottom:1px solid var(--line) }
+      .filebar { grid-template-columns:1fr auto; gap:11px }.stat { display:none }.workspace { padding:17px 10px }.section-head { align-items:flex-start; flex-direction:column }
+      .cards,.overview-grid,.instrument-grid { grid-template-columns:1fr }.span-2 { grid-column:auto }.form-grid { grid-template-columns:1fr }
+      .wave-values { grid-template-columns:1fr }.export-panel { grid-template-columns:1fr }.export-actions { justify-content:space-between }
+      .data-table th,.data-table td { padding-right:5px; padding-left:5px }.hex { width:48px }
+      footer { flex-direction:column }
+    }
+    @media (prefers-reduced-motion:reduce) { *,:before,:after { transition:none!important } }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="hero">
+      <div>
+        <p class="eyebrow">ALYNXDJ / SONG DATA LAB</p>
+        <h1>Song file viewer</h1>
+        <p class="lede">Open an ALYNXDJ SRAM or EEPROM image, inspect every song structure, make precise edits, and export a hardware-ready file. Everything runs locally in this page.</p>
+      </div>
+      <div class="local-badge"><i></i> Private + offline</div>
+    </header>
+
+    <section id="load-view" class="panel load-panel">
+      <div id="dropzone" class="dropzone">
+        <div class="chip-mark">2 KB</div>
+        <h2>Drop in a song save</h2>
+        <p>Use a 2,048-byte ALYNXDJ <b>.eeprom</b>, <b>.e2p</b>, <b>.sram</b>, <b>.srm</b>, <b>.sav</b>, or <b>.bin</b> file. The header, checksum, packed payload, and all references are checked before editing.</p>
+        <div class="actions">
+          <button id="choose-file" class="primary" type="button">Choose song file</button>
+          <button id="new-file" class="secondary" type="button">Create blank file</button>
+        </div>
+        <input id="file-input" type="file" accept=".eeprom,.e2p,.eep,.sram,.srm,.sav,.bin,application/octet-stream" hidden>
+      </div>
+      <div class="load-specs">
+        <span><b>93C86</b><br>2,048-byte image</span>
+        <span><b>Save v1–v6</b><br>automatic migration</span>
+        <span><b>Local only</b><br>no uploads or server</span>
+      </div>
+    </section>
+
+    <section id="editor-view" hidden>
+      <div class="panel filebar">
+        <div class="file-id"><span class="file-icon">SRAM</span><div><small>Loaded file</small><strong id="file-name"></strong></div></div>
+        <div class="stat"><small>Source</small><strong id="source-version"></strong></div>
+        <div class="stat"><small>Payload</small><strong id="payload-stat"></strong></div>
+        <div class="stat"><small>References</small><strong id="reference-stat"></strong></div>
+        <button id="load-another" class="quiet" type="button">Load another</button>
+      </div>
+
+      <nav id="tabs" class="tabs" aria-label="Song sections">
+        <button type="button" data-tab="overview">Overview</button>
+        <button type="button" data-tab="song">Song</button>
+        <button type="button" data-tab="chains">Chains</button>
+        <button type="button" data-tab="phrases">Phrases</button>
+        <button type="button" data-tab="instruments">Instruments</button>
+        <button type="button" data-tab="tables">Tables</button>
+        <button type="button" data-tab="grooves">Grooves</button>
+        <button type="button" data-tab="waves">Waves</button>
+        <button type="button" data-tab="raw">Raw</button>
+      </nav>
+      <section id="content" class="panel workspace"></section>
+
+      <section class="panel export-panel">
+        <div id="capacity" class="capacity">
+          <div class="capacity-head"><small>Packed song size</small><strong id="capacity-label"></strong></div>
+          <div class="meter"><span id="capacity-meter"></span></div>
+          <p id="capacity-note"></p>
+        </div>
+        <div class="export-actions">
+          <button id="reset-file" class="quiet" type="button">Reset edits</button>
+          <button id="export-file" class="download" type="button">Export SRAM ↓</button>
+        </div>
+      </section>
+    </section>
+
+    <footer><span>ALYNXDJ save format v6</span><span>One self-contained browser file</span></footer>
+  </main>
+  <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+  <noscript>This tool needs JavaScript enabled to read and edit song files locally.</noscript>
+
+  <script>
+  (() => {
+    "use strict";
+
+    const EEPROM_BYTES = 2048, HEADER_BYTES = 8, PAYLOAD_CAP = 2032;
+    const CONFIG_OFFSET = 2040, SONG_BYTES = 7680, SAVE_VERSION = 6;
+    const OFF = { song:0, chains:512, phrases:1536, instruments:5632, tables:6144, grooves:7168, waves:7424 };
+    const SIZES = { song:512, chains:1024, phrases:4096, instruments:512, tables:1024, grooves:256, waves:256 };
+    const COMMANDS = ["—","A","C","D","G","H","K","O","P","V","W","X","F","L","N","R","S","Z","E","T","I","J","B"];
+    const COMMAND_NAMES = ["None","Run table","Chord","Delay","Tap glide","Halt / loop","Kill","Pan","Pitch bend","Vibrato","Row length","Volume","Finetune","Slide","Taps override","Retrigger","Sample rate","Probability","Envelope","Tempo","Iteration","Variation","Taps offset"];
+    const TYPES = ["TONE","NOISE","WAV","KIT"];
+    const ENV_RATE = [0,127,64,43,32,26,22,16,12,8,6,5,4,3,2,1];
+    const state = { fileName:"", original:null, data:null, sourceVersion:6, sourcePacked:0, decodedLength:0, sourceChecksum:0, dirty:false, migrated:false, config:null, tab:"overview", selection:{chains:0,phrases:0,instruments:0,tables:0,grooves:0,waves:0} };
+
+    const $ = id => document.getElementById(id);
+    const loadView = $("load-view"), editorView = $("editor-view"), content = $("content"), fileInput = $("file-input"), dropzone = $("dropzone");
+    let noticeTimer = 0;
+
+    function fail(message) { throw new Error(message) }
+    function hex(value,width=2) { return (value >>> 0).toString(16).toUpperCase().padStart(width,"0") }
+    function s8(value) { return value > 127 ? value - 256 : value }
+    function u8(value) { return value & 255 }
+    function readU16(bytes,offset) { return bytes[offset] | bytes[offset+1] << 8 }
+    function writeU16(bytes,offset,value) { bytes[offset]=value&255; bytes[offset+1]=value>>8&255 }
+    function checksum(bytes) { let sum=0; for (const value of bytes) sum=(sum+value)&255; return sum }
+    function escapeHtml(value) { return String(value).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])) }
+    function formatBytes(value) { return new Intl.NumberFormat().format(value)+" bytes" }
+
+    function makeBaseSong() {
+      const data = new Uint8Array(SONG_BYTES);
+      data.fill(255,OFF.song,OFF.song+SIZES.song);
+      data.fill(255,OFF.chains,OFF.chains+SIZES.chains);
+      for (let i=0;i<32;i++) {
+        const o=OFF.instruments+i*16;
+        data.set([0,0,0x0A,5,255,1,255,255,0,0,0,0,0,0,0,0],o);
+      }
+      for (let x=0;x<32;x++) {
+        data[OFF.waves+x]=u8(x<16 ? x*15-120 : 120-(x-16)*15);
+        data[OFF.waves+32+x]=u8(x*8-124);
+        data[OFF.waves+64+x]=u8(x<16 ? 100 : -100);
+        data[OFF.waves+96+x]=u8(x<8 ? 100 : -100);
+      }
+      data[OFF.grooves]=6; data[OFF.grooves+1]=6;
+      return data;
+    }
+
+    function packRle(source) {
+      const out=[];
+      for (let pos=0;pos<source.length;) {
+        let run=1;
+        while (run<130 && pos+run<source.length && source[pos+run]===source[pos]) run++;
+        if (run>=3) {
+          out.push(0x80+run-3,source[pos]); pos+=run;
+        } else {
+          const start=pos; let literal=0;
+          while (literal<128 && start+literal<source.length) {
+            const at=start+literal;
+            if (at+2<source.length && source[at]===source[at+1] && source[at]===source[at+2]) break;
+            literal++;
+          }
+          out.push(literal-1);
+          for (let i=0;i<literal;i++) out.push(source[start+i]);
+          pos+=literal;
+        }
+      }
+      return Uint8Array.from(out);
+    }
+
+    function unpackRle(payload,version) {
+      const data=makeBaseSong(); let input=0,output=0;
+      while (input<payload.length) {
+        const token=payload[input++];
+        if (token&0x80) {
+          if (input>=payload.length) fail("The packed song ends inside a run token.");
+          const count=(token-0x80)+3, value=payload[input++];
+          if (output+count>SONG_BYTES) fail("The packed song expands beyond the 7,680-byte song block.");
+          data.fill(value,output,output+count); output+=count;
+        } else {
+          const count=token+1;
+          if (input+count>payload.length) fail("The packed song ends inside a literal token.");
+          if (output+count>SONG_BYTES) fail("The packed song expands beyond the 7,680-byte song block.");
+          data.set(payload.subarray(input,input+count),output); input+=count; output+=count;
+        }
+      }
+      if (version>=3 && output!==SONG_BYTES) fail(`Save v${version} expands to ${formatBytes(output)}; expected ${formatBytes(SONG_BYTES)}.`);
+      if (version<3 && output<OFF.waves) fail(`Legacy save expands to only ${formatBytes(output)}; expected at least ${formatBytes(OFF.waves)}.`);
+      return {data,decodedLength:output};
+    }
+
+    function nearestRateNibble(rate) {
+      if (!rate) return 0;
+      let best=1,distance=255;
+      for (let i=1;i<16;i++) { const d=Math.abs(ENV_RATE[i]-rate); if (d<distance) { best=i; distance=d } }
+      return best;
+    }
+
+    function migrate(data,version) {
+      if (version<2) {
+        for (let i=0;i<32;i++) {
+          const o=OFF.instruments+i*16;
+          data[o+2]=nearestRateNibble(data[o+2])<<4 | nearestRateNibble(data[o+4]);
+          data[o+3]=Math.min(data[o+3],15); data[o+4]=0;
+        }
+      }
+      if (version<4) for (let i=0;i<32;i++) data.fill(0,OFF.instruments+i*16+12,OFF.instruments+i*16+15);
+      if (version<5) for (let i=0;i<32;i++) data[OFF.instruments+i*16+15]=0;
+    }
+
+    function parseConfig(bytes) {
+      const present=bytes[CONFIG_OFFSET]===67 && bytes[CONFIG_OFFSET+1]===70;
+      const repeat=present && bytes[CONFIG_OFFSET+4]>=4 && bytes[CONFIG_OFFSET+4]<=30 ? bytes[CONFIG_OFFSET+4] : 12;
+      return { present, palette:present ? bytes[CONFIG_OFFSET+2]&7 : 0, prelisten:present ? (bytes[CONFIG_OFFSET+3]?1:0) : 0, repeat, sync:present ? bytes[CONFIG_OFFSET+5]%3 : 0, reserved:readU16(bytes,CONFIG_OFFSET+6) };
+    }
+
+    function parseSram(input,name="song.eeprom") {
+      const bytes=input instanceof Uint8Array ? Uint8Array.from(input) : new Uint8Array(input);
+      if (bytes.length!==EEPROM_BYTES) fail(`Expected a ${formatBytes(EEPROM_BYTES)} 93C86 image, got ${formatBytes(bytes.length)}.`);
+      if (bytes[0]!==65 || bytes[1]!==76 || bytes[2]!==68 || bytes[3]!==74) fail("This is not an ALYNXDJ song save (missing ALDJ header).");
+      const length=readU16(bytes,4), sourceChecksum=bytes[6], version=bytes[7];
+      if (!length || length>PAYLOAD_CAP) fail(`Packed payload length ${length} is outside the 1–${PAYLOAD_CAP} byte range.`);
+      if (version<1 || version>SAVE_VERSION) fail(`Save version ${version} is not supported by this v${SAVE_VERSION} tool.`);
+      const payload=bytes.slice(HEADER_BYTES,HEADER_BYTES+length), actual=checksum(payload);
+      if (actual!==sourceChecksum) fail(`Checksum mismatch: header $${hex(sourceChecksum)}, calculated $${hex(actual)}. The file may be damaged.`);
+      const unpacked=unpackRle(payload,version); migrate(unpacked.data,version);
+      return {fileName:name,original:bytes,data:unpacked.data,sourceVersion:version,sourcePacked:length,decodedLength:unpacked.decodedLength,sourceChecksum,dirty:false,migrated:version<SAVE_VERSION,config:parseConfig(bytes)};
+    }
+
+    function serializeSram(data,original,config) {
+      const packed=packRle(data);
+      if (packed.length>PAYLOAD_CAP) fail(`This song packs to ${formatBytes(packed.length)}, beyond the ${formatBytes(PAYLOAD_CAP)} EEPROM limit.`);
+      const out=original ? Uint8Array.from(original) : new Uint8Array(EEPROM_BYTES).fill(255);
+      out.fill(0,0,CONFIG_OFFSET);
+      out.set([65,76,68,74],0); writeU16(out,4,packed.length); out[6]=checksum(packed); out[7]=SAVE_VERSION; out.set(packed,HEADER_BYTES);
+      if (config.present) {
+        out[CONFIG_OFFSET]=67; out[CONFIG_OFFSET+1]=70; out[CONFIG_OFFSET+2]=config.palette&7; out[CONFIG_OFFSET+3]=config.prelisten?1:0;
+        out[CONFIG_OFFSET+4]=Math.max(4,Math.min(30,config.repeat)); out[CONFIG_OFFSET+5]=config.sync%3; writeU16(out,CONFIG_OFFSET+6,config.reserved);
+      }
+      return {bytes:out,packed};
+    }
+
+    function useParsed(parsed) {
+      Object.assign(state,parsed); state.tab="overview"; state.selection={chains:0,phrases:0,instruments:0,tables:0,grooves:0,waves:0};
+      loadView.hidden=true; editorView.hidden=false; renderAll();
+    }
+
+    async function loadFile(file) {
+      try { useParsed(parseSram(await file.arrayBuffer(),file.name)); showNotice(`Loaded ${file.name}. The song and checksum are valid.`) }
+      catch (error) { showNotice(error.message,true) }
+    }
+
+    function createBlank() {
+      const original=new Uint8Array(EEPROM_BYTES).fill(255), data=makeBaseSong(), config={present:false,palette:0,prelisten:0,repeat:12,sync:0,reserved:65535};
+      const built=serializeSram(data,original,config);
+      useParsed({fileName:"alynxdj-song.eeprom",original:built.bytes,data,sourceVersion:6,sourcePacked:built.packed.length,decodedLength:SONG_BYTES,sourceChecksum:checksum(built.packed),dirty:true,migrated:false,config});
+      showNotice("Created a blank ALYNXDJ song file.");
+    }
+
+    function analyze() {
+      const warnings=[], chains=new Set(), phrases=new Set(), instruments=new Set(), tables=new Set();
+      for (let i=0;i<512;i++) { const value=state.data[OFF.song+i]; if (value!==255) { if (value<32) chains.add(value); else warnings.push(`Song cell $${hex(i>>2,2)} / CH${i%4+1} references invalid chain $${hex(value)}.`) } }
+      for (let c=0;c<32;c++) for (let r=0;r<16;r++) { const o=OFF.chains+c*32+r*2, value=state.data[o]; if (value!==255) { if (value<64) phrases.add(value); else warnings.push(`Chain $${hex(c)} row $${hex(r)} references invalid phrase $${hex(value)}.`) } }
+      for (let p=0;p<64;p++) for (let r=0;r<16;r++) {
+        const o=OFF.phrases+p*64+r*4,note=state.data[o],instrument=state.data[o+1],cmd=state.data[o+2];
+        if (note>96) warnings.push(`Phrase $${hex(p)} row $${hex(r)} has invalid note $${hex(note)}.`);
+        if (note && instrument<32) instruments.add(instrument); else if (note && instrument>=32) warnings.push(`Phrase $${hex(p)} row $${hex(r)} references invalid instrument $${hex(instrument)}.`);
+        if (cmd>=COMMANDS.length) warnings.push(`Phrase $${hex(p)} row $${hex(r)} has invalid command $${hex(cmd)}.`);
+      }
+      for (let i=0;i<32;i++) {
+        const o=OFF.instruments+i*16,type=state.data[o],table=state.data[o+6],bank=state.data[o+4];
+        if (type>=4) warnings.push(`Instrument $${hex(i)} has invalid type $${hex(type)}.`);
+        if (state.data[o+1]>127) warnings.push(`Instrument $${hex(i)} has volume $${hex(state.data[o+1])}; the supported peak is $00–$7F.`);
+        if (state.data[o+9]>1) warnings.push(`Instrument $${hex(i)} has unsupported high tap bits $${hex(state.data[o+9])}.`);
+        if (state.data[o+11]>15) warnings.push(`Instrument $${hex(i)} has unsupported high seed bits $${hex(state.data[o+11])}.`);
+        if (table!==255) { if (table<16) tables.add(table); else warnings.push(`Instrument $${hex(i)} references invalid table $${hex(table)}.`) }
+        if ((type===2 || type===3) && bank!==255 && bank>=8) warnings.push(`Instrument $${hex(i)} has invalid bank $${hex(bank)}.`);
+      }
+      for (let t=0;t<16;t++) for (let r=0;r<16;r++) { const cmd=state.data[OFF.tables+t*64+r*4+2]; if (cmd>=COMMANDS.length) warnings.push(`Table $${hex(t)} row $${hex(r)} has invalid command $${hex(cmd)}.`) }
+      return {warnings,chains,phrases,instruments,tables};
+    }
+
+    function renderAll() {
+      document.querySelectorAll("#tabs button").forEach(button=>{ button.classList.toggle("active",button.dataset.tab===state.tab); button.setAttribute("aria-selected",button.dataset.tab===state.tab) });
+      renderCurrent(); updateMeta();
+    }
+
+    function updateMeta() {
+      const packed=packRle(state.data), report=analyze(), percent=Math.min(100,packed.length/PAYLOAD_CAP*100);
+      $("file-name").innerHTML=escapeHtml(state.fileName)+(state.dirty?'<span class="dirty">EDITED</span>':'');
+      $("source-version").textContent=`v${state.sourceVersion}${state.migrated?" → v6":""}`;
+      $("payload-stat").textContent=`${packed.length} / ${PAYLOAD_CAP}`;
+      $("reference-stat").textContent=`${report.chains.size}C · ${report.phrases.size}P · ${report.instruments.size}I`;
+      $("capacity-label").textContent=`${packed.length} / ${PAYLOAD_CAP} bytes`;
+      $("capacity-meter").style.width=percent+"%"; $("capacity").classList.toggle("over",packed.length>PAYLOAD_CAP);
+      $("capacity-note").textContent=packed.length>PAYLOAD_CAP ? `Over capacity by ${packed.length-PAYLOAD_CAP} bytes. Reduce or purge song data before exporting.` : `${PAYLOAD_CAP-packed.length} bytes remain. Export writes save format v6 with a fresh checksum.`;
+      $("export-file").disabled=packed.length>PAYLOAD_CAP;
+    }
+
+    function sectionHead(kicker,title,description,selector="") { return `<div class="section-head"><div><span class="section-kicker">${kicker}</span><h2>${title}</h2><p>${description}</p></div>${selector}</div>` }
+    function selector(kind,count,label) {
+      let options=""; for (let i=0;i<count;i++) options+=`<option value="${i}" ${state.selection[kind]===i?"selected":""}>$${hex(i)}</option>`;
+      return `<div class="selector"><label for="select-${kind}">${label}</label><select id="select-${kind}" data-selector="${kind}">${options}</select></div>`;
+    }
+    function hexInput(offset,value,max=255,allowFF=false,label="") { return `<input class="hex" type="text" inputmode="text" maxlength="2" value="${hex(value)}" data-byte="${offset}" data-mode="hex" data-max="${max}" ${allowFF?'data-ff="1"':''} aria-label="${label}">` }
+    function signedInput(offset,value,label="") { return `<input class="signed" type="number" min="-128" max="127" value="${s8(value)}" data-byte="${offset}" data-mode="signed" aria-label="${label}">` }
+    function commandSelect(offset,value) {
+      let options=""; for (let i=0;i<COMMANDS.length;i++) options+=`<option value="${i}" ${value===i?"selected":""}>${COMMANDS[i]}${i?" · "+COMMAND_NAMES[i]:""}</option>`;
+      if (value>=COMMANDS.length) options+=`<option value="${value}" selected>Invalid $${hex(value)}</option>`;
+      return `<select class="cmd-select" data-byte="${offset}" data-mode="decimal">${options}</select>`;
+    }
+    function noteName(value) { if (!value) return "— empty"; const names=["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"],n=value-1; return `${names[n%12]}-${Math.floor(n/12)+1}` }
+    function noteSelect(offset,value) { let options=""; for (let i=0;i<=96;i++) options+=`<option value="${i}" ${value===i?"selected":""}>${i?noteName(i)+" · $"+hex(i):"— empty · $00"}</option>`; if (value>96) options+=`<option value="${value}" selected>Invalid $${hex(value)}</option>`; return `<select class="note-select" data-byte="${offset}" data-mode="decimal">${options}</select>` }
+
+    function renderCurrent() {
+      ({overview:renderOverview,song:renderSong,chains:renderChains,phrases:renderPhrases,instruments:renderInstruments,tables:renderTables,grooves:renderGrooves,waves:renderWaves,raw:renderRaw}[state.tab]||renderOverview)();
+    }
+
+    function renderOverview() {
+      const report=analyze(), packed=packRle(state.data), cfg=state.config;
+      const structures=[["song","Song rows","128 × 4",report.chains.size+" chains used"],["chains","Chains","32 × 16",report.phrases.size+" phrases used"],["phrases","Phrases","64 × 16",report.instruments.size+" instruments used"],["instruments","Instruments","32 patches",report.tables.size+" tables used"],["tables","Tables","16 × 16","macro rows"],["grooves","Grooves","16 × 16","tick patterns"],["waves","Waves","8 × 32","signed 8-bit"],["raw","Raw block","7,680 bytes","decoded view"]];
+      let cards=structures.map(x=>`<button class="card" type="button" data-action="tab" data-target="${x[0]}"><small>${x[2]}</small><strong>${x[1]}</strong><p>${x[3]}</p></button>`).join("");
+      let warnings=report.warnings.length ? `<ul class="warning-list">${report.warnings.slice(0,20).map(w=>`<li>${escapeHtml(w)}</li>`).join("")}${report.warnings.length>20?`<li>…and ${report.warnings.length-20} more warnings.</li>`:""}</ul>` : '<div class="ok-message">All song, chain, phrase, instrument, table, note, and command references are in range.</div>';
+      let config=cfg.present ? `<div class="form-grid">
+        <div class="field"><label>Palette</label><input type="number" min="0" max="7" value="${cfg.palette}" data-config="palette"></div>
+        <div class="field"><label>Prelisten</label><select data-config="prelisten"><option value="0" ${!cfg.prelisten?"selected":""}>Off</option><option value="1" ${cfg.prelisten?"selected":""}>On</option></select></div>
+        <div class="field"><label>Key repeat</label><input type="number" min="4" max="30" value="${cfg.repeat}" data-config="repeat"></div>
+        <div class="field"><label>Sync mode</label><select data-config="sync"><option value="0" ${cfg.sync===0?"selected":""}>Off</option><option value="1" ${cfg.sync===1?"selected":""}>Out</option><option value="2" ${cfg.sync===2?"selected":""}>In</option></select></div>
+      </div>` : `<p style="color:var(--muted);font-size:12px;line-height:1.5">No valid CF machine-config block is present. Song data is unaffected.</p><button class="secondary" type="button" data-action="create-config">Add default config</button>`;
+      content.innerHTML=sectionHead("File summary","Overview","The imported header and RLE checksum are valid. Edits are held in memory until you export.")+`<div class="cards">${cards}</div><div class="overview-grid"><div class="subpanel"><h3>Save details</h3><dl class="meta-list"><dt>Source format</dt><dd>v${state.sourceVersion}${state.migrated?" (migrated in editor)":""}</dd><dt>Source payload</dt><dd>${state.sourcePacked} bytes</dd><dt>Current payload</dt><dd>${packed.length} bytes</dd><dt>Decoded block</dt><dd>${state.decodedLength} bytes</dd><dt>Source checksum</dt><dd>$${hex(state.sourceChecksum)}</dd><dt>Export format</dt><dd>v6 / 2,048 bytes</dd></dl></div><div class="subpanel"><h3>Machine config</h3>${config}</div></div><div class="subpanel" style="margin-top:14px"><h3>Integrity report · ${report.warnings.length?report.warnings.length+" warning"+(report.warnings.length===1?"":"s"):"clean"}</h3>${warnings}</div>`;
+    }
+
+    function renderSong() {
+      let rows=""; for (let r=0;r<128;r++) { let cells=""; for (let c=0;c<4;c++) { const o=OFF.song+r*4+c; cells+=`<td>${hexInput(o,state.data[o],31,true,`Song row ${r}, channel ${c+1}`)}</td>` } rows+=`<tr><td class="row-id">$${hex(r)}</td>${cells}</tr>` }
+      content.innerHTML=sectionHead("Arrangement","Song","Each cell selects a chain for one of the four symmetric tracks. FF means empty.")+`<div class="table-scroll"><table class="data-table"><thead><tr><th>Row</th><th>CH1 chain</th><th>CH2 chain</th><th>CH3 chain</th><th>CH4 chain</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+    }
+
+    function renderChains() {
+      const chain=state.selection.chains; let rows="";
+      for (let r=0;r<16;r++) { const o=OFF.chains+chain*32+r*2,phrase=state.data[o],tsp=state.data[o+1],tspEditor=phrase===255?'<input class="signed" type="number" value="0" disabled aria-label="Empty chain row transpose">':signedInput(o+1,tsp,`Chain row ${r} transpose`); rows+=`<tr><td class="row-id">$${hex(r)}</td><td><input class="hex" type="text" maxlength="2" value="${hex(phrase)}" data-chain-phrase="${o}" aria-label="Chain row ${r} phrase"></td><td>${tspEditor}</td><td>${phrase===255?"Empty":phrase<64?`Phrase $${hex(phrase)}`:"Invalid reference"}</td></tr>` }
+      content.innerHTML=sectionHead("Hierarchy","Chain $"+hex(chain),"A chain sequences up to 16 phrases. Empty rows export as FF FF for compact saves.",selector("chains",32,"Chain"))+`<table class="data-table"><thead><tr><th>Row</th><th>Phrase</th><th>Transpose</th><th>Meaning</th></tr></thead><tbody>${rows}</tbody></table>`;
+    }
+
+    function renderPhrases() {
+      const phrase=state.selection.phrases; let rows="";
+      for (let r=0;r<16;r++) { const o=OFF.phrases+phrase*64+r*4; rows+=`<tr><td class="row-id">$${hex(r)}</td><td>${noteSelect(o,state.data[o])}</td><td>${hexInput(o+1,state.data[o+1],31,false,`Phrase row ${r} instrument`)}</td><td>${commandSelect(o+2,state.data[o+2])}</td><td>${hexInput(o+3,state.data[o+3],255,false,`Phrase row ${r} command parameter`)}</td></tr>` }
+      content.innerHTML=sectionHead("Pattern data","Phrase $"+hex(phrase),"Notes use $00 for an empty row. Instruments are $00–$1F; command parameters remain raw hexadecimal.",selector("phrases",64,"Phrase"))+`<table class="data-table"><thead><tr><th>Row</th><th>Note</th><th>Instrument</th><th>Command</th><th>Parameter</th></tr></thead><tbody>${rows}</tbody></table>`;
+    }
+
+    function iField(name,value,type="hex",extra="") { const cls=type==="signed"?"signed":"hex",inputType=type==="signed"?"number":"text"; return `<input class="${cls}" type="${inputType}" ${type==="signed"?'min="-128" max="127"':'maxlength="'+(extra||2)+'"'} value="${value}" data-ifield="${name}">` }
+    function field(label,input,hint="") { return `<div class="field"><label>${label}</label>${input}${hint?`<span class="hint">${hint}</span>`:""}</div>` }
+    function renderInstruments() {
+      const i=state.selection.instruments,o=OFF.instruments+i*16,type=state.data[o],env=state.data[o+2],hold=state.data[o+3],pan=state.data[o+7],vib=state.data[o+13],trm=state.data[o+14];
+      const taps=state.data[o+5] | (state.data[o+9]&1)<<8,seed=state.data[o+10] | (state.data[o+11]&15)<<8;
+      let typeOptions=TYPES.map((name,n)=>`<option value="${n}" ${type===n?"selected":""}>${name}</option>`).join(""); if(type>=4) typeOptions+=`<option value="${type}" selected>Invalid $${hex(type)}</option>`;
+      const grid=[
+        field("Type",`<select data-ifield="type">${typeOptions}</select>`,"All four tracks can play every type."),
+        field("Volume",iField("vol",hex(state.data[o+1])),"$00–$7F envelope peak"),
+        field("Attack",iField("attack",hex(env>>4,1),"hex",1),"0 instant; higher is slower"),
+        field("Decay",iField("decay",hex(env&15,1),"hex",1),"0 sustains; higher is slower"),
+        field("Hold",iField("hold",hex(hold&15,1),"hex",1),"Envelope ticks at peak"),
+        field("TBS",iField("tbs",hex(hold>>4,1),"hex",1),"0 per note; 1–F ticks per row"),
+        field(type===2?"Wave":type===3?"Kit bank":"Bank (unused)",iField("bank",hex(state.data[o+4])),type===2?"FF triangle; 00–07 wavetable":type===3?"00–07 sample kit":"Preserved but ignored"),
+        field("Table",iField("table",hex(state.data[o+6])),"FF none; 00–0F table"),
+        field("Pan left",iField("panLeft",hex(pan>>4,1),"hex",1),"Lynx II attenuation nibble"),
+        field("Pan right",iField("panRight",hex(pan&15,1),"hex",1),"Lynx II attenuation nibble"),
+        field("Finetune",iField("fine",s8(state.data[o+8]),"signed"),"Signed 1/16 semitone"),
+        field("Transpose",iField("tsp",s8(state.data[o+15]),"signed"),"Signed semitones"),
+        field("Taps",iField("taps",hex(taps,3),"hex",3),"9-bit raw LFSR mask · 000–1FF"),
+        field("Seed",iField("seed",hex(seed,3),"hex",3),"12-bit shifter state · 000–FFF"),
+        field("Sweep",iField("swp",s8(state.data[o+12]),"signed"),"Signed 1/16 semitone/tick; positive falls"),
+        field("VIB speed",iField("vibSpeed",hex(vib>>4,1),"hex",1),"0–F centred sine rate"),
+        field("VIB depth",iField("vibDepth",hex(vib&15,1),"hex",1),"0 disables pitch modulation"),
+        field("TRM speed",iField("trmSpeed",hex(trm>>4,1),"hex",1),"0–F tremolo rate"),
+        field("TRM depth",iField("trmDepth",hex(trm&15,1),"hex",1),"0 disables level modulation")
+      ].join("");
+      content.innerHTML=sectionHead("Patch data","Instrument $"+hex(i),"The editor exposes the packed 16-byte record as musical fields while preserving the exact save layout.",selector("instruments",32,"Instrument"))+`<div class="instrument-grid">${grid}</div>`;
+    }
+
+    function renderTables() {
+      const table=state.selection.tables; let rows=""; for(let r=0;r<16;r++){ const o=OFF.tables+table*64+r*4; rows+=`<tr><td class="row-id">$${hex(r)}</td><td>${hexInput(o,state.data[o],255,false,`Table row ${r} volume`)}</td><td>${signedInput(o+1,state.data[o+1],`Table row ${r} transpose`)}</td><td>${commandSelect(o+2,state.data[o+2])}</td><td>${hexInput(o+3,state.data[o+3],255,false,`Table row ${r} command parameter`)}</td></tr>` }
+      content.innerHTML=sectionHead("Macro data","Table $"+hex(table),"Volume 00 means no change. Transpose is signed; commands use the same IDs as phrase rows.",selector("tables",16,"Table"))+`<table class="data-table"><thead><tr><th>Row</th><th>Volume</th><th>Transpose</th><th>Command</th><th>Parameter</th></tr></thead><tbody>${rows}</tbody></table>`;
+    }
+
+    function renderGrooves() {
+      const groove=state.selection.grooves; let rows=""; for(let r=0;r<16;r++){ const o=OFF.grooves+groove*16+r,v=state.data[o]; rows+=`<tr><td class="row-id">$${hex(r)}</td><td>${hexInput(o,v,255,false,`Groove row ${r} ticks`)}</td><td>${v?`${v} engine tick${v===1?"":"s"} per row`:"End of groove"}</td></tr>` }
+      content.innerHTML=sectionHead("Timing data","Groove $"+hex(groove),"Each value is a row length in 59.9 Hz engine ticks. 00 marks the end of the groove.",selector("grooves",16,"Groove"))+`<table class="data-table"><thead><tr><th>Step</th><th>Ticks</th><th>Meaning</th></tr></thead><tbody>${rows}</tbody></table>`;
+    }
+
+    function renderWaves() {
+      const wave=state.selection.waves; let values=""; for(let x=0;x<32;x++){ const o=OFF.waves+wave*32+x,v=s8(state.data[o]); values+=`<div class="wave-value"><b>${hex(x)}</b><input type="range" min="-128" max="127" value="${v}" data-wave="${o}" aria-label="Wave sample ${x}"><input class="signed" type="number" min="-128" max="127" value="${v}" data-byte="${o}" data-mode="signed" aria-label="Wave sample ${x} value"></div>` }
+      content.innerHTML=sectionHead("Wavetable data","Wave $"+hex(wave),"Thirty-two signed 8-bit DAC samples. Range and number controls are linked when a value is committed.",selector("waves",8,"Wave"))+`<div class="wave-editor"><div class="wave-card"><canvas id="wave-canvas" width="640" height="300" aria-label="Wavetable preview"></canvas></div><div class="wave-values">${values}</div></div>`; drawWave();
+    }
+
+    function drawWave() {
+      const canvas=$("wave-canvas"); if(!canvas)return; const ctx=canvas.getContext("2d"),wave=state.selection.waves,w=canvas.width,h=canvas.height;
+      ctx.clearRect(0,0,w,h); ctx.fillStyle="#100e17"; ctx.fillRect(0,0,w,h); ctx.strokeStyle="#2b2638"; ctx.lineWidth=1;
+      for(let x=0;x<=32;x+=4){ const px=x/32*w; ctx.beginPath();ctx.moveTo(px,0);ctx.lineTo(px,h);ctx.stroke() } ctx.beginPath();ctx.moveTo(0,h/2);ctx.lineTo(w,h/2);ctx.stroke();
+      ctx.strokeStyle="#58f3d2"; ctx.lineWidth=3; ctx.beginPath(); for(let x=0;x<32;x++){ const v=s8(state.data[OFF.waves+wave*32+x]),px=(x+.5)/32*w,py=h/2-v/256*(h-28); if(!x)ctx.moveTo(px,py);else ctx.lineTo(px,py) } ctx.stroke();
+      ctx.fillStyle="#d9ff4f"; for(let x=0;x<32;x++){ const v=s8(state.data[OFF.waves+wave*32+x]),px=(x+.5)/32*w,py=h/2-v/256*(h-28);ctx.fillRect(px-2,py-2,4,4) }
+    }
+
+    function renderRaw() {
+      let output=""; for(let o=0;o<state.data.length;o+=16){ output+=hex(o,4)+"  "; for(let i=0;i<16;i++)output+=hex(state.data[o+i])+ (i===7?"  ":" "); output+="\n" }
+      content.innerHTML=sectionHead("Decoded payload","Raw song block","Read-only view of the 7,680-byte flat song block after legacy migration. Structured edits appear here immediately.")+`<pre class="raw">${output}</pre>`;
+    }
+
+    function parseHexInput(input,max,allowFF) {
+      const text=input.value.trim().replace(/^\$/,""),value=Number.parseInt(text,16);
+      if (!/^[0-9a-fA-F]+$/.test(text) || !Number.isInteger(value) || (value>max && !(allowFF&&value===255))) fail(`Enter ${allowFF?`00–${hex(max)} or FF`:`00–${hex(max)}`} in hexadecimal.`);
+      return value;
+    }
+
+    function commitByte(input) {
+      const offset=Number(input.dataset.byte),mode=input.dataset.mode; let value;
+      if(mode==="hex") value=parseHexInput(input,Number(input.dataset.max||255),input.dataset.ff==="1");
+      else { value=Number(input.value); const min=mode==="signed"?-128:0,max=mode==="signed"?127:255; if(!Number.isInteger(value)||value<min||value>max)fail(`Enter a whole number from ${min} to ${max}.`); value=u8(value) }
+      state.data[offset]=value; markDirty();
+    }
+
+    function commitInstrument(input) {
+      const o=OFF.instruments+state.selection.instruments*16,name=input.dataset.ifield;
+      const hx=(max,allowFF=false)=>parseHexInput(input,max,allowFF), dec=(min,max)=>{const v=Number(input.value);if(!Number.isInteger(v)||v<min||v>max)fail(`Enter a whole number from ${min} to ${max}.`);return v};
+      switch(name){
+        case"type":state.data[o]=dec(0,3);break; case"vol":state.data[o+1]=hx(127);break;
+        case"attack":state.data[o+2]=hx(15)<<4 | state.data[o+2]&15;break; case"decay":state.data[o+2]=state.data[o+2]&240 | hx(15);break;
+        case"hold":state.data[o+3]=state.data[o+3]&240 | hx(15);break; case"tbs":state.data[o+3]=hx(15)<<4 | state.data[o+3]&15;break;
+        case"bank":state.data[o+4]=hx(7,true);break; case"table":state.data[o+6]=hx(15,true);break;
+        case"panLeft":state.data[o+7]=hx(15)<<4 | state.data[o+7]&15;break; case"panRight":state.data[o+7]=state.data[o+7]&240 | hx(15);break;
+        case"fine":state.data[o+8]=u8(dec(-128,127));break; case"tsp":state.data[o+15]=u8(dec(-128,127));break; case"swp":state.data[o+12]=u8(dec(-128,127));break;
+        case"taps":{const v=hx(511);state.data[o+5]=v&255;state.data[o+9]=v>>8;break} case"seed":{const v=hx(4095);state.data[o+10]=v&255;state.data[o+11]=v>>8;break}
+        case"vibSpeed":state.data[o+13]=hx(15)<<4|state.data[o+13]&15;break;case"vibDepth":state.data[o+13]=state.data[o+13]&240|hx(15);break;
+        case"trmSpeed":state.data[o+14]=hx(15)<<4|state.data[o+14]&15;break;case"trmDepth":state.data[o+14]=state.data[o+14]&240|hx(15);break;
+        default:fail("Unknown instrument field.");
+      }
+      markDirty();
+    }
+
+    function commitChainPhrase(input) {
+      const offset=Number(input.dataset.chainPhrase),value=parseHexInput(input,63,true); state.data[offset]=value;
+      if(value===255)state.data[offset+1]=255;else if(state.data[offset+1]===255)state.data[offset+1]=0; markDirty();
+    }
+
+    function commitConfig(input) {
+      const name=input.dataset.config,value=Number(input.value),ranges={palette:[0,7],prelisten:[0,1],repeat:[4,30],sync:[0,2]},range=ranges[name];
+      if(!range||!Number.isInteger(value)||value<range[0]||value>range[1])fail(`Enter a whole number from ${range?.[0]??0} to ${range?.[1]??255}.`);
+      state.config[name]=value; markDirty();
+    }
+
+    function markDirty() { state.dirty=true; state.migrated=state.sourceVersion<SAVE_VERSION; renderAll() }
+
+    function showNotice(message,error=false) {
+      const notice=$("notice"); clearTimeout(noticeTimer); notice.textContent=message; notice.classList.toggle("error",error); notice.hidden=false; noticeTimer=setTimeout(()=>notice.hidden=true,5000);
+    }
+
+    function exportName(name) {
+      const match=name.match(/^(.*?)(\.(?:eeprom|e2p|eep|sram|srm|sav|bin))$/i); return match ? `${match[1]}-edited${match[2]}` : `${name||"alynxdj-song"}-edited.eeprom`;
+    }
+
+    function exportFile() {
+      try {
+        const report=analyze(); if(report.warnings.length&&!window.confirm(`This song has ${report.warnings.length} integrity warning${report.warnings.length===1?"":"s"}. Export it anyway?`))return;
+        const built=serializeSram(state.data,state.original,state.config),blob=new Blob([built.bytes],{type:"application/octet-stream"}),url=URL.createObjectURL(blob),a=document.createElement("a");
+        a.href=url;a.download=exportName(state.fileName);document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);showNotice(`Exported ${a.download}: save v6, ${built.packed.length}/${PAYLOAD_CAP} packed bytes.`);
+      } catch(error){showNotice(error.message,true)}
+    }
+
+    function resetEdits() { try { useParsed(parseSram(state.original,state.fileName)); showNotice("Restored the imported file and discarded in-memory edits.") } catch(error){showNotice(error.message,true)} }
+
+    content.addEventListener("change",event=>{
+      const input=event.target;
+      try {
+        if(input.dataset.selector){state.selection[input.dataset.selector]=Number(input.value);renderCurrent();return}
+        if(input.dataset.byte!==undefined)commitByte(input); else if(input.dataset.ifield)commitInstrument(input); else if(input.dataset.chainPhrase!==undefined)commitChainPhrase(input); else if(input.dataset.config)commitConfig(input); else if(input.dataset.wave!==undefined){const value=Number(input.value);if(value<-128||value>127)fail("Wave values must be -128 to 127.");state.data[Number(input.dataset.wave)]=u8(value);markDirty()}
+      } catch(error){input.classList.add("invalid");showNotice(error.message,true)}
+    });
+    content.addEventListener("input",event=>{if(event.target.dataset.wave!==undefined){const value=Number(event.target.value);state.data[Number(event.target.dataset.wave)]=u8(value);drawWave();updateMeta()}});
+    content.addEventListener("click",event=>{const action=event.target.closest("[data-action]");if(!action)return;if(action.dataset.action==="tab"){state.tab=action.dataset.target;renderAll()}else if(action.dataset.action==="create-config"){state.config.present=true;state.config.palette=0;state.config.prelisten=0;state.config.repeat=12;state.config.sync=0;markDirty()}});
+    $("tabs").addEventListener("click",event=>{const button=event.target.closest("[data-tab]");if(button){state.tab=button.dataset.tab;renderAll()}});
+    $("choose-file").addEventListener("click",()=>fileInput.click()); $("load-another").addEventListener("click",()=>fileInput.click());
+    $("new-file").addEventListener("click",createBlank); fileInput.addEventListener("change",()=>{if(fileInput.files[0])loadFile(fileInput.files[0]);fileInput.value=""});
+    $("export-file").addEventListener("click",exportFile); $("reset-file").addEventListener("click",resetEdits);
+    for(const eventName of ["dragenter","dragover"]){dropzone.addEventListener(eventName,event=>{event.preventDefault();dropzone.classList.add("dragging")})}
+    for(const eventName of ["dragleave","drop"]){dropzone.addEventListener(eventName,event=>{event.preventDefault();dropzone.classList.remove("dragging")})}
+    dropzone.addEventListener("drop",event=>{if(event.dataTransfer.files[0])loadFile(event.dataTransfer.files[0])});
+
+    function selfTest() {
+      const fixtures=[makeBaseSong(),Uint8Array.from({length:SONG_BYTES},(_,i)=>(i*73+(i>>3))&255),new Uint8Array(SONG_BYTES).fill(255)];
+      for(const original of fixtures){const packed=packRle(original),round=unpackRle(packed,6).data;if(round.some((v,i)=>v!==original[i]))fail("Internal RLE self-test failed.")}
+      const song=makeBaseSong(),config={present:true,palette:3,prelisten:1,repeat:12,sync:2,reserved:65535},built=serializeSram(song,null,config),parsed=parseSram(built.bytes,"self-test.eeprom");
+      if(parsed.data.some((v,i)=>v!==song[i])||parsed.config.palette!==3||parsed.config.sync!==2)fail("Internal SRAM round-trip self-test failed.");
+    }
+
+    window.ALXSongFile={parseSram,serializeSram,packRle,unpackRle,makeBaseSong,analyzeConstants:{EEPROM_BYTES,PAYLOAD_CAP,SONG_BYTES,OFF,SIZES,SAVE_VERSION}};
+    try{selfTest()}catch(error){showNotice(error.message,true);$("choose-file").disabled=true;$("new-file").disabled=true}
+  })();
+  </script>
+</body>
+</html>

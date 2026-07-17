@@ -288,8 +288,11 @@ The Lynx-specific or re-aimed commands are:
 - Hardware writes use cc65's canonical 93C86 EWEN bit pattern (all ten
   special-command address bits high), because SD-cart EEPROM emulators may
   decode it more strictly than the physical chip's don't-care definition.
-- Emulator persistence is the core's 2048-byte `.eeprom` image. Browser
-  tooling and ComLynx song dump/restore remain post-1.0 work.
+- Emulator persistence is the core's 2048-byte `.eeprom` image. The standalone
+  `song-file-viewer.html` browser tool imports that same image (including the
+  names SRAM/SAV/E2P used by SD carts), validates and edits the complete song
+  model, and exports a checksum-correct v6 image without uploading it. ComLynx
+  song dump/restore remains post-1.0 work.
 - SAVEFORMAT.md is written at M10 and kept in sync with any RAM-map change
   (standing sibling rule).
 

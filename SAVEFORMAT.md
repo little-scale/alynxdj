@@ -3,6 +3,11 @@
 Keep in sync with `src/tracker.h` (`struct songdata`) and `src/save.c` —
 the standing sibling rule. Version: **6** (verified 2026-07-17).
 
+`song-file-viewer.html` is the standalone reference inspector/editor for this
+format. It accepts the same 2,048-byte image under `.eeprom`, `.e2p`, `.eep`,
+`.sram`, `.srm`, `.sav`, or `.bin` names and exports a checksum-correct v6
+image; all parsing and editing happens locally in the browser.
+
 ## Physical layer
 
 93C86 serial EEPROM, 16-bit organisation: 1024 words / 2048 bytes.

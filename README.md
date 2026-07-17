@@ -69,6 +69,15 @@ replace or audition individual WAVs (or a complete eight-sample kit), then
 patch and save a new `.lnx` image. Conversion to 7.8125 kHz signed 8-bit PCM
 happens locally; no files are uploaded.
 
+## Song file viewer
+
+Open [`song-file-viewer.html`](song-file-viewer.html) directly in a modern
+browser to inspect or edit an ALYNXDJ SRAM / EEPROM song file. The standalone
+tool validates the header, checksum, packed payload, and hierarchy references;
+exposes song rows, chains, phrases, instruments, tables, grooves, and waves;
+then exports a hardware-ready 2,048-byte save-format-v6 file. All processing is
+local and offline.
+
 ## Building
 
 ```sh
