@@ -22,6 +22,7 @@ void vbl_install(void);
 
 /* raw pad byte mirrored here for the harness's RAM-dump probes */
 #define JOY_MIRROR (*(volatile unsigned char *)0xC000)
+#define TEST_HOOK  (*(volatile unsigned char *)0xC02D)
 
 /* 12-bit palettes, {green, blue<<4|red} x {bg, text, dim, accent}.
  * The eight schemes port SMSGGDJ's COLR presets (WHT/WB/AMBR/CYAN/PINK/
@@ -397,6 +398,22 @@ static void song_demo(void)
     sd.phrases[18][0].note = N(4,0); sd.phrases[18][0].instr = 5;
     sd.phrases[18][0].cmd = CMD_J;  sd.phrases[18][0].param = 0x71;
 
+    /* Symmetric-DAC regression rig (song row 29).  Tracks 1/2 start two
+     * simultaneous KIT streams; tracks 3/4 then force oldest-first steals.
+     * R proves envelope-less KIT retrigger, and same-row S must survive the
+     * deferred cart start.  tools/test_dac_symmetry.py drives this row. */
+    for (i = 0; i < NCH; ++i) {
+        sd.chains[i][0].phrase = 30 + i;
+        sd.chains[i][0].tsp = 0;
+        sd.song[29][i] = i;
+    }
+    sd.phrases[30][0].note = N(4,0); sd.phrases[30][0].instr = 12;
+    sd.phrases[30][0].cmd = CMD_R;   sd.phrases[30][0].param = 0x02;
+    sd.phrases[31][0].note = N(4,2); sd.phrases[31][0].instr = 12;
+    sd.phrases[31][0].cmd = CMD_S;   sd.phrases[31][0].param = 63;
+    sd.phrases[32][1].note = N(4,4); sd.phrases[32][1].instr = 12;
+    sd.phrases[33][2].note = N(4,6); sd.phrases[33][2].instr = 12;
+
     /* table 0: a demo arp macro (0/+4/+7 at tick rate, H-looped) */
     sd.tables[0][0].tsp = 0;
     sd.tables[0][1].tsp = 4;
@@ -461,11 +478,53 @@ static void splash(void)
         ;
 }
 
+/* MAIN is deliberately kept below the framebuffer.  Cold-path routines
+ * are stored in cart blocks 40/42/44 and copied into three otherwise-unused
+ * RAM bands before any can be called.  Uniform 32-byte chunks cover all
+ * three bands, including HICODE3's expanded 736-byte helper tail. */
+static void overlay_load(unsigned char block, unsigned char *dst,
+                         unsigned char chunks)
+{
+    cart_seek(block, 0);
+    do {
+        cart_read(dst, 32);
+        dst += 32;
+    } while (--chunks);
+}
+
+#pragma code-name (push, "HICODE2")
+static void test_hook_run(void)
+{
+    unsigned char hook = TEST_HOOK;
+
+    TEST_HOOK = 0;
+    if (hook == 0xA5)
+        engine_play_song(29);            /* symmetric-DAC test rig */
+    else if (hook == 0xA6) {
+        *(volatile unsigned int *)0xC01A = save_pack();
+        *(volatile unsigned char *)0xC01D = save_do();
+        *(volatile unsigned int *)0xC018 = save_sum();
+    } else if (hook == 0xA8) {
+        /* Reuse the same four-track rig as table-WAV voices. */
+        sd.instrs[12].type = IT_WAV;
+        sd.instrs[12].env = 0x0E;
+        sd.instrs[12].hold = 15;
+        sd.instrs[12].wave = 0;
+        engine_play_song(29);
+    } else if (hook == 0xA9)
+        engine_audition(37, 0);          /* stopped TONE modulation rig */
+}
+#pragma code-name (pop)
+
 void main(void)
 {
     unsigned char last = 0xFF;
     unsigned char joy, prev_joy = 0;
 
+    TEST_HOOK = 0;                       /* real hardware RAM is not zeroed */
+    overlay_load(40, (unsigned char *)0xC900, 56); /* HICODE1: $0700 */
+    overlay_load(42, (unsigned char *)0xF600, 48); /* HICODE2: $0600 */
+    overlay_load(44, (unsigned char *)0xF320, 23); /* HICODE3: $02E0 */
     config_load();
     palette_init();
     screen_clear();
@@ -485,6 +544,7 @@ void main(void)
     splash();
     editor_init();
     draw_text(18, 0, BUILDID, PEN_DIM, PEN_BG);
+    test_hook_run();                      /* no-op outside headless tests */
 
     for (;;) {
         unsigned char f = (unsigned char)frames;

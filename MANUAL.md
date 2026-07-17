@@ -1,4 +1,4 @@
-# ALYNXDJ manual (V0.1 dev)
+# ALYNXDJ manual (V0.3)
 
 A pocket groovebox for the Atari Lynx in the LSDJ tradition. If you know
 LSDJ or SMSGGDJ, you already know most of this.
@@ -22,9 +22,9 @@ action.** No simultaneous-press timing windows.
 | Input | Action |
 |---|---|
 | D-pad | move the cursor (hold to repeat) |
-| **B** tap | insert on an empty cell (repeats the last value) |
+| **B** tap | insert on an empty cell (repeats the last value); on INSTR while stopped, audition the current instrument |
 | **B** hold + d-pad | edit the value under the cursor — ←/→ small step, ↑/↓ big step |
-| **B** double-tap | paste the clipboard; with nothing cut: mint the next free chain/phrase on an empty cell, or clone a populated one |
+| **B** double-tap | paste the clipboard; with nothing cut: mint the next free chain/phrase on an empty cell, or slim-clone a populated one |
 | **B** held + **A** tap | cut the field under the cursor into the clipboard |
 | **B** held + **A** long-hold | **block SELECT** (SONG/CHAIN/PHRASE): anchors at the cursor; ↑/↓ extend; **B** = copy, **B**-held+**A** = cut, **A** = cancel; paste with B double-tap (rows land at the cursor) |
 | **A** tap | back (PHRASE → CHAIN → SONG) |
@@ -33,6 +33,18 @@ action.** No simultaneous-press timing windows.
 | **Option 1** + ←/→ | select the current track |
 | **Option 1** + **B** | mute the current track (top-bar `1234` flags) |
 | **Option 1** + **A** | solo the current track / un-solo |
+
+On a PHRASE command column, field cut treats `CMD+PARAM` as one unit: it
+removes and copies those two values without touching the row's NOTE or INSTR.
+Its B-double-tap paste is likewise command-column-only.
+
+A **slim clone** duplicates only the object under the cursor. On SONG it
+copies the chain but keeps that chain's phrase references shared; on CHAIN it
+copies the phrase but keeps its instrument references shared. The new
+chain/phrase can be edited independently without recursively duplicating a
+whole tree of song data.
+“Free” means both blank and not referenced elsewhere, so an allocated but
+not-yet-edited chain or phrase will not be reused accidentally.
 
 ## The screen map
 
@@ -80,10 +92,23 @@ ship as triangle, saw, square, 25% pulse.
 | ATK | attack **time**, 0–F: 0 = instant, F ≈ 2 s (higher = slower) |
 | HOLD | ticks held at the peak, 0–F |
 | DCY | decay **time**, 0–F: 0 = sustain until the next note, 1 = instant-ish, F ≈ 2 s |
+| **TSP** | signed instrument transpose in semitones; Left/Right ±1, Up/Down ±12. Applies to TONE/NOISE/WAV pitch and KIT pad selection |
+| **SWP** | TONE/NOISE pitch sweep, signed 1/16 semitone per tick with period-style direction: `$01`–`$7F` falls, `$FF`–`$80` rises, `00` = off |
+| **VIB** | TONE/NOISE sine vibrato, packed speed·depth nibbles; speed 0–F ≈ 0.47–7.49 Hz, depth 0–F in 1/16 semitones. Phase continues across notes and resets with transport |
+| **TRM** | TONE/NOISE tremolo, packed speed·depth nibbles; a one-way volume dip inside the AHD envelope |
 | **TAPS** | the raw 12-bit-LFSR tap mask — see below |
 | BANK | labelled by TYPE — **WAVE** (WAV: wavetable 0–7, `--` = hardware triangle) / **KIT** (sample kit 0–7) / BANK (otherwise) |
 | **SEED** | the shifter start state, $000–$FFF |
 | TABLE | macro table to run on every note (`--` = none) |
+
+TSP clamps at the playable note limits rather than wrapping. SWP/VIB/TRM
+show `--` for WAV and KIT. With the transport stopped, tap
+physical **B** anywhere on INSTR to trigger the selected instrument at the
+last-entered note. This works even when OPTIONS → PRELIS is off and does not
+start the sequencer; A-held+B retains the separate phrase-loop transport.
+Instrument VIB and the phrase/table `V` command share the same free-running
+per-track phase. A zero depth is completely off; it does not alter tuning or
+advance the phase.
 
 ### TAPS and SEED — the Lynx sound
 
@@ -110,15 +135,18 @@ the point.
 - **WAV** ignores TAPS. With WAVE = `--` it is the hardware triangle
   (integrate mode; keep VOL ≤ 10 — the ramp accumulator wraps above
   that). With WAVE = 0–7 it loops that **32-byte wavetable** through a
-  channel DAC — draw your own on the WAVE screen. Wavetable notes share
-  one output channel (like KIT), the envelope gates length only (the DAC
-  is full-amplitude), and very high notes read the table coarser to keep
-  the feed rate sane.
+  channel DAC — draw your own on the WAVE screen. The envelope gates length
+  only (the DAC is full-amplitude), and very high notes read the table
+  coarser to keep the feed rate sane.
 - **KIT** streams samples from the cart through the channel DAC; the
   note's semitone picks the kit slot (C=1, C#=2, …) and **BANK picks the
   kit** — the cart ships all eight `samples/` folders (808, 909, C78,
-  606, four speech banks) at full quality. Samples share one output
-  channel.
+  606, four speech banks) at full quality.
+
+Every track can play KIT or table-WAV on its own physical Mikey DAC. The
+CPU budget allows **two simultaneous timer-fed DAC voices** across those
+types; a third trigger steals the oldest. Hardware TONE/NOISE/integrate-WAV
+voices do not consume this two-voice budget.
 
 ## Commands (PHRASE and TABLE command columns)
 
@@ -137,7 +165,7 @@ the point.
 | `O xy` | pan | attenuation left x / right y (Lynx II stereo) |
 | `P xx` | pitch | bend, signed, 1/16 semitone per tick |
 | `R xy` | retrig | re-fire the note every y ticks, peak −8·x per fire (KIT refires the sample) |
-| `S xx` | rate | live PCM sample rate: timer reload (smaller = faster/higher) |
+| `S xx` | rate | live KIT/table-WAV timer reload (smaller = faster/higher) |
 | `V xy` | vibrato | speed x, depth y (1/16 semitones) |
 | `W xx` | wait | shorten this row to xx ticks |
 | `X xx` | volume | this note's envelope peak |

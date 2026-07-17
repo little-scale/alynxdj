@@ -4,7 +4,7 @@
  *
  * Loads a libretro core, runs the ROM for N frames (default 120), and writes
  * the last video frame as a binary PPM (P6). A reusable, permission-free way to
- * see what a Mega Drive ROM actually renders.
+ * see what a Lynx ROM actually renders.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -91,6 +91,29 @@ static void write_wav(const char *base, unsigned rate) {
     fclose(o);
 }
 
+static int poke_ram(const char *spec, uint8_t *ram, size_t ramsz) {
+    size_t len = strlen(spec) + 1;
+    char *pokes = malloc(len);
+    int ok = 1;
+    if (!pokes) { fprintf(stderr, "RAM poke allocation failed\n"); return 0; }
+    memcpy(pokes, spec, len);
+    char *save = NULL, *tok = strtok_r(pokes, ",", &save);
+    while (tok) {
+        char *colon = strchr(tok, ':');
+        if (!colon) { fprintf(stderr, "bad RAM poke: %s\n", tok); ok = 0; break; }
+        *colon = 0;
+        unsigned long addr = strtoul(tok, NULL, 16);
+        unsigned long value = strtoul(colon + 1, NULL, 16);
+        if (addr >= ramsz) {
+            fprintf(stderr, "RAM poke out of range\n"); ok = 0; break;
+        }
+        ram[addr] = (uint8_t)value;
+        tok = strtok_r(NULL, ",", &save);
+    }
+    free(pokes);
+    return ok;
+}
+
 #define SYM(n) do { *(void **)(&n) = dlsym(core, #n); \
     if (!n) { fprintf(stderr, "missing symbol %s\n", #n); return 2; } } while (0)
 
@@ -145,6 +168,18 @@ int main(int argc, char **argv) {
     struct retro_game_info gi = {0};
     gi.path = argv[2]; gi.data = buf; gi.size = sz;
     if (!retro_load_game(&gi)) { fprintf(stderr, "retro_load_game failed\n"); return 4; }
+
+    /* Optional system-RAM initialization for deterministic test hooks.
+       POKE_AT defers it until that frontend frame (after core reset). */
+    const char *ram_poke_spec = getenv("RETROSHOT_RAM_POKE");
+    int ram_poke_at = getenv("RETROSHOT_RAM_POKE_AT")
+                      ? atoi(getenv("RETROSHOT_RAM_POKE_AT")) : 0;
+    {
+        uint8_t *ram = retro_get_memory_data(RETRO_MEMORY_SYSTEM_RAM);
+        size_t ramsz = retro_get_memory_size(RETRO_MEMORY_SYSTEM_RAM);
+        if (ram_poke_spec && ram && ramsz && ram_poke_at == 0
+            && !poke_ram(ram_poke_spec, ram, ramsz)) return 4;
+    }
     /* optional controller device override: GENMDDJ_DEV=<hex> (e.g. 101) */
     const char *dev = getenv("GENMDDJ_DEV");
     if (dev) retro_set_controller_port_device(0, (unsigned)strtoul(dev, NULL, 16));
@@ -173,17 +208,33 @@ int main(int argc, char **argv) {
 
     if (scripted) {                             /* run "maskHex@frames,..." steps in order */
         char sc[2048];
+        int run_frame = 0;
         strncpy(sc, btn, sizeof sc - 1); sc[sizeof sc - 1] = 0;
         char *save = NULL, *tok = strtok_r(sc, ",", &save);
         while (tok) {
             char *at = strchr(tok, '@');
             g_buttons = (unsigned)strtoul(tok, NULL, 16);   /* strtoul stops at '@' */
             int nf = at ? atoi(at + 1) : 1;
-            for (int i = 0; i < nf; i++) retro_run();
+            for (int i = 0; i < nf; i++, run_frame++) {
+                if (ram_poke_spec && run_frame == ram_poke_at
+                    && ram_poke_at > 0) {
+                    uint8_t *ram = retro_get_memory_data(RETRO_MEMORY_SYSTEM_RAM);
+                    size_t ramsz = retro_get_memory_size(RETRO_MEMORY_SYSTEM_RAM);
+                    if (!ram || !poke_ram(ram_poke_spec, ram, ramsz)) return 4;
+                }
+                retro_run();
+            }
             tok = strtok_r(NULL, ",", &save);
         }
     } else {
-        for (int i = 0; i < frames; i++) retro_run();
+        for (int i = 0; i < frames; i++) {
+            if (ram_poke_spec && i == ram_poke_at && ram_poke_at > 0) {
+                uint8_t *ram = retro_get_memory_data(RETRO_MEMORY_SYSTEM_RAM);
+                size_t ramsz = retro_get_memory_size(RETRO_MEMORY_SYSTEM_RAM);
+                if (!ram || !poke_ram(ram_poke_spec, ram, ramsz)) return 4;
+            }
+            retro_run();
+        }
     }
 
     write_wav(argv[3], arate);                  /* <out>.wav alongside the ppm */
@@ -201,7 +252,7 @@ int main(int argc, char **argv) {
         }
     }
 
-    /* optional 68k work-RAM dump: RETROSHOT_RAM_OUT=<path> writes SYSTEM_RAM after the run */
+    /* optional system-RAM dump: RETROSHOT_RAM_OUT=<path> writes SYSTEM_RAM after the run */
     {
         const char *outp = getenv("RETROSHOT_RAM_OUT");
         void  *ram   = retro_get_memory_data(RETRO_MEMORY_SYSTEM_RAM);

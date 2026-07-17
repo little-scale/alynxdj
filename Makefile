@@ -10,10 +10,11 @@
 BUILD := build
 ROM   := $(BUILD)/alynxdj.lnx
 CFG   := alynxdj.cfg
-VERSION := v0.3
+VERSION := v0.4
+PYTHON ?= python3
 
 SRC_C := src/main.c src/sound.c src/engine.c src/editor.c src/save.c src/sync.c src/pool.c $(BUILD)/notes.c
-SRC_S := src/lowcode.s src/irq.s src/eeprom.s src/cart.s
+SRC_S := src/lowcode.s src/irq.s src/eeprom.s src/cart.s src/editor_alloc.s
 
 # cc65 2.18 gotcha: lynx/defdir.s references __LOWCODE_SIZE__, but marks the
 # LOWCODE segment optional, so a build with no LOWCODE data fails to link.
@@ -30,27 +31,34 @@ $(shell printf '#define BUILDID "%s"\n#define VERSION "%s"\n' '$(BUILDID)' '$(VE
         rm -f $(BUILD)/buildid.h.tmp)
 
 $(BUILD)/pool.bin: tools/alynxdj_pool.py
-	python3 tools/alynxdj_pool.py samples $@
+	$(PYTHON) tools/alynxdj_pool.py samples $@
 
 $(BUILD)/notes.h $(BUILD)/notes.c &: tools/maketables.py
-	python3 tools/maketables.py $(BUILD)/notes.h
+	$(PYTHON) tools/maketables.py $(BUILD)/notes.h
 
 $(BUILD)/font.h: tools/makefont.py
-	python3 tools/makefont.py $@
+	$(PYTHON) tools/makefont.py $@
 
 $(BUILD)/logo.h: tools/makelogo.py art/aldj.png
-	python3 tools/makelogo.py
+	$(PYTHON) tools/makelogo.py
 
 $(ROM): $(SRC_C) $(SRC_S) src/tracker.h $(CFG) $(BUILD)/font.h $(BUILD)/logo.h $(BUILD)/notes.h $(BUILD)/buildid.h $(BUILD)/pool.bin
 	cl65 -t lynx -O -C $(CFG) -m $(BUILD)/alynxdj.map -o $@ $(SRC_C) $(SRC_S)
-	python3 -c "p='$@'; d=bytearray(open(p,'rb').read()); d[60]=5; open(p,'wb').write(d)"  # .lnx byte 60: 93C86 EEPROM (2KB)
-	python3 -c "\
+	$(PYTHON) -c "p='$@'; d=bytearray(open(p,'rb').read()); d[60]=5; open(p,'wb').write(d)"  # .lnx byte 60: 93C86 EEPROM (2KB)
+	$(PYTHON) -c "\
 p='$@'; d=bytearray(open(p,'rb').read()); \
-assert len(d) <= 64+40*1024, 'program spills into the pool block'; \
-d += b'\0'*(64+40*1024-len(d)); \
+aux1=open('$(BUILD)/aux1.bin','rb').read(); \
+aux2=open('$(BUILD)/aux2.bin','rb').read(); \
+aux3=open('$(BUILD)/aux3.bin','rb').read(); \
+assert len(d) <= 64+40*1024, 'program spills into the overlay blocks'; \
+assert len(aux1) <= 0x700 and len(aux2) <= 0x600 and len(aux3) <= 0x2E0, 'RAM overlay overflow'; \
+d += b'\0'*(64+40*1024-len(d)); d += aux1; \
+d += b'\0'*(64+42*1024-len(d)); d += aux2; \
+d += b'\0'*(64+44*1024-len(d)); d += aux3; \
+d += b'\0'*(64+45*1024-len(d)); \
 d += open('$(BUILD)/pool.bin','rb').read(); \
 d += b'\0'*(64+256*1024-len(d)); \
-open(p,'wb').write(d)"  # pool at cart block 40, pad to 256KB
+open(p,'wb').write(d)"  # overlays at blocks 40/42/44, pool at 45, 256KB cart
 
 # --- headless screenshot + audio capture (no GUI / permissions needed) ---
 EMUDIR    := tools/emu
@@ -67,8 +75,22 @@ $(EMUDIR)/duoshot: $(EMUDIR)/duoshot.c $(EMUDIR)/libretro.h
 
 shot: $(ROM) $(RETROSHOT)
 	$(RETROSHOT) $(EMUCORE) $(ROM) $(BUILD)/shot.ppm $(FRAMES) $(BTN)
-	python3 -c "from PIL import Image; Image.open('$(BUILD)/shot.ppm').save('$(BUILD)/shot.png')"
+	$(PYTHON) -c "from PIL import Image; Image.open('$(BUILD)/shot.ppm').save('$(BUILD)/shot.png')"
 	@echo "wrote $(BUILD)/shot.png"
+
+test-dac: $(ROM) $(RETROSHOT)
+	$(PYTHON) tools/test_dac_symmetry.py $(RETROSHOT) $(EMUCORE) $(ROM)
+
+test-save: $(ROM) $(RETROSHOT)
+	$(PYTHON) tools/test_save_roundtrip.py $(RETROSHOT) $(EMUCORE) $(ROM)
+
+test-tone: $(ROM) $(RETROSHOT)
+	$(PYTHON) tools/test_tone_modulation.py $(RETROSHOT) $(EMUCORE) $(ROM)
+
+test-editor: $(ROM) $(RETROSHOT)
+	$(PYTHON) tools/test_editor_clone.py $(RETROSHOT) $(EMUCORE) $(ROM)
+
+test: test-dac test-save test-tone test-editor
 
 # version-only release copy (attach these to GitHub releases)
 dist: $(ROM)
@@ -78,4 +100,4 @@ dist: $(ROM)
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: all shot dist clean
+.PHONY: all shot test test-dac test-save test-tone test-editor dist clean

@@ -15,6 +15,8 @@
 
 #include "tracker.h"
 
+#pragma code-name (push, "HICODE2")
+
 unsigned char sync_mode;            /* SYNC_*; mirrored at $C021 */
 #define MIRROR_SYNCMODE (*(volatile unsigned char *)0xC021)
 unsigned char sync_row_pending;     /* IN: clocks received, rows owed */
@@ -68,3 +70,6 @@ void sync_poll(void)
         }
     }
 }
+
+
+#pragma code-name (pop)

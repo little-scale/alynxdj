@@ -2,7 +2,7 @@
  *
  * The flat song block (struct songdata) RLE-packs into a RAM buffer and
  * then into the 93C86 word by word: 4 header words (magic 'ALDJ', packed
- * length, version+checksum) + payload. Capacity 2040 payload bytes; the
+ * length, version+checksum) plus payload. Capacity is 2032 payload bytes; the
  * FILES screen shows the packed size against it (D10: refuse, never
  * truncate).
  *
@@ -16,9 +16,10 @@
 #define HDR_WORDS 4
 #define CAP_BYTES SAVE_CAP_BYTES        /* see tracker.h (Handy load cap) */
 
-#define SAVE_VER  3
+#define SAVE_VER  5
 
 /* nearest time-curve nibble for a v1 per-tick rate (0 stays special) */
+#pragma code-name (push, "HICODE3")
 static unsigned char rate_nib(unsigned char rate)
 {
     unsigned char i, best = 1, bd = 255, d;
@@ -45,6 +46,7 @@ static unsigned char cksum(unsigned len)
         s += buf[i];
     return s;
 }
+#pragma code-name (pop)
 
 /* RLE-pack sd into buf; 0 = does not fit */
 unsigned save_pack(void)
@@ -141,7 +143,8 @@ unsigned char save_load(void)
     if ((unsigned char)ee_read(3) != cksum(len))
         return ST_BADSUM;
     unpack(len);
-    if ((ee_read(3) >> 8) < 2) {
+    v = ee_read(3) >> 8;
+    if (v < 2) {
         /* v1 records stored ATK/HOLD/DCY as per-tick RATE bytes at
          * offsets 2/3/4 — fold each rate onto the nearest env_rate[]
          * nibble (time semantics, v2) */
@@ -152,6 +155,23 @@ unsigned char save_load(void)
             r[3] = (r[3] > 15) ? 15 : r[3];
             r[4] = 0;
         }
+    }
+    if (v < 4) {
+        /* v4 assigns the three formerly-reserved record bytes.  Old songs
+         * normally contain zero here, but clear them explicitly so legacy
+         * or third-party files cannot acquire accidental modulation. */
+        unsigned char i;
+        for (i = 0; i < NINSTR; ++i) {
+            sd.instrs[i].swp = 0;
+            sd.instrs[i].vib = 0;
+            sd.instrs[i].trm = 0;
+        }
+    }
+    if (v < 5) {
+        /* v5 gives the final reserved instrument byte to TSP. */
+        unsigned char i;
+        for (i = 0; i < NINSTR; ++i)
+            sd.instrs[i].tsp = 0;
     }
     return ST_OK;
 }

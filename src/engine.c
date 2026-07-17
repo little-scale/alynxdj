@@ -8,8 +8,8 @@
  * (one groove clocks all tracks). One executor runs both the phrase and
  * table command columns (ported discipline).
  *
- * Pitch model: 1/16-semitone fixed point. base note (chain transpose
- * applied) + chord/table semitone offsets + bend/vibrato sixteenths ->
+ * Pitch model: 1/16-semitone fixed point. base note (chain + instrument
+ * transpose applied) + chord/table semitone offsets + bend/vibrato ->
  * table lookup with linear BACKUP interpolation; per-tick pitch updates
  * write the reload register only, so the oscillator phase never restarts.
  */
@@ -33,7 +33,7 @@ struct walk eng_walk[NCH];
 extern volatile unsigned int frames;    /* VBL counter (irq.s) */
 
 struct voice {
-    unsigned char base_note;    /* chain-transposed trigger note */
+    unsigned char base_note;    /* chain/instrument-transposed trigger note */
     unsigned char type;         /* IT_* latched at trigger */
     unsigned char env_phase;    /* 0=off 1=attack 2=hold 3=decay */
     unsigned char env_level;
@@ -46,6 +46,7 @@ struct voice {
     int           slide_off;    /* L: offset from previous pitch -> 0 */
     unsigned char slide_rate;
     unsigned char vib_speed, vib_depth, vib_phase;
+    unsigned char trm_speed, trm_depth, trm_phase;
     unsigned int  tap_cur;      /* G: current 9-bit tap value being swept */
     signed char   tap_rate;     /* G: signed per-tick tap step (0 = off) */
     unsigned char chord[3], chord_len, chord_pos;
@@ -60,19 +61,24 @@ struct voice {
     /* Mikey shadow */
     unsigned char sh_feedback, sh_bkup, sh_ctl, sh_pan;
     unsigned char sh_shiftlo, sh_shifthi;   /* LFSR seed (OTHER hi nibble) */
-    unsigned char wmode;        /* WAV: playing a wavetable (channel C bus) */
+    unsigned char dac_slot;     /* 0/1 for KIT or table-WAV, $FF otherwise */
     unsigned char dirty, retime;
     unsigned char fb_dirty;     /* G: feedback changed live (no reseed) */
 };
 
-static unsigned char wave_owner = 0xFF; /* which voice holds the wave bus */
-static unsigned char pcm_owner = 0xFF;  /* which track's KIT holds channel D */
-
-extern unsigned char pcm_peak, wav_peak;   /* per-frame DAC peaks (irq.s) */
-
 #pragma bss-name (push, "SONG")
 static struct voice voices[NCH];
-static unsigned char play_cnt[NPHRASES];   /* per-phrase pass counts (I/J) */
+#pragma bss-name (pop)
+/* Per-phrase pass counts use the otherwise-free upper debug/mirror page.
+ * This releases 64 bytes of HIRAM for the sine-LFO cold overlay. */
+#pragma bss-name (push, "MIRRORRAM")
+static unsigned char play_cnt[NPHRASES];
+#pragma bss-name (pop)
+/* The 16-byte EEPROM-buffer tail is also free (the payload ends at $C8EF). */
+#pragma bss-name (push, "TAILRAM")
+static unsigned char dac_owner[NDAC];      /* slot -> logical/physical track */
+static unsigned dac_stamp[NDAC];           /* oldest-voice stealing (D6) */
+static unsigned dac_clock;
 #pragma bss-name (pop)
 
 /* ATK/DCY nibble -> per-tick level step. Time-semantic: higher nibble =
@@ -89,6 +95,16 @@ unsigned char live_q[NCH];      /* LIVE: queued chain, $FF none, $FE stop */
 static unsigned char live_bar;  /* global 16-row bar counter (LIVE grid) */
 #define eng_playing (eng_mode)
 
+/* Stable harness mirrors for the symmetric-DAC regression test. */
+#define MIRROR_DAC_COUNT  (*(volatile unsigned char *)0xC022)
+#define MIRROR_DAC_OWNER0 (*(volatile unsigned char *)0xC023)
+#define MIRROR_DAC_OWNER1 (*(volatile unsigned char *)0xC024)
+#define MIRROR_DAC_S_SLOT (*(volatile unsigned char *)0xC025)
+#define MIRROR_DAC_S_RATE (*(volatile unsigned char *)0xC026)
+#define MIRROR_TRIG0      (*(volatile unsigned char *)0xC02B)
+#define MIRROR_TRIG1      (*(volatile unsigned char *)0xC02C)
+#define MIRROR_DAC_TRACE  ((volatile unsigned char *)0xC030)
+
 static unsigned char eng_tick;
 unsigned char eng_gpos;                 /* groove row (GROOVE playhead) */
 unsigned char eng_groove;               /* active groove number */
@@ -98,7 +114,125 @@ static volatile struct _mikey_audio *const CHAN[NCH] = {
     &MIKEY.channel_a, &MIKEY.channel_b, &MIKEY.channel_c, &MIKEY.channel_d,
 };
 
+/* --- symmetric DAC ownership (D1/D5/D6) --- */
+
+#pragma code-name (push, "HICODE2")
+
+static void dac_release(unsigned char ch)
+{
+    struct voice *v = &voices[ch];
+    unsigned char slot = v->dac_slot;
+
+    if (slot >= NDAC)
+        return;
+    dac_stop(slot);
+    pool_cancel(slot);
+    if (dac_owner[slot] == ch)
+        dac_owner[slot] = EMPTY;
+    v->dac_slot = EMPTY;
+    MIRROR_DAC_OWNER0 = dac_owner[0];
+    MIRROR_DAC_OWNER1 = dac_owner[1];
+}
+
+/* Reuse this track's slot, take a free one, or steal the oldest. */
+static unsigned char dac_acquire(unsigned char ch)
+{
+    unsigned char slot, old;
+
+    /* A completed one-shot no longer consumes the two-voice budget.  A
+     * deferred trigger reserves its slot by setting DAC_SAMPLE, so it is
+     * not mistaken for a free voice before the main-loop cart pump runs. */
+    for (slot = 0; slot < NDAC; ++slot) {
+        old = dac_owner[slot];
+        if (old < NCH && dac_mode[slot] == DAC_NONE) {
+            voices[old].dac_slot = EMPTY;
+            dac_owner[slot] = EMPTY;
+        }
+    }
+
+    if (voices[ch].dac_slot < NDAC)
+        slot = voices[ch].dac_slot;
+    else if (dac_owner[0] == EMPTY)
+        slot = 0;
+    else if (dac_owner[1] == EMPTY)
+        slot = 1;
+    else
+        slot = (dac_stamp[0] <= dac_stamp[1]) ? 0 : 1;
+
+    old = dac_owner[slot];
+    if (old < NCH && old != ch) {
+        voices[old].dac_slot = EMPTY;
+        voices[old].env_phase = 0;
+        voices[old].env_level = 0;
+        voices[old].dirty = 0;
+    }
+    dac_stop(slot);
+    pool_cancel(slot);
+    dac_owner[slot] = ch;
+    voices[ch].dac_slot = slot;
+    if (++dac_clock == 0) {
+        /* The newly acquired slot is newest; renormalize at the 16-bit
+         * wrap so a long live set cannot immediately steal it back. */
+        dac_clock = 1;
+        dac_stamp[slot ^ 1] = 0;
+    }
+    dac_stamp[slot] = dac_clock;
+    dac_off[slot] = ch << 3;
+    dac_muted[slot] = (eng_mute >> ch) & 1;
+    {
+        unsigned char i = MIRROR_DAC_COUNT;
+        if (i < 8) {
+            volatile unsigned char *p = MIRROR_DAC_TRACE + i + i + i;
+            *p++ = ch;
+            *p++ = slot;
+            *p = dac_off[slot];
+            MIRROR_DAC_COUNT = i + 1;
+        }
+    }
+    MIRROR_DAC_OWNER0 = dac_owner[0];
+    MIRROR_DAC_OWNER1 = dac_owner[1];
+    return slot;
+}
+
+#pragma code-name (pop)
+
 /* --- pitch --- */
+
+/* Sixteen signed samples are sufficient because pitch itself resolves to
+ * 1/16 semitone and the 59.9 Hz engine supplies at least eight updates even
+ * at the fastest setting.  Starting at zero avoids a pitch jump on key-on. */
+#pragma rodata-name (push, "HICODE3")
+static const signed char vib_sine[16] = {
+     0,  6, 11, 15, 16, 15, 11,  6,
+     0, -6,-11,-15,-16,-15,-11, -6,
+};
+#pragma rodata-name (pop)
+
+#pragma code-name (push, "HICODE3")
+static signed char vibrato_value(struct voice *v)
+{
+    signed char s = vib_sine[v->vib_phase >> 4];
+    unsigned char mag = (s < 0) ? (unsigned char)-s : (unsigned char)s;
+
+    /* Round the magnitude before restoring the sign.  This keeps shallow
+     * vibrato centred; a signed right shift makes the negative half one
+     * pitch unit deeper than the positive half. */
+    mag = (unsigned char)((((unsigned)mag * v->vib_depth) + 8) >> 4);
+    return (s < 0) ? -(signed char)mag : (signed char)mag;
+}
+
+static unsigned char transpose_note(unsigned char note, signed char tsp)
+{
+    unsigned char d;
+
+    if (tsp < 0) {
+        d = (unsigned char)-tsp;
+        return (note > d) ? note - d : NOTE_MIN;
+    }
+    d = (unsigned char)tsp;
+    return (d <= NOTE_MAX - note) ? note + d : NOTE_MAX;
+}
+#pragma code-name (pop)
 
 /* effective pitch in 1/16 semis -> program sh_bkup (+ctl if clock moved) */
 static void pitch_update(unsigned char ch)
@@ -108,15 +242,10 @@ static void pitch_update(unsigned char ch)
     unsigned char n, frac, b0, b1, clk, ctl;
     signed char vib = 0;
 
-    if (v->type == IT_KIT || v->wmode || v->env_phase == 0)
+    if (v->type == IT_KIT || v->dac_slot < NDAC || v->env_phase == 0)
         return;
-    if (v->vib_depth) {
-        unsigned char ph = v->vib_phase;
-        /* triangle LFO, period 64 phase units, +/-16 peak */
-        vib = (ph & 0x20) ? (signed char)(0x10 - (ph & 0x1F))
-                          : (signed char)((ph & 0x1F) - 0x10);
-        vib = (signed char)((vib * v->vib_depth) >> 4);
-    }
+    if (v->vib_depth)
+        vib = vibrato_value(v);
     p = (int)v->base_note * 16 + v->bend + v->slide_off + vib
         + ((int)v->chord[v->chord_pos] + v->tbl_tsp) * 16;
     if (v->type == IT_WAV)
@@ -187,10 +316,12 @@ static void exec_cmd(unsigned char ch, unsigned char cmd, unsigned char param)
         v->tap_rate = (signed char)param;
         break;
     case CMD_B:                     /* set the WAV wavetable live (0-7) */
-        if (v->wmode && param < 8 && v->base_note >= 1
+        if (v->type == IT_WAV && v->dac_slot < NDAC && param < 8
+            && v->base_note >= 1
             && v->base_note <= 96) {
-            wave_start(param);
-            wave_rate(wave_clock[v->base_note - 1], wave_bkup[v->base_note - 1],
+            wave_start(v->dac_slot, param);
+            wave_rate(v->dac_slot, wave_clock[v->base_note - 1],
+                      wave_bkup[v->base_note - 1],
                       wave_step[v->base_note - 1]);
         }
         break;
@@ -232,7 +363,11 @@ static void exec_cmd(unsigned char ch, unsigned char cmd, unsigned char param)
         v->rt_cnt = 0;
         break;
     case CMD_S:
-        *(volatile unsigned char *)0xFD1C = param;  /* TIM7BKUP live */
+        if (v->dac_slot < NDAC) {
+            dac_rate_set(v->dac_slot, param);
+            MIRROR_DAC_S_SLOT = v->dac_slot;
+            MIRROR_DAC_S_RATE = param;
+        }
         break;
     case CMD_E:
         v->e_atk = env_rate[param >> 4];
@@ -290,20 +425,37 @@ static void trigger(unsigned char ch, unsigned char note, unsigned char inum)
 {
     struct voice *v = &voices[ch];
     struct instr *in = &sd.instrs[inum < NINSTR ? inum : 0];
+    unsigned char slot;
+
+    /* Instrument transpose is resolved once at key-on, before a KIT note is
+     * mapped to a pad and before either WAV pitch path is selected. */
+    note = transpose_note(note, in->tsp);
 
     if (in->type == IT_KIT) {
-        /* PCM: note semitone picks the kit slot; plays on channel D's DAC
-         * regardless of track (mono sample bus, SMSGGDJ T3 policy). */
-        pool_trigger(in->wave < 8 ? in->wave : 0, ((note - 1) % 12) & 7);
-        pcm_owner = ch;                 /* this track drives the sample meter */
+        /* Every track owns its physical channel's DAC.  Two timer-fed
+         * streams may run at once; the third trigger steals the oldest. */
+        slot = dac_acquire(ch);
+        CHAN[ch]->control = 0;
+        CHAN[ch]->volume = 0;
+        CHAN[ch]->dac = 0;
         v->type = IT_KIT;
         v->inum = inum;
         v->base_note = note;
         v->env_phase = 0;
         v->env_level = 0;
+        v->kill_in = EMPTY;
+        v->rt_rate = v->rt_fade = v->rt_cnt = 0;
+        v->sh_pan = in->pan;
+        (&MIKEY.attena)[ch] = in->pan;
         v->dirty = 0;
+        dac_rate_set(slot, 127);         /* S on this row may override it */
+        pool_trigger(slot, in->wave < 8 ? in->wave : 0,
+                     ((note - 1) % 12) & 7);
         return;
     }
+
+    if (v->dac_slot < NDAC)
+        dac_release(ch);
     v->base_note = note;
     v->inum = inum;
     v->type = in->type;
@@ -318,12 +470,25 @@ static void trigger(unsigned char ch, unsigned char note, unsigned char inum)
         v->env_phase = 2;
         v->env_level = in->vol;
     }
-    /* one-shot effect state resets on every note (ported semantics) */
+    /* One-shot effect values reset on every note.  Vibrato phase is the
+     * exception: it free-runs across retriggers so short notes do not keep
+     * sampling the same sharp half-cycle.  stop_nolock resets it at the
+     * transport boundary. */
     v->bend = 0;
-    v->bend_rate = 0;
+    /* Patch SWP follows the sibling trackers' period-direction convention:
+     * positive values fall, negative values rise.  Row/table P keeps its
+     * established direct signed-pitch convention and overrides this rate. */
+    v->bend_rate = (in->type <= IT_NOISE) ? -in->swp : 0;
     v->slide_off = 0;
     v->slide_rate = 0;
-    v->vib_speed = v->vib_depth = v->vib_phase = 0;
+    if (in->type <= IT_NOISE) {
+        v->vib_speed = in->vib >> 4;
+        v->vib_depth = in->vib & 0x0F;
+        v->trm_speed = in->trm >> 4;
+        v->trm_depth = in->trm & 0x0F;
+    } else
+        v->vib_speed = v->vib_depth = v->trm_speed = v->trm_depth = 0;
+    v->trm_phase = 0;
     v->tap_rate = 0;                    /* G sweep off until a G command */
     v->chord[0] = 0;
     v->chord_len = 1;
@@ -334,20 +499,18 @@ static void trigger(unsigned char ch, unsigned char note, unsigned char inum)
     v->tpos = 0;
     v->tbl_tsp = 0;
 
-    v->wmode = 0;
     if (in->type == IT_WAV && in->wave < 8) {
-        /* 32-byte wavetable through channel C's DAC (mono wave bus, like
-         * KIT on channel D). Envelope gates note length only — the DAC
-         * writes are full-amplitude (no per-sample scaling on a 65C02). */
-        if (wave_owner != EMPTY && wave_owner != ch)
-            voices[wave_owner].wmode = 0;
-        wave_owner = ch;
-        v->wmode = 1;
-        wave_start(in->wave);
-        wave_rate(wave_clock[note - 1], wave_bkup[note - 1],
+        /* Table-WAV shares the same symmetric two-DAC budget as KIT.
+         * Its envelope gates note length; samples remain full amplitude. */
+        slot = dac_acquire(ch);
+        CHAN[ch]->control = 0;
+        CHAN[ch]->volume = 0;
+        CHAN[ch]->dac = 0;
+        wave_start(slot, in->wave);
+        wave_rate(slot, wave_clock[note - 1], wave_bkup[note - 1],
                   wave_step[note - 1]);
         v->sh_pan = in->pan;
-        (&MIKEY.attena)[2] = in->pan;   /* the wave bus is channel C */
+        (&MIKEY.attena)[ch] = in->pan;
         v->dirty = 0;
         return;
     }
@@ -419,11 +582,35 @@ static void envelope(unsigned char ch)
     }
 }
 
+/* TONE/NOISE tremolo is a one-directional dip inside the AHD envelope.
+ * A 6-bit triangle and the 0-F depth produce up to 116 Lynx volume steps;
+ * depth F therefore reaches near-silence without ever exceeding the peak. */
+#pragma code-name (push, "HICODE2")
+static unsigned char tone_level(struct voice *v)
+{
+    unsigned char level = v->env_level;
+
+    if (v->trm_depth) {
+        unsigned char tri = v->trm_phase & 0x1F;
+        unsigned char dip;
+        if (v->trm_phase & 0x20)
+            tri = 0x1F - tri;
+        dip = (unsigned char)(((unsigned)tri * v->trm_depth) >> 2);
+        level = (level > dip) ? level - dip : 0;
+    }
+    return level;
+}
+#pragma code-name (pop)
+
 static void flush(unsigned char ch)
 {
     volatile struct _mikey_audio *h = CHAN[ch];
     struct voice *v = &voices[ch];
 
+    if (v->dac_slot < NDAC) {
+        v->dirty = 0;
+        return;
+    }
     if (!v->dirty)
         return;
     v->dirty = 0;
@@ -442,7 +629,7 @@ static void flush(unsigned char ch)
         h->other = v->sh_shifthi;       /* seed bits 11-8 in bits 7-4 */
         h->count = v->sh_bkup;
         h->reload = v->sh_bkup;
-        h->volume = (eng_mute & (1 << ch)) ? 0 : v->env_level;
+        h->volume = (eng_mute & (1 << ch)) ? 0 : tone_level(v);
         (&MIKEY.attena)[ch] = v->sh_pan;
         h->control = v->sh_ctl;
         return;
@@ -454,17 +641,24 @@ static void flush(unsigned char ch)
         h->feedback = v->sh_feedback;
     }
     h->reload = v->sh_bkup;
-    h->volume = (eng_mute & (1 << ch)) ? 0 : v->env_level;
+    h->volume = (eng_mute & (1 << ch)) ? 0 : tone_level(v);
 }
 
 /* editor mute/solo: apply immediately, even mid-note */
+#pragma code-name (push, "HICODE2")
 void __fastcall__ engine_set_mute(unsigned char mask)
 {
-    unsigned char ch;
+    unsigned char ch, slot;
     eng_mute = mask;
     for (ch = 0; ch < NCH; ++ch)
-        CHAN[ch]->volume = (mask & (1 << ch)) ? 0 : voices[ch].env_level;
+        CHAN[ch]->volume = ((mask & (1 << ch))
+                            || voices[ch].dac_slot < NDAC)
+                           ? 0 : tone_level(&voices[ch]);
+    for (slot = 0; slot < NDAC; ++slot)
+        dac_muted[slot] = (dac_owner[slot] < NCH
+                           && (mask & (1 << dac_owner[slot]))) ? 1 : 0;
 }
+#pragma code-name (pop)
 
 /* --- walkers (M5, unchanged) --- */
 
@@ -594,7 +788,7 @@ static void row_start(unsigned char ch)
         trigger(ch, n, s->instr);
     if (s->cmd == CMD_L && n) {
         /* glide in from wherever the voice just was */
-        v->slide_off = prev_pitch - (int)n * 16;
+        v->slide_off = prev_pitch - (int)v->base_note * 16;
         v->slide_rate = s->param ? s->param : 1;
     } else if (s->cmd == CMD_H) {
         w->prow = PHRASE_ROWS - 1;              /* phrase ends after this row */
@@ -605,19 +799,24 @@ static void row_start(unsigned char ch)
 
 static void stop_nolock(void)
 {
-    unsigned char ch;
+    unsigned char ch, slot;
     if (eng_mode)
         sync_tx(SYNC_OP_STOP);
     eng_mode = MODE_STOP;
     pcm_stop();
-    wave_stop();
-    wave_owner = 0xFF;
+    for (slot = 0; slot < NDAC; ++slot) {
+        pool_cancel(slot);
+        dac_owner[slot] = EMPTY;
+    }
+    MIRROR_DAC_OWNER0 = MIRROR_DAC_OWNER1 = EMPTY;
     live_q[0] = live_q[1] = live_q[2] = live_q[3] = EMPTY;
     for (ch = 0; ch < NCH; ++ch) {
         voices[ch].env_phase = 0;
         voices[ch].env_level = 0;
+        voices[ch].dac_slot = EMPTY;
         voices[ch].dirty = 0;
         voices[ch].dly_in = EMPTY;
+        voices[ch].vib_phase = 0;       /* deterministic transport-start LFO */
         eng_walk[ch].active = 0;
         CHAN[ch]->control = 0;
         CHAN[ch]->volume = 0;
@@ -631,6 +830,10 @@ static void play_common(void)
     eng_gpos = 0;
     eng_groove = 0;
     row_ticks = sd.grooves[0][0] ? sd.grooves[0][0] : 6;
+    MIRROR_DAC_COUNT = 0;
+    MIRROR_DAC_S_SLOT = EMPTY;
+    MIRROR_DAC_S_RATE = 0;
+    MIRROR_TRIG0 = MIRROR_TRIG1 = 0;
     prng ^= frames;                     /* Z roll: seed from play-start time */
     prng |= 1;                          /* never the LFSR zero state */
 }
@@ -724,6 +927,7 @@ void __fastcall__ engine_live_queue(unsigned char track, unsigned char chain)
     __asm__("cli");
 }
 
+#pragma code-name (push, "HICODE2")
 void engine_audition(unsigned char note, unsigned char inum)
 {
     __asm__("sei");
@@ -741,22 +945,32 @@ void __fastcall__ engine_audition_cmd(unsigned char cmd, unsigned char param)
         __asm__("cli");
     }
 }
+#pragma code-name (pop)
 
 /* HIRAM segments are NOT cleared by cc65's zerobss — call once at boot */
+#pragma code-name (push, "HICODE2")
 void engine_init(void)
 {
+    unsigned char slot;
+
     memset(voices, 0, sizeof(voices));
     memset(eng_walk, 0, sizeof(eng_walk));
+    for (slot = 0; slot < NDAC; ++slot) {
+        dac_owner[slot] = EMPTY;
+        dac_off[slot] = slot << 3;
+        dac_rate[slot] = 127;
+    }
     stop_nolock();
 }
+#pragma code-name (pop)
 
 void engine_tick(void)
 {
     unsigned char ch;
     /* snapshot + clear the IRQ DAC peaks for KIT/WAV meters (this frame) */
-    unsigned char pcm_lvl = pcm_peak, wav_lvl = wav_peak;
-    pcm_peak = 0;
-    wav_peak = 0;
+    unsigned char dac_lvl0 = dac_peak[0], dac_lvl1 = dac_peak[1];
+    dac_peak[0] = 0;
+    dac_peak[1] = 0;
 
     /* sync slave: rows are granted by received ROW bytes, not the groove */
     if (eng_playing && sync_mode == SYNC_IN && eng_tick && sync_row_pending) {
@@ -780,6 +994,32 @@ void engine_tick(void)
         if (v->dly_in != EMPTY && v->dly_note && v->dly_in-- == 0) {
             trigger(ch, v->dly_note, v->dly_instr);
             v->dly_in = EMPTY;
+        }
+        /* KIT has no volume envelope, so retrigger must not be gated by
+         * env_phase.  Table-WAV and hardware voices retain the old gate. */
+        if (v->rt_rate && (v->env_phase || v->dac_slot < NDAC)
+            && ++v->rt_cnt >= v->rt_rate) {
+            v->rt_cnt = 0;
+            if (v->type == IT_KIT && v->dac_slot < NDAC) {
+                unsigned char kb = sd.instrs[v->inum < NINSTR
+                                             ? v->inum : 0].wave;
+                pool_trigger(v->dac_slot, kb < 8 ? kb : 0,
+                             ((v->base_note - 1) % 12) & 7);
+            } else {
+                unsigned char fade = v->rt_fade << 3;
+                v->env_peak = (v->env_peak > fade)
+                              ? v->env_peak - fade : 0;
+                if (v->e_atk) {
+                    v->env_phase = 1;
+                    v->env_level = 0;
+                } else {
+                    v->env_phase = 2;
+                    v->env_level = v->env_peak;
+                }
+                v->hold_left = sd.instrs[v->inum < NINSTR
+                                         ? v->inum : 0].hold & 0x0F;
+                v->dirty = 1;
+            }
         }
         if (v->env_phase) {
             table_step(ch);
@@ -805,63 +1045,46 @@ void engine_tick(void)
                     v->slide_off = 0;
             }
             if (v->vib_depth)
-                v->vib_phase += v->vib_speed + 1;
+                /* 8-bit phase: 2..32/256 cycle per tick = ~0.5..7.5 Hz. */
+                v->vib_phase += (v->vib_speed + 1) << 1;
+            if (v->trm_depth) {
+                v->trm_phase += v->trm_speed + 1;
+                v->dirty = 1;                    /* volume changes every tick */
+            }
             if (v->chord_len > 1
                 && ++v->chord_pos >= v->chord_len)
                 v->chord_pos = 0;
-            if (v->rt_rate && ++v->rt_cnt >= v->rt_rate) {
-                v->rt_cnt = 0;                   /* R: re-fire the note */
-                if (v->type == IT_KIT) {
-                    unsigned char kb = sd.instrs[v->inum < NINSTR
-                                                 ? v->inum : 0].wave;
-                    pool_trigger(kb < 8 ? kb : 0,
-                                 ((v->base_note - 1) % 12) & 7);
-                    pcm_owner = ch;
-                }
-                else {
-                    unsigned char fade = v->rt_fade << 3;
-                    v->env_peak = (v->env_peak > fade)
-                                  ? v->env_peak - fade : 0;
-                    if (v->e_atk) {
-                        v->env_phase = 1;
-                        v->env_level = 0;
-                    } else {
-                        v->env_phase = 2;
-                        v->env_level = v->env_peak;
-                    }
-                    v->hold_left = sd.instrs[v->inum < NINSTR
-                                             ? v->inum : 0].hold & 0x0F;
-                    v->dirty = 1;
-                }
-            }
             pitch_update(ch);
             envelope(ch);
-            if (v->kill_in != EMPTY) {
-                if (v->kill_in == 0) {
-                    v->env_phase = 0;
-                    v->env_level = 0;
-                    v->kill_in = EMPTY;
-                    v->dirty = 1;
-                } else
-                    --v->kill_in;
-            }
         }
-        if (v->wmode && v->env_phase == 0) {
-            v->wmode = 0;
-            wave_owner = 0xFF;
-            wave_stop();
+        /* K also applies to envelope-less KIT samples. */
+        if (v->kill_in != EMPTY
+            && (v->env_phase || v->dac_slot < NDAC)) {
+            if (v->kill_in == 0) {
+                v->env_phase = 0;
+                v->env_level = 0;
+                v->kill_in = EMPTY;
+                if (v->dac_slot < NDAC)
+                    dac_release(ch);
+                v->dirty = 1;
+            } else
+                --v->kill_in;
+        }
+        if (v->type == IT_WAV && v->dac_slot < NDAC
+            && v->env_phase == 0) {
+            dac_release(ch);
         }
         flush(ch);
         /* meter source: TONE/NOISE use the envelope (it scales VOLUME);
          * KIT/WAV play the DAC full-amplitude, so use the real DAC peak */
         {
             unsigned char lvl;
-            if (v->type == IT_KIT)
-                lvl = (ch == pcm_owner) ? pcm_lvl : 0;
-            else if (v->wmode)
-                lvl = wav_lvl;
+            if (v->dac_slot == 0)
+                lvl = dac_lvl0;
+            else if (v->dac_slot == 1)
+                lvl = dac_lvl1;
             else
-                lvl = v->env_level;
+                lvl = tone_level(v);
             eng_level[ch] = (eng_mute & (1 << ch)) ? 0 : lvl;
         }
     }

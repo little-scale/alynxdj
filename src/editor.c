@@ -34,6 +34,7 @@ static const char cmd_chars[NCMDS] = {
     'F', 'L', 'N', 'R', 'S', 'Z', 'E', 'T', 'I', 'J', 'B',
 };
 
+#pragma code-name (push, "HICODE3")
 static unsigned char cmd_next(unsigned char c)
 {
     return (c + 1 < NCMDS) ? c + 1 : 0;
@@ -42,6 +43,7 @@ static unsigned char cmd_prev(unsigned char c)
 {
     return c ? c - 1 : NCMDS - 1;
 }
+#pragma code-name (pop)
 
 #define GRID_TOP 1
 
@@ -77,17 +79,22 @@ static unsigned char edit_groove;       /* what GROOVE shows */
 #define CLIP_STEP  1                    /* phrase step */
 #define CLIP_CHST  2                    /* chain step */
 #define CLIP_CELL  3                    /* song cell (chain #) */
-#define CLIP_RPH   4                    /* phrase row range */
-#define CLIP_RCH   5                    /* chain row range */
-#define CLIP_RSNG  6                    /* song row range */
+#define CLIP_CMD   4                    /* phrase command + parameter */
+#define CLIP_RPH   5                    /* phrase row range */
+#define CLIP_RCH   6                    /* chain row range */
+#define CLIP_RSNG  7                    /* song row range */
 static unsigned char clip_kind;
 static struct step clip_step;
 static struct chainstep clip_chst;
 static unsigned char clip_cell;
 #pragma bss-name (push, "SONG")
+static unsigned char blk_song[16][NCH];
+#pragma bss-name (pop)
+/* The harness/debug page is ordinary RAM on hardware.  Its unused upper
+ * half holds this cold clipboard so HIRAM can grow the third code overlay. */
+#pragma bss-name (push, "MIRRORRAM")
 static struct step blk_steps[16];
 static struct chainstep blk_chst[16];
-static unsigned char blk_song[16][NCH];
 #pragma bss-name (pop)
 static unsigned char blk_n;
 
@@ -100,6 +107,9 @@ static unsigned char ab_pending, ab_timer;
 /* A double-tap window (paste / mint / clone), ~0.3 s */
 #define TAP_WINDOW 18
 static unsigned char a_release_age = 0xFF;
+/* First physical-B tap inserted the remembered value into an empty
+ * SONG/CHAIN cell.  The second tap must still treat that cell as empty. */
+static unsigned char tap_was_empty;
 
 #define MIRROR_PACKLEN (*(volatile unsigned int *)0xC01A)
 #define MIRROR_STATUS  (*(volatile unsigned char *)0xC01C)
@@ -227,7 +237,9 @@ static void draw_map(void)
 
 #define SONG_COLX(c) (4 + (c) * 3)
 
+#pragma code-name (push, "HICODE2")
 static unsigned char song_page(void)  { return s_row & 0xF0; }
+#pragma code-name (pop)
 
 static void draw_song_row(unsigned char vr, unsigned char cursor_here)
 {
@@ -344,21 +356,27 @@ static void draw_phrase_screen(void)
 
 /* --- INSTR screen: field rows --- */
 
-#define NIFIELDS 9
-#define IF_TAPS  5
-#define IF_SEED  6
-#define IF_WAVE  7
-#define IF_TABLE 8
+#define NIFIELDS 13
+#define IF_TSP   5
+#define IF_SWP   6
+#define IF_VIB   7
+#define IF_TRM   8
+#define IF_TAPS  9
+#define IF_SEED  10
+#define IF_WAVE  11
+#define IF_TABLE 12
 static const char *const ifield_name[NIFIELDS] = {
-    "TYPE", "VOL", "ATK", "HOLD", "DCY", "TAPS", "SEED", "BANK", "TABLE",
+    "TYPE", "VOL", "ATK", "HOLD", "DCY", "TSP", "SWP", "VIB",
+    "TRM", "TAPS", "SEED", "BANK", "TABLE",
 };
 /* display grid row per field (absolute): blank rows group TYPE / envelope /
- * LFSR / routing, and one blank below the title */
+ * modulation / routing, and one blank below the title */
 static const unsigned char ifield_y[NIFIELDS] = {
-    2, 4, 5, 6, 7, 9, 10, 12, 13,
+    2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15, 16,
 };
 static const char *const itype_name[4] = { "TONE", "NOISE", "WAV", "KIT" };
 
+#pragma code-name (push, "HICODE3")
 static unsigned char ifield_nib(unsigned char f)
 {
     struct instr *in = &sd.instrs[edit_instr];
@@ -368,6 +386,7 @@ static unsigned char ifield_nib(unsigned char f)
     default: return in->env & 0x0F;         /* DCY */
     }
 }
+#pragma code-name (pop)
 
 static void ifield_nib_set(unsigned char f, unsigned char v)
 {
@@ -379,6 +398,7 @@ static void ifield_nib_set(unsigned char f, unsigned char v)
     }
 }
 
+#pragma code-name (push, "HICODE1")
 static unsigned instr_taps(void)
 {
     struct instr *in = &sd.instrs[edit_instr];
@@ -390,6 +410,7 @@ static unsigned instr_seed(void)
     struct instr *in = &sd.instrs[edit_instr];
     return in->seed_lo | ((in->seed_hi & 0x0F) << 8);
 }
+#pragma code-name (pop)
 
 /* which taps the mask lights, in user-bit order (D11) */
 static const char tap_glyph[9] = { '0','1','2','3','4','5','7','A','B' };
@@ -450,6 +471,19 @@ static void draw_instr_row(unsigned char r, unsigned char cursor_here)
     case 1:
         draw_hex8(8, y, sd.instrs[edit_instr].vol, fg, bg);
         break;
+    case IF_TSP:
+        draw_hex8(8, y, (unsigned char)sd.instrs[edit_instr].tsp, fg, bg);
+        break;
+    case IF_SWP:
+    case IF_VIB:
+    case IF_TRM: {
+        struct instr *in = &sd.instrs[edit_instr];
+        if (in->type <= IT_NOISE)
+            draw_hex8(8, y, ((unsigned char *)&in->swp)[r - IF_SWP], fg, bg);
+        else
+            draw_text(8, y, "--", fg, bg);
+        break;
+    }
     default: {                          /* ATK / HOLD / DCY nibbles */
         char b[2];
         static const char hexd[] = "0123456789ABCDEF";
@@ -583,6 +617,7 @@ static void draw_files_row(unsigned char r, unsigned char cursor_here)
         draw_text(1, y, label[r], fg, bg);
 }
 
+#pragma code-name (push, "HICODE1")
 static void draw_files_screen(void)
 {
     unsigned char r;
@@ -590,6 +625,7 @@ static void draw_files_screen(void)
         draw_files_row(r, r == f_row);
     draw_files_status();
 }
+#pragma code-name (pop)
 
 /* --- GROOVE screen: 16 tick-count rows (0 = end marker) --- */
 
@@ -715,12 +751,14 @@ static void draw_proj_row(unsigned char r, unsigned char cursor_here)
     }
 }
 
+#pragma code-name (push, "HICODE1")
 static void draw_proj_screen(void)
 {
     draw_proj_row(0, pj_row == 0);
     draw_proj_row(1, 0);
     draw_proj_row(2, 0);
 }
+#pragma code-name (pop)
 
 /* --- OPTIONS: machine settings (runtime-only for now) --- */
 
@@ -834,6 +872,9 @@ static void move_cursor(unsigned char dir)
 {
     unsigned char old = cursor_vrow();
     unsigned char repage = 0;
+
+    a_release_age = 0xFF;               /* double-taps stay on one cell */
+    tap_was_empty = 0;
 
     switch (screen) {
     case SCR_SONG:
@@ -1073,6 +1114,7 @@ static const unsigned char ifield_lim[5][3] = {
 
 /* edit a 16-bit field masked to `max`; L/R +-1, U/D +-16, wrapping —
  * sweeping the whole tap/seed space is the point (D11) */
+#pragma code-name (push, "HICODE3")
 static unsigned edit_u16(unsigned v, unsigned char dir, unsigned max)
 {
     switch (dir) {
@@ -1083,12 +1125,15 @@ static unsigned edit_u16(unsigned v, unsigned char dir, unsigned max)
     }
     return v & max;
 }
+#pragma code-name (pop)
 
+#pragma code-name (push, "HICODE3")
 static unsigned char *ifield_ptr(unsigned char f)
 {
     struct instr *in = &sd.instrs[edit_instr];
     return (f == 0) ? &in->type : &in->vol;
 }
+#pragma code-name (pop)
 
 static void edit_instr_cell(unsigned char dir)
 {
@@ -1098,6 +1143,23 @@ static void edit_instr_cell(unsigned char dir)
     unsigned t;
 
     switch (i_row) {
+    case IF_TSP:
+        if (dir == 0) in->tsp += 12;
+        else if (dir == 1) in->tsp -= 12;
+        else if (dir == 2) --in->tsp;
+        else ++in->tsp;
+        break;
+    case IF_SWP:
+    case IF_VIB:
+    case IF_TRM:
+        if (in->type > IT_NOISE)
+            return;
+        p = (unsigned char *)&in->swp + (i_row - IF_SWP);
+        if (dir == 0) *p += 16;                 /* speed / coarse signed */
+        else if (dir == 1) *p -= 16;
+        else if (dir == 2) --*p;                /* depth / fine signed */
+        else ++*p;
+        break;
     case IF_TAPS:
         t = edit_u16(instr_taps(), dir, 0x1FF);
         in->taps_lo = (unsigned char)t;
@@ -1230,13 +1292,17 @@ static void edit_cell(unsigned char dir)
 
 static void insert_cell(void)
 {
+    tap_was_empty = 0;
     switch (screen) {
     case SCR_SONG:
-        if (sd.song[s_row][s_col] == EMPTY)
+        if (sd.song[s_row][s_col] == EMPTY) {
+            tap_was_empty = 1;
             sd.song[s_row][s_col] = last_chain;
+        }
         break;
     case SCR_CHAIN:
         if (c_col == 0 && sd.chains[edit_chain][c_row].phrase == EMPTY) {
+            tap_was_empty = 1;
             sd.chains[edit_chain][c_row].phrase = last_phrase;
             sd.chains[edit_chain][c_row].tsp = 0;
         }
@@ -1248,6 +1314,10 @@ static void insert_cell(void)
                 engine_audition(last_note,
                                 sd.phrases[edit_phrase][p_row].instr);
         }
+        break;
+    case SCR_INSTR:
+        if (!eng_mode)                    /* physical B tap: audition patch */
+            engine_audition(last_note, edit_instr);
         break;
     case SCR_FILES:
         engine_stop();
@@ -1290,6 +1360,8 @@ static void insert_cell(void)
  * B-held + Left / B-tap ascends. */
 static void nav(unsigned char to_right)
 {
+    a_release_age = 0xFF;
+    tap_was_empty = 0;
     if (to_right) {
         if (screen == SCR_FILES) {
             screen = SCR_GROOVE;
@@ -1355,6 +1427,8 @@ moved:
  * (SONG <-> FILES, CHAIN <-> GROOVE) */
 static void nav_v(unsigned char down)
 {
+    a_release_age = 0xFF;
+    tap_was_empty = 0;
     if (down && screen == SCR_SONG)
         screen = SCR_FILES;
     else if (!down && screen == SCR_FILES)
@@ -1402,11 +1476,19 @@ static void cut_field(void)
         sd.chains[edit_chain][c_row].phrase = EMPTY;
         sd.chains[edit_chain][c_row].tsp = -1;
         break;
-    case SCR_PHRASE:
-        clip_kind = CLIP_STEP;
-        clip_step = sd.phrases[edit_phrase][p_row];
-        memset(&sd.phrases[edit_phrase][p_row], 0, sizeof(struct step));
+    case SCR_PHRASE: {
+        struct step *s = &sd.phrases[edit_phrase][p_row];
+        clip_step = *s;
+        if (p_col == 2) {
+            clip_kind = CLIP_CMD;
+            s->cmd = 0;
+            s->param = 0;
+        } else {
+            clip_kind = CLIP_STEP;
+            memset(s, 0, sizeof(struct step));
+        }
         break;
+    }
     default:
         return;
     }
@@ -1415,6 +1497,7 @@ static void cut_field(void)
 
 /* --- block select: row ranges on SONG/CHAIN/PHRASE --- */
 
+#pragma code-name (push, "HICODE3")
 static unsigned char cursor_row_abs(void)
 {
     switch (screen) {
@@ -1423,6 +1506,7 @@ static unsigned char cursor_row_abs(void)
     default:        return p_row;
     }
 }
+#pragma code-name (pop)
 
 static void sel_bounds(unsigned char *a, unsigned char *b)
 {
@@ -1534,37 +1618,17 @@ static void blk_paste(void)
     draw_screen();
 }
 
-/* first all-empty chain/phrase, or $FF if the pool is full */
-static unsigned char find_free_chain(void)
-{
-    unsigned char c, s;
-    for (c = 0; c < NCHAINS; ++c) {
-        for (s = 0; s < PHRASE_ROWS; ++s)
-            if (sd.chains[c][s].phrase != EMPTY)
-                break;
-        if (s == PHRASE_ROWS)
-            return c;
-    }
-    return EMPTY;
-}
+/* Compact ca65 scans: the record must be blank and unreferenced, so two
+ * consecutive mints cannot hand out the same still-empty object. */
+unsigned char find_new_chain(void);
+unsigned char find_new_phrase(void);
 
-static unsigned char find_free_phrase(void)
-{
-    unsigned char p, s;
-    for (p = 0; p < NPHRASES; ++p) {
-        for (s = 0; s < PHRASE_ROWS; ++s)
-            if (sd.phrases[p][s].note || sd.phrases[p][s].cmd)
-                break;
-        if (s == PHRASE_ROWS)
-            return p;
-    }
-    return EMPTY;
-}
-
-/* A double-tap: paste a matching clip, else mint (empty cell) or clone
- * (populated cell) into the next free slot — ported semantics */
+/* Physical-B double-tap: paste a matching clip, else mint (empty cell) or
+ * slim-clone one chain/phrase (populated cell) into the next free slot. */
 static void double_tap(void)
 {
+    unsigned char was_empty = tap_was_empty;
+    tap_was_empty = 0;
     if (clip_kind >= CLIP_RPH) {
         blk_paste();
         return;
@@ -1574,8 +1638,11 @@ static void double_tap(void)
         if (clip_kind == CLIP_CELL) {
             sd.song[s_row][s_col] = clip_cell;
         } else {
-            unsigned char cur = sd.song[s_row][s_col];
-            unsigned char nc = find_free_chain();
+            unsigned char cur = was_empty ? EMPTY : sd.song[s_row][s_col];
+            unsigned char nc;
+            if (was_empty)
+                sd.song[s_row][s_col] = EMPTY; /* discard tap-one placeholder */
+            nc = find_new_chain();
             if (nc == EMPTY)
                 return;                       /* pool full: no-op */
             if (cur != EMPTY && cur < NCHAINS) /* clone */
@@ -1589,10 +1656,15 @@ static void double_tap(void)
             sd.chains[edit_chain][c_row] = clip_chst;
         } else if (c_col == 0) {
             struct chainstep *cs = &sd.chains[edit_chain][c_row];
-            unsigned char np = find_free_phrase();
+            unsigned char np;
+            if (was_empty) {
+                cs->phrase = EMPTY;           /* discard tap-one placeholder */
+                cs->tsp = -1;
+            }
+            np = find_new_phrase();
             if (np == EMPTY)
                 return;
-            if (cs->phrase != EMPTY && cs->phrase < NPHRASES)
+            if (!was_empty && cs->phrase != EMPTY && cs->phrase < NPHRASES)
                 memcpy(sd.phrases[np], sd.phrases[cs->phrase],
                        sizeof(sd.phrases[0]));
             else
@@ -1602,7 +1674,10 @@ static void double_tap(void)
         }
         break;
     case SCR_PHRASE:
-        if (clip_kind == CLIP_STEP)
+        if (clip_kind == CLIP_CMD && p_col == 2) {
+            sd.phrases[edit_phrase][p_row].cmd = clip_step.cmd;
+            sd.phrases[edit_phrase][p_row].param = clip_step.param;
+        } else if (clip_kind == CLIP_STEP)
             sd.phrases[edit_phrase][p_row] = clip_step;
         break;
     default:

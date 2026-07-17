@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
 
 ## Project
 
@@ -20,8 +20,8 @@ tracks each playing TONE/NOISE/WAV/KIT (D1), cc65 C editor + ca65 asm
 driver/IRQ/render (D2), 59.9 Hz VBlank engine tick with no region split (D3),
 flat RAM song block but **packed/RLE EEPROM save — 2 KB 93C86 is the whole
 persistence budget** (D4/D10), per-channel timer-IRQ PCM capped at 2 voices
-(D5/D6), 4×6 font on a 40×17 grid (D7). KIT and table-WAV are dynamically
-routed to any owning channel A–D; there are no fixed sample buses. TONE/NOISE
+(D5/D6), 4×6 font on a 40×17 grid (D7). KIT and table-WAV dynamically
+target the owning channel A–D; there are no fixed sample buses. TONE/NOISE
 patches persist TSP/SWP/VIB/TRM in save-format v5 (D15/D16); VIB is a
 centred ~0.47–7.49 Hz sine whose phase free-runs across notes and resets at
 the transport boundary.
@@ -36,8 +36,8 @@ make test     # DAC + modulation + editor mint/clone/field-cut + EEPROM round tr
 make clean
 ```
 
-Python tools require `requirements.txt` (NumPy + Pillow). Use
-`PYTHON=/path/to/python make ...` for a virtual environment.
+Python tools require `requirements.txt`; set `PYTHON=/path/to/python` when
+using a virtual environment.
 
 - Toolchain: **cc65** (Homebrew). `src/lowcode.s` works around a cc65 2.18
   lynx.cfg bug (optional LOWCODE segment vs defdir.s's unconditional
@@ -69,8 +69,6 @@ Python tools require `requirements.txt` (NumPy + Pillow). Use
   of the old B-then-A. MANUAL/README control tables use physical labels.
 - `RETROSHOT_RAM_OUT=<path>` dumps the full 64 KB RAM after a run — read any
   fixed address (e.g. debug mirrors) instead of scraping pixels.
-- `RETROSHOT_RAM_POKE=addr:value,...` optionally writes system RAM for a
-  deterministic hook; add `RETROSHOT_RAM_POKE_AT=n` to apply after core reset.
 - RAM pressure is explicit: cart blocks 40/42/44 cold-load code to `$C900`,
   `$F600`, and `$F320`; the sample pool starts at block 45. The C stack is
   640 bytes and `$D000-$D3FF` stays two 512-byte rings. Keep `alynxdj.cfg`,
@@ -86,14 +84,13 @@ Python tools require `requirements.txt` (NumPy + Pillow). Use
   *unsigned* compare — a negative int silently becomes huge (bit the L
   slide: it diverged an octave down). Cast explicitly:
   `int r = (int)uchar_var;` then compare against `r`.
-- Boot **autoloads** a valid EEPROM save over `song_demo()`. Prefer a unique
-  ROM basename for demo/rig tests so its emulator-side `.eeprom` namespace is
-  clean without deleting another run's persistence.
+- Boot **autoloads** a valid EEPROM save over `song_demo()` — use a unique ROM
+  basename for demo/rig tests to get an isolated emulator EEPROM namespace.
 
 ## The reference projects (read before designing anything)
 
 The sibling trackers are the specification for how ALYNXDJ should *feel*. Their
-CLAUDE.md, `DESIGN.md`, `PLAN.md`, and `SAVEFORMAT.md` files are the reference:
+AGENTS.md, `DESIGN.md`, `PLAN.md`, and `SAVEFORMAT.md` files are the reference:
 
 - **`/Users/a1106632/Documents/sms_tracker`** (SMSGGDJ) — the original, shipped and
   hardware-verified. Source of the data model (phrase → chain → song + pools),
@@ -101,7 +98,7 @@ CLAUDE.md, `DESIGN.md`, `PLAN.md`, and `SAVEFORMAT.md` files are the reference:
   **control-scheme contract**: two modifier buttons (project-level and item-level),
   "the button already held when another arrives selects the action", **no
   simultaneous-press timing windows** (only paste double-taps).
-- **`/Users/a1106632/Documents/genmddj`** (GENMDDJ) — the first port; its CLAUDE.md
+- **`/Users/a1106632/Documents/genmddj`** (GENMDDJ) — the first port; its AGENTS.md
   §"What ports verbatim vs what's new" is the template for the same analysis here.
   Its `tools/emu/retroshot` libretro screenshot harness is the model for headless
   verification (a Lynx libretro core such as handy/mednafen-lynx should slot into
@@ -123,7 +120,8 @@ stale flashes, and per-region timing tables where applicable.
   - `05 speech 1` … `08 speech 4` — speech/phoneme banks (AA.wav, AE.wav, …).
   - A conversion tool (successor to SMSGGDJ's `smsggdj_sample.py`) will need to
     resample these for the Lynx DAC.
-- `art/aldj.png` — source logo for the boot splash (`tools/makelogo.py`).
+- `artwork/` — empty; destined for logo/splash art (siblings use an `art/` dir with
+  a makelogo.py-style pipeline).
 - `task.txt` — the original project brief.
 
 ## Hardware quick facts (full picture: DESIGN.md §1)

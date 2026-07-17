@@ -22,12 +22,12 @@ The **12-bit LFSR is fully exposed per instrument**: a raw 9-bit tap mask
 seed selects between disjoint state cycles — genuinely different waveforms
 from the same taps. This is the heart of the Lynx sound and the heart of
 this tracker. Plus: per-channel stereo attenuation (Lynx II), and ComLynx
-as a multi-drop sync bus (planned).
+as a multi-drop sync bus.
 
 ## Status
 
-**V0.3 — first hardware-validated build** (runs on a real Atari Lynx),
-feature-complete against the design brief with an editor/UX pass on top
+**V0.4 — four-channel sampling and expressive instruments** (runs on a real
+Atari Lynx), feature-complete against the design brief with an editor/UX pass on top
 (see [CHANGELOG.md](CHANGELOG.md) for what changed, [PLAN.md](PLAN.md) for
 the milestone table, [DESIGN.md](DESIGN.md) for the design contract and
 decision log):
@@ -36,35 +36,42 @@ decision log):
   indicator + channel meters; engine tick in the VBlank IRQ (tempo is
   render-independent)
 - All four voice types, with the **12-bit LFSR fully exposed** (raw taps
-  + seed per instrument) and 32-byte wavetables; everything verified by
+  + seed per instrument), per-instrument TSP, TONE/NOISE SWP/free-running sine-VIB/TRM
+  modulation, and 32-byte wavetables; everything verified by
   FFT / cross-correlation in the headless harness
 - **22 sequencer commands** (incl. `G` LFSR-tap glide, `B` live wavetable set), tables, one global groove, block select/cut/paste,
   clipboard, mute/solo, LIVE clip-launcher mode
 - **Cart-streamed sample pool**: all eight `samples/` kits at full
-  quality (808/909/C78/606 + four speech banks), kit-per-instrument
+  quality (808/909/C78/606 + four speech banks), kit-per-instrument.
+  KIT and table-WAV playback can target **any of the four tracks**; two
+  timer-fed DAC voices may run concurrently, and a third steals the oldest
 - Packed save + machine config in the cart's 93C86 EEPROM with autoload
   ([SAVEFORMAT.md](SAVEFORMAT.md)); **two-unit ComLynx sync** verified in
   a bridged-core harness (0 ms lock)
 
-Remaining to 1.0: the real-hardware pass (Q2/Q4, ComLynx cable, cart
-streaming on silicon) and upstream PRs (libretro-handy EEPROM fix, cc65
-`_UART_TIMER`).
+Remaining to 1.0: the focused real-hardware audio/cart/ComLynx-cable pass
+and upstream PRs (libretro-handy EEPROM fix, cc65 `_UART_TIMER`).
 
 ## Download
 
 Grab the latest [release](https://github.com/little-scale/alynxdj/releases):
 the `.lnx` ROM, the patched macOS-arm64 libretro-Handy core used for
-verification, and a demo-song WAV rendered by the headless harness. No
-Lynx hardware yet — everything so far is emulator-verified. Run the ROM
-in RetroArch (Handy core) or build the harness below.
+verification, and a demo-song WAV rendered by the headless harness. The ROM
+has booted and run on a real Lynx; deterministic software/audio regressions
+still use the patched Handy core. Run the ROM in RetroArch or build below.
 
 ## Building
 
 ```sh
 brew install cc65
+python3 -m pip install -r requirements.txt
 make          # → build/alynxdj.lnx
 make shot     # headless run → build/shot.png + audio WAV capture
+make test     # DAC symmetry, TONE modulation/audition, EEPROM round trip
 ```
+
+Set `PYTHON=/path/to/python` on any `make` invocation when the build tools
+are installed in a virtual environment.
 
 `make shot` drives the ROM in a headless libretro Handy core
 (`tools/emu/retroshot`) with scripted controller input — no BIOS file
@@ -76,7 +83,10 @@ scripting, and toolchain gotchas.
 
 - **D-pad** move · **B** edit/insert · **A** back/navigate
 - **A held + d-pad** screen map · **A held + B** play/stop
-- **B held + d-pad** edit value · **B held + A** cut · **B double-tap** paste
+- **B held + d-pad** edit value · **B held + A** cut · **B double-tap** paste,
+  mint the next blank/unreferenced object on an empty SONG/CHAIN cell, or
+  slim-clone an occupied one
+- On stopped **INSTR**, tap **B** to audition the current instrument
 - **Option 1 + B/A/←→** mute / solo / track select
 
 ## License / credits

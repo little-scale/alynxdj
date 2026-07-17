@@ -33,8 +33,8 @@
 #define CMD_N    14     /* N xx  live LFSR taps override: bits 0-5 = taps
                                  0-5, 6 = tap 7, 7 = tap 10 (D11 morph) */
 #define CMD_R    15     /* R xy  retrig every y ticks, peak -8x per fire */
-#define CMD_S    16     /* S xx  live PCM rate: timer-7 reload (pitch the
-                                 playing sample; smaller = faster) */
+#define CMD_S    16     /* S xx  live sampled-voice timer reload (KIT or
+                                 table-WAV; smaller = faster) */
 #define CMD_Z    17     /* Z xx  probability: note plays if rand8 < xx */
 #define CMD_E    18     /* E xy  re-slope the envelope live: ATK x, DCY y
                                  nibbles (current stage + level untouched) */
@@ -89,7 +89,10 @@ struct instr {
     unsigned char taps_hi;  /* TAPS bit 8 (tap 11) in bit 0 */
     unsigned char seed_lo;  /* SEED bits 7..0 */
     unsigned char seed_hi;  /* SEED bits 11..8 in bits 3..0 */
-    unsigned char pad[4];
+    signed char   swp;       /* TONE/NOISE: signed 1/16-semi pitch/tick */
+    unsigned char vib;       /* TONE/NOISE: speed high nibble, depth low */
+    unsigned char trm;       /* TONE/NOISE: speed high nibble, depth low */
+    signed char   tsp;       /* signed instrument transpose, semitones */
 };
 
 #define TAPS_SQUARE 0x001   /* tap 0 only: the proven square */
@@ -148,18 +151,33 @@ void engine_audition(unsigned char note, unsigned char inum);
 void __fastcall__ engine_audition_cmd(unsigned char cmd, unsigned char param);
 
 void sound_init(void);
-void pcm_stop(void);
-void pcm_ring_start(void);
+
+/* Two timer-fed DAC slots (D6).  A slot targets the physical Mikey channel
+ * owned by its logical track; KIT and table-WAV voices share this budget. */
+#define NDAC       2
+#define DAC_NONE   0
+#define DAC_SAMPLE 1
+#define DAC_WAVE   2
+extern volatile unsigned char dac_mode[NDAC];
+extern volatile unsigned char dac_off[NDAC]; /* channel * 8, for AUD0+x */
+extern volatile unsigned char dac_muted[NDAC];
+extern volatile unsigned char dac_rate[NDAC];
+extern volatile unsigned char dac_peak[NDAC];
+void pcm_stop(void);                      /* stop both slots */
+void __fastcall__ dac_stop(unsigned char slot);
+void __fastcall__ dac_rate_set(unsigned char slot, unsigned char rate);
+void __fastcall__ pcm_ring_start(unsigned char slot);
 
 /* cart streaming (src/cart.s) + sample pool (src/pool.c) */
 void __fastcall__ cart_seek(unsigned char block, unsigned off);
 void __fastcall__ cart_read(unsigned char *dst, unsigned char n);
 void pool_init(void);
 void pool_pump(void);
-void __fastcall__ pool_trigger(unsigned char kit, unsigned char slot);
-unsigned char pool_kits(void);
-extern unsigned char *pcm_head;
-extern unsigned char pcm_done;
+void __fastcall__ pool_trigger(unsigned char voice, unsigned char kit,
+                               unsigned char member);
+void __fastcall__ pool_cancel(unsigned char voice);
+extern unsigned char *pcm_head[NDAC];
+extern unsigned char pcm_done[NDAC];
 
 /* ComLynx sync (src/sync.c) */
 #define SYNC_OFF 0
@@ -175,18 +193,18 @@ void sync_init(void);
 void __fastcall__ sync_tx(unsigned char b);
 void sync_poll(void);
 
-/* wavetable feed (irq.s): loops sd.waves[w] through channel C's DAC */
-void __fastcall__ wave_start(unsigned char w);
-void __fastcall__ wave_rate(unsigned char clock, unsigned char bkup,
-                            unsigned char step);
-void wave_stop(void);
+/* Wavetable feed uses either DAC slot and therefore any owning channel. */
+void __fastcall__ wave_start(unsigned char slot, unsigned char w);
+void __fastcall__ wave_rate(unsigned char slot, unsigned char clock,
+                            unsigned char bkup, unsigned char step);
+void __fastcall__ wave_stop(unsigned char slot);
 
 /* 93C86 EEPROM (src/eeprom.s), full 16-bit words per cell */
 unsigned __fastcall__ ee_read(unsigned cell);
 void __fastcall__ ee_write(unsigned cell, unsigned val);
 
 /* packed save (src/save.c); ST codes shared with the FILES screen.
- * Full 93C86 capacity (1020 payload words) — needs the repo-built Handy
+ * Full song payload (1016 words; cells 4-1019) — needs repo-built Handy
  * core (stock truncates EEPROM file loads to 1024 bytes, eeprom.cpp:59
  * — fix applied in our build; PR upstream pending). */
 #define SAVE_CAP_BYTES 2032  /* cells 1020-1023 hold the config block */

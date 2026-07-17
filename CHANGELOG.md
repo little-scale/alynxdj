@@ -1,5 +1,57 @@
 # Changelog
 
+## v0.4 — 2026-07-17
+
+Four-channel sampling and expressive instruments: this release restores
+Mikey's channel symmetry while adding performance-focused tone modulation
+and faster tracker editing.
+
+- Fixed PHRASE command-field cuts so they remove only the command and its
+  parameter, preserving the row's note and instrument. The clipboard now
+  pastes that command pair only into another command column. Added scripted
+  cut and cut/paste RAM regressions for the physical-button gesture.
+- Fixed physical **B** double-tap on an empty SONG/CHAIN cell: the first tap's
+  immediate remembered-value insert no longer makes the second tap mistake
+  the cell for occupied. Empty cells now select the next blank, unreferenced
+  chain/phrase (so an allocated-but-unedited object is never reused);
+  occupied cells make a slim clone (chain only or phrase only, with referenced
+  phrases/instruments still shared). Added four RAM-level input regressions,
+  including allocated-but-blank pool entries.
+- Added signed **TSP** to the INSTR screen. It transposes TONE, NOISE, and
+  WAV pitch and moves KIT pad selection; Left/Right step a semitone and
+  Up/Down step an octave. Save format v5 clears the formerly-reserved byte
+  when loading older songs.
+- Replaced pitch vibrato's coarse triangle with a centred 16-point sine LFO.
+  Its 16 speed settings now span approximately 0.47–7.49 Hz, guaranteeing at
+  least eight 59.9 Hz pitch updates per cycle at the fastest setting.
+- Vibrato phase now free-runs across note retriggers and resets only at a
+  transport boundary. This fixes the demo's channel-1 `V26` lead: short notes
+  no longer restart on—and repeatedly sample—the sharp half of the sine.
+  A repeated-note audio regression verifies that `VIB=00` stays at base pitch
+  while successive `V` commands remain centred together.
+- Added TONE/NOISE instrument fields **SWP**, **VIB**, and **TRM** using the
+  record's three reserved bytes: signed per-tick pitch sweep, packed
+  speed/depth vibrato, and packed speed/depth tremolo inside the AHD level.
+  Save format v4 explicitly clears these fields when loading older songs.
+- The sample pool's five-byte directory entry is now fetched on demand in
+  the main-loop trigger path instead of keeping all 320 bytes resident. This
+  makes room for the sine/TSP helpers without touching the IRQ audio path.
+- A physical **B** tap on INSTR now auditions the current instrument when
+  transport is stopped, without starting playback or depending on PRELIS.
+- Added an audio/input regression covering all three modulators and the
+  stopped-INSTR audition gesture.
+- Restored the Lynx's channel symmetry for sampled sound: KIT and
+  table-WAV voices now route to the owning track's DAC on channels A–D.
+  Two shared timer slots run concurrently; a third sampled trigger steals
+  the oldest, regardless of which logical track or sampled type owns it.
+- Fixed KIT `R` retrigger, KIT `K` kill, same-row `S` rate changes, sampled
+  mute/meters, and cart-stream races during rapid trigger/steal sequences.
+- Split the 1 KB PCM ring into two independent 512-byte rings and made the
+  cart pump re-seek each stream, including after EEPROM/config traffic.
+- Added cold-loaded high-RAM code overlays so the full editor/song/save
+  model still fits in 64 KB, plus deterministic `make test` regressions for
+  four-channel DAC routing/stealing and packed-save power cycling.
+
 ## v0.3 — 2026-07-17
 
 The first hardware-validated release — ALYNXDJ runs well on a real Atari

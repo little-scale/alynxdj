@@ -3,3 +3,4 @@ build/
 *.o
 tools/emu/*.dylib
 tools/emu/retroshot
+__pycache__/

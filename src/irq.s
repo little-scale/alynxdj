@@ -1,14 +1,15 @@
-; Interrupt core: VBlank (timer 2) frame counter + PCM DAC feed (timer 7).
+; Interrupt core: VBlank plus two symmetric timer-fed DAC slots.
 ;
-; The PCM feed is the jitter-critical path (DESIGN.md D2/D5): one sample
-; byte from RAM into channel D's OUTPUT register per timer-7 IRQ (~7.8 kHz,
-; ~45 cycles/IRQ ~= 9% CPU). The handler owns only A and the APPZP pointer;
-; it must never touch cc65 zeropage state. Engine code must leave channel D
-; alone while a sample runs (KIT voices set env off, dirty 0).
+; Timer 7 feeds slot 0 and timer 5 feeds slot 1.  Either slot can be a
+; cart-streamed KIT sample or a 32-byte wavetable, and dac_off[] selects
+; the owning Mikey channel (A/B/C/D).  This keeps the hardware's channel
+; symmetry while retaining the measured two-PCM-voice CPU ceiling (D5/D6).
 
         .export         _vbl_install
         .export         _frames
         .export         _pcm_stop
+        .export         _dac_stop
+        .export         _dac_rate_set
         .export         _wave_start
         .export         _wave_rate
         .export         _wave_stop
@@ -16,8 +17,11 @@
         .export         _pcm_ptr
         .export         _pcm_head
         .export         _pcm_done
-        .export         _pcm_peak
-        .export         _wav_peak
+        .export         _dac_mode
+        .export         _dac_off
+        .export         _dac_muted
+        .export         _dac_rate
+        .export         _dac_peak
         .import         _sd
         .import         _engine_tick
         .import         popa
@@ -31,31 +35,38 @@ TIM5BKUP := $FD14
 TIM5CTLA := $FD15
 TIM7BKUP := $FD1C
 TIM7CTLA := $FD1D
-AUD2DAC  := $FD32               ; channel C OUTPUT (wavetable DAC)
-AUD2CTL  := $FD35
-AUD3DAC  := $FD3A               ; channel D OUTPUT (sample DAC)
-AUD3CTL  := $FD3D
+AUD0DAC  := $FD22               ; channel A OUTPUT; channels are +8 bytes
+AUD0CTL  := $FD25
 
-PCM_BKUP = 127                  ; 1us clock -> 7812.5 Hz
 PCM_CTLA = $98                  ; int enable | count | reload | 1us
 WAVES_OFF = 7424                ; offsetof(struct songdata, waves)
-RING_HI  = $D0                  ; 1 KB sample ring at $D000-$D3FF
-RING_END = $D4
+RING0_HI = $D0                  ; slot 0: $D000-$D1FF (512 bytes)
+RING1_HI = $D2                  ; slot 1: $D200-$D3FF (512 bytes)
 
         .segment "APPZP" : zeropage
-_pcm_ptr: .res 2                 ; ring tail — owned by the IRQ
-wav_ptr: .res 2                 ; base of the active 32-byte wavetable
+_pcm_ptr: .res 4                ; two ring tails, IRQ-owned
+wav_ptr0: .res 2
+wav_ptr1: .res 2
 
         .bss
-_pcm_head: .res 2               ; ring head — owned by the C pump
-_pcm_done: .res 1               ; pump: no more stream bytes coming
-_pcm_peak: .res 1               ; per-frame peak |sample| on channel D (meter)
-_wav_peak: .res 1               ; per-frame peak |entry| on channel C (meter)
-in_tick: .res 1                 ; VBL tick re-entrancy guard
-zpbuf:   .res 32                ; cc65 runtime zp save (tick runs C in IRQ)
-wav_pos: .res 1                 ; table read position (wraps & $1F)
-wav_step: .res 1                ; entries per IRQ (pitch step-doubling)
-_frames: .res 2                 ; u16 frame counter (read by C)
+_pcm_head: .res 4               ; two ring heads, pump-owned
+_pcm_done: .res 2
+_dac_mode: .res 2               ; DAC_NONE / DAC_SAMPLE / DAC_WAVE
+_dac_off: .res 2                ; owning channel * 8
+_dac_muted: .res 2              ; consume normally, write zero when muted
+_dac_rate: .res 2               ; KIT timer reload (default 127)
+_dac_peak: .res 2               ; per-frame |OUTPUT| peak, per slot
+in_tick:  .res 1                ; VBL tick re-entrancy guard
+zpbuf:    .res 32               ; cc65 runtime zp save (tick runs C in IRQ)
+wav_pos:  .res 2
+wav_step: .res 2
+tmp_slot: .res 1
+tmp_w:    .res 1
+tmp_rate: .res 1
+tmp_clock:.res 1
+tmp_bkup: .res 1
+tmp_step: .res 1
+_frames:  .res 2                ; u16 frame counter (read by C)
 
         .code
 
@@ -73,118 +84,343 @@ _vbl_install:
         cli
         rts
 
-; void pcm_ring_start(void);  tail to ring base, start the feed IRQ
-_pcm_ring_start:
+; void __fastcall__ dac_stop(unsigned char slot);
+_dac_stop:
+        cmp     #0
+        bne     @one
         stz     TIM7CTLA
-        stz     AUD3CTL         ; channel D shifter off: OUTPUT is ours
+        phx
+        ldx     _dac_off
+        stz     AUD0CTL,x
+        stz     AUD0DAC,x
+        plx
+        stz     _dac_mode
+        rts
+@one:   stz     TIM5CTLA
+        phx
+        ldx     _dac_off+1
+        stz     AUD0CTL,x
+        stz     AUD0DAC,x
+        plx
+        stz     _dac_mode+1
+        rts
+
+; void pcm_stop(void); stop both DAC slots.
+_pcm_stop:
+        lda     #0
+        jsr     _dac_stop
+        lda     #1
+        jmp     _dac_stop
+
+; void __fastcall__ pcm_ring_start(unsigned char slot);
+_pcm_ring_start:
+        cmp     #0
+        bne     @one
+        stz     TIM7CTLA
+        phx
+        ldx     _dac_off
+        stz     AUD0CTL,x
+        stz     AUD0DAC,x
+        plx
         stz     _pcm_ptr
-        lda     #RING_HI
+        lda     #RING0_HI
         sta     _pcm_ptr+1
-        lda     #PCM_BKUP
+        lda     #1
+        sta     _dac_mode
+        lda     _dac_rate
         sta     TIM7BKUP
         lda     #PCM_CTLA
         sta     TIM7CTLA
         rts
-
-; void pcm_stop(void);
-_pcm_stop:
-        stz     TIM7CTLA
-        stz     AUD3DAC
+@one:   stz     TIM5CTLA
+        phx
+        ldx     _dac_off+1
+        stz     AUD0CTL,x
+        stz     AUD0DAC,x
+        plx
+        stz     _pcm_ptr+2
+        lda     #RING1_HI
+        sta     _pcm_ptr+3
+        lda     #1
+        sta     _dac_mode+1
+        lda     _dac_rate+1
+        sta     TIM5BKUP
+        lda     #PCM_CTLA
+        sta     TIM5CTLA
         rts
 
-; void __fastcall__ wave_start(unsigned char w);  point at sd.waves[w]
+; void __fastcall__ dac_rate_set(unsigned char slot, unsigned char rate);
+; Store even before a deferred cart trigger starts, so same-row S survives.
+_dac_rate_set:
+        sta     tmp_rate
+        jsr     popa
+        tax
+        lda     tmp_rate
+        sta     _dac_rate,x
+        lda     _dac_mode,x
+        beq     @done
+        cpx     #0
+        bne     @one
+        lda     tmp_rate
+        sta     TIM7BKUP
+        rts
+@one:   lda     tmp_rate
+        sta     TIM5BKUP
+@done:  rts
+
+; void __fastcall__ wave_start(unsigned char slot, unsigned char w);
 _wave_start:
-        stz     TIM5CTLA        ; feed off while retargeting
-        stz     AUD2CTL         ; channel C shifter off: OUTPUT is ours
-        ldx     #0
-        stx     wav_pos
-        ; wav_ptr = _sd + WAVES_OFF + w*32
         sta     tmp_w
+        jsr     popa
+        sta     tmp_slot
+        jsr     _dac_stop
+        lda     tmp_slot
+        bne     @one
+        stz     wav_pos
         lda     #<(_sd + WAVES_OFF)
-        sta     wav_ptr
+        sta     wav_ptr0
         lda     #>(_sd + WAVES_OFF)
-        sta     wav_ptr+1
+        sta     wav_ptr0+1
         lda     tmp_w
-        asl     a               ; *32 (w <= 7 so no carry out of 8 bits)
+        asl     a
         asl     a
         asl     a
         asl     a
         asl     a
         clc
-        adc     wav_ptr
-        sta     wav_ptr
-        bcc     :+
-        inc     wav_ptr+1
-:       rts
-tmp_w:  .byte   0
+        adc     wav_ptr0
+        sta     wav_ptr0
+        bcc     @out
+        inc     wav_ptr0+1
+@out:   rts
+@one:   stz     wav_pos+1
+        lda     #<(_sd + WAVES_OFF)
+        sta     wav_ptr1
+        lda     #>(_sd + WAVES_OFF)
+        sta     wav_ptr1+1
+        lda     tmp_w
+        asl     a
+        asl     a
+        asl     a
+        asl     a
+        asl     a
+        clc
+        adc     wav_ptr1
+        sta     wav_ptr1
+        bcc     @out1
+        inc     wav_ptr1+1
+@out1:  rts
 
-; void wave_rate(clock, bkup, step)  (cdecl-ish: step in A, others pushed)
+; void wave_rate(slot, clock, bkup, step); step is the fastcall argument.
 _wave_rate:
-        sta     wav_step        ; step (last arg, fastcall)
-        jsr     popa            ; bkup
+        sta     tmp_step
+        jsr     popa
+        sta     tmp_bkup
+        jsr     popa
+        sta     tmp_clock
+        jsr     popa
+        cmp     #0
+        bne     @one
+        stz     TIM7CTLA
+        lda     tmp_step
+        sta     wav_step
+        lda     tmp_bkup
+        sta     TIM7BKUP
+        lda     #2
+        sta     _dac_mode
+        lda     tmp_clock
+        ora     #$98
+        sta     TIM7CTLA
+        rts
+@one:   stz     TIM5CTLA
+        lda     tmp_step
+        sta     wav_step+1
+        lda     tmp_bkup
         sta     TIM5BKUP
-        jsr     popa            ; clock
-        ora     #$98            ; int enable | count | reload | clock
+        lda     #2
+        sta     _dac_mode+1
+        lda     tmp_clock
+        ora     #$98
         sta     TIM5CTLA
         rts
 
-; void wave_stop(void);
+; void __fastcall__ wave_stop(unsigned char slot);
 _wave_stop:
-        stz     TIM5CTLA
-        stz     AUD2DAC
-        rts
+        jmp     _dac_stop
 
 handler:
         pha
         lda     INTSET
-        and     #$80            ; timer 7: PCM byte due
-        beq     @wave
-        sta     INTRST          ; ack
-        lda     _pcm_ptr         ; ring empty?
+        and     #$80            ; timer 7 -> DAC slot 0
+        bne     @slot0
+        jmp     @slot1
+@slot0:
+        sta     INTRST
+        lda     _dac_mode
+        cmp     #1
+        beq     @s0sample
+        cmp     #2
+        beq     @s0wave
+        stz     TIM7CTLA
+        jmp     @slot1
+
+@s0sample:
+        lda     _pcm_ptr
         cmp     _pcm_head
-        bne     @feed
+        bne     @s0feed
         lda     _pcm_ptr+1
         cmp     _pcm_head+1
-        bne     @feed
-        lda     _pcm_done       ; empty: done -> stop, else hold (underrun)
-        beq     @wave
+        bne     @s0feed
+        lda     _pcm_done
+        beq     @slot1          ; underrun: hold the last DAC value
         stz     TIM7CTLA
-        bra     @wave
-@feed:  lda     (_pcm_ptr)
-        sta     AUD3DAC
-        bpl     @pp             ; peak-hold |sample| for the meter
+        stz     _dac_mode
+        phx
+        ldx     _dac_off
+        stz     AUD0DAC,x
+        plx
+        bra     @slot1
+@s0feed:
+        phx
+        phy
+        lda     (_pcm_ptr)
+        tay
+        bpl     :+
         eor     #$ff
-@pp:    cmp     _pcm_peak
-        bcc     @pd
-        sta     _pcm_peak
-@pd:    inc     _pcm_ptr
-        bne     @wave
-        lda     _pcm_ptr+1
-        inc     a
-        cmp     #RING_END
+:       cmp     _dac_peak
+        bcc     :+
+        sta     _dac_peak
+:       lda     _dac_muted
         bne     :+
-        lda     #RING_HI
-:       sta     _pcm_ptr+1
-@wave:
-        lda     INTSET
-        and     #$20            ; timer 5: wavetable entry due
-        beq     @vbl
-        sta     INTRST
+        tya
+        bra     :++
+:       lda     #0
+:       ldx     _dac_off
+        sta     AUD0DAC,x
+        inc     _pcm_ptr
+        bne     @s0done
+        inc     _pcm_ptr+1
+        lda     _pcm_ptr+1
+        cmp     #RING1_HI
+        bne     @s0done
+        lda     #RING0_HI
+        sta     _pcm_ptr+1
+@s0done:
+        ply
+        plx
+        bra     @slot1
+
+@s0wave:
+        phx
         phy
         ldy     wav_pos
-        lda     (wav_ptr),y
-        sta     AUD2DAC
-        bpl     @wp             ; peak-hold |entry| for the meter
+        lda     (wav_ptr0),y
+        pha
+        bpl     :+
         eor     #$ff
-@wp:    cmp     _wav_peak
-        bcc     @wd
-        sta     _wav_peak
-@wd:    tya
+:       cmp     _dac_peak
+        bcc     :+
+        sta     _dac_peak
+:       pla
+        ldx     _dac_muted
+        beq     :+
+        lda     #0
+:       ldx     _dac_off
+        sta     AUD0DAC,x
+        tya
         clc
         adc     wav_step
-        and     #$1F            ; 32-entry loop
+        and     #$1F
         sta     wav_pos
         ply
+        plx
+
+@slot1:
+        lda     INTSET
+        and     #$20            ; timer 5 -> DAC slot 1
+        bne     @slot1active
+        jmp     @vbl
+@slot1active:
+        sta     INTRST
+        lda     _dac_mode+1
+        cmp     #1
+        beq     @s1sample
+        cmp     #2
+        beq     @s1wave
+        stz     TIM5CTLA
+        jmp     @vbl
+
+@s1sample:
+        lda     _pcm_ptr+2
+        cmp     _pcm_head+2
+        bne     @s1feed
+        lda     _pcm_ptr+3
+        cmp     _pcm_head+3
+        bne     @s1feed
+        lda     _pcm_done+1
+        beq     @vbl
+        stz     TIM5CTLA
+        stz     _dac_mode+1
+        phx
+        ldx     _dac_off+1
+        stz     AUD0DAC,x
+        plx
+        bra     @vbl
+@s1feed:
+        phx
+        phy
+        lda     (_pcm_ptr+2)
+        tay
+        bpl     :+
+        eor     #$ff
+:       cmp     _dac_peak+1
+        bcc     :+
+        sta     _dac_peak+1
+:       lda     _dac_muted+1
+        bne     :+
+        tya
+        bra     :++
+:       lda     #0
+:       ldx     _dac_off+1
+        sta     AUD0DAC,x
+        inc     _pcm_ptr+2
+        bne     @s1done
+        inc     _pcm_ptr+3
+        lda     _pcm_ptr+3
+        cmp     #$D4
+        bne     @s1done
+        lda     #RING1_HI
+        sta     _pcm_ptr+3
+@s1done:
+        ply
+        plx
+        bra     @vbl
+
+@s1wave:
+        phx
+        phy
+        ldy     wav_pos+1
+        lda     (wav_ptr1),y
+        pha
+        bpl     :+
+        eor     #$ff
+:       cmp     _dac_peak+1
+        bcc     :+
+        sta     _dac_peak+1
+:       pla
+        ldx     _dac_muted+1
+        beq     :+
+        lda     #0
+:       ldx     _dac_off+1
+        sta     AUD0DAC,x
+        tya
+        clc
+        adc     wav_step+1
+        and     #$1F
+        sta     wav_pos+1
+        ply
+        plx
+
 @vbl:
         lda     INTSET
         and     #$04            ; timer 2: VBlank
@@ -193,17 +429,17 @@ handler:
         inc     _frames
         bne     :+
         inc     _frames+1
-:       lda     in_tick         ; engine tick, re-entrancy guarded
+:       lda     in_tick
         bne     @out
         inc     in_tick
         phx
         phy
-        ldx     #zpspace-1  ; the cc65 runtime zeropage block
+        ldx     #zpspace-1
 @save:  lda     sp,x
         sta     zpbuf,x
         dex
         bpl     @save
-        cli                     ; let PCM/wave IRQs nest during the tick
+        cli                     ; let DAC IRQs nest during the C engine tick
         jsr     _engine_tick
         sei
         ldx     #zpspace-1
