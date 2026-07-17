@@ -231,6 +231,14 @@ the Lynx serial-EEPROM protocol. The write-enable command is emitted in the
 canonical 93C86 form used by cc65's hardware driver for flashcart
 compatibility.
 
+ALYNXDJ needs the full **2 KB 93C86**. The BennVenn **ElCheapoSD for Lynx has
+a physical 128-byte 93C46** and therefore cannot persist ALYNXDJ songs, even
+though it can load and run the ROM normally. Its SD-facing API is intended for
+menu loaders rather than general file access, so the tracker cannot bypass the
+small EEPROM and write a larger song file directly. A 128-byte `.sav` from
+that cart contains no recoverable ALYNXDJ payload; do not pad it. Carts that
+emulate a 93C86, and the patched Handy core, support the complete save image.
+
 **NEW** wipes the whole song back to a blank slate (it does not touch the
 EEPROM — your last save survives until you SAVE over it). It asks for a
 second B-press: the row turns to SURE, moving the cursor disarms it.

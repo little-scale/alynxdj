@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- Added the standalone `song-file-viewer.html` for validating, viewing,
+  editing, and exporting complete ALYNXDJ EEPROM/SRAM song images locally.
+- Documented the ElCheapoSD hardware boundary: its physical 93C46 provides
+  only 128 bytes, so it can run ALYNXDJ but cannot persist the tracker's
+  2 KB 93C86 song format. Its custom API is menu-oriented rather than general
+  SD filesystem access, so there is no full-song ROM-side fallback.
+- Added precise viewer diagnostics for 128-byte and FAT-directory-data `.sav`
+  files produced by incompatible SD-cart handling.
+
 ## v0.5 — 2026-07-18
 
 Hardware polish and sample patching: this release folds the first focused

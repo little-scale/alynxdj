@@ -50,6 +50,12 @@ decision log):
   ([SAVEFORMAT.md](SAVEFORMAT.md)); **two-unit ComLynx sync** verified in
   a bridged-core harness (0 ms lock)
 
+Hardware song persistence requires a **2 KB 93C86** (physical or emulated).
+The BennVenn **ElCheapoSD for Lynx contains a 128-byte 93C46 only**: it runs
+the ROM, but cannot store an ALYNXDJ song. Use a cart that supports 93C86
+(such as an EEPROM-emulating Lynx GameDrive) or an emulator for persistent
+songs. A 128-byte ElCheapo `.sav` cannot be padded into a valid save.
+
 Remaining to 1.0: the focused real-hardware audio/cart/ComLynx-cable pass
 and upstream PRs (libretro-handy EEPROM fix, cc65 `_UART_TIMER`).
 

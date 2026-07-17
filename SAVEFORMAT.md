@@ -25,6 +25,12 @@ physical 93C86. Emulator images: Handy writes `<rom>.eeprom`
 beside its save dir — 2048 bytes, words little-endian, so the file *is*
 the cell array.
 
+**Cart compatibility:** the BennVenn ElCheapoSD for Lynx contains only a
+93C46 (64 words / 128 bytes) and cannot implement this format. Its exposed
+API is not general-purpose SD filesystem access, so there is no transparent
+larger-file fallback available to a running game. A 93C86-capable physical or
+emulating cart is required for on-device ALYNXDJ song persistence.
+
 **Capacity:** 1016 payload words / **2032 bytes**. Cells 0–3 are the song
 header and cells 1020–1023 are reserved for machine config, so song payload
 occupies cells 4–1019.

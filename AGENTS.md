@@ -86,6 +86,10 @@ using a virtual environment.
   `int r = (int)uchar_var;` then compare against `r`.
 - Boot **autoloads** a valid EEPROM save over `song_demo()` — use a unique ROM
   basename for demo/rig tests to get an isolated emulator EEPROM namespace.
+- **ElCheapoSD for Lynx is not song-save compatible:** it contains a physical
+  128-byte 93C46 only, while ALYNXDJ requires a 2 KB 93C86. It can run the ROM
+  but cannot persist a full song, and its cart API is menu-oriented rather
+  than general SD file access. A 128-byte `.sav` cannot be padded or migrated.
 
 ## The reference projects (read before designing anything)
 

@@ -66,7 +66,9 @@ second-opinion core.
 
 - **The 2 KB EEPROM ceiling** — Q1 is resolved and power-cycle-tested, but
   the current factory image already uses 1265/2032 packed bytes. Keep the
-  FILES meter and PURGE workflow honest; never truncate.
+  FILES meter and PURGE workflow honest; never truncate. Physical carts must
+  actually provide/emulate a 93C86; the 128-byte-93C46-only ElCheapoSD can run
+  ALYNXDJ but cannot persist its songs.
 - **PCM IRQ jitter/cost (Q2)** — 2 voices at 8 kHz ≈ 20 % CPU in IRQs on a
   4 MHz 6502; display DMA steals make jitter worse. Mitigate: asm handler,
   two asm-fed rings; the policy/regression is fixed, final margin is a

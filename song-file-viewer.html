@@ -347,9 +347,9 @@
       const bytes=input instanceof Uint8Array ? Uint8Array.from(input) : new Uint8Array(input);
       if (bytes.length!==EEPROM_BYTES) {
         const hasHeader=bytes.length>=4 && bytes[0]===65 && bytes[1]===76 && bytes[2]===68 && bytes[3]===74;
-        if (looksLikeFatDirectory(bytes)) fail(`This ${formatBytes(bytes.length)} file contains FAT directory entries, not ALYNXDJ EEPROM data. The SD cart or card filesystem did not persist the song; padding this file cannot recover it.`);
+        if (looksLikeFatDirectory(bytes)) fail(`This ${formatBytes(bytes.length)} file contains FAT directory entries, not ALYNXDJ EEPROM data. The SD cart did not persist the song; padding cannot recover it. ElCheapoSD for Lynx uses a 128-byte 93C46 and is not compatible with ALYNXDJ's 2 KB song saves.`);
         if (hasHeader) fail(`This file starts with ALDJ but is truncated to ${formatBytes(bytes.length)}. A complete ALYNXDJ 93C86 image is ${formatBytes(EEPROM_BYTES)}; the missing song bytes cannot be reconstructed.`);
-        if (bytes.length===128) fail(`This is a 128-byte, 93C46-sized file without an ALDJ header. ALYNXDJ requires a ${formatBytes(EEPROM_BYTES)} 93C86 save, so no song data can be imported from it.`);
+        if (bytes.length===128) fail(`This is a 128-byte, 93C46-sized file without an ALDJ header. ALYNXDJ requires a ${formatBytes(EEPROM_BYTES)} 93C86 save, so no song data can be imported from it. ElCheapoSD for Lynx contains only the smaller 93C46.`);
         fail(`Expected a ${formatBytes(EEPROM_BYTES)} 93C86 image, got ${formatBytes(bytes.length)}.`);
       }
       if (bytes[0]!==65 || bytes[1]!==76 || bytes[2]!==68 || bytes[3]!==74) fail("This is not an ALYNXDJ song save (missing ALDJ header).");
