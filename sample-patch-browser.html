@@ -1,0 +1,502 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="Replace, audition, and patch the sample kits inside a built ALYNXDJ ROM—all locally in one HTML file.">
+  <title>ALYNXDJ Sample Patch Browser</title>
+  <style>
+    :root {
+      --ink:#110f1b; --ink2:#1a1628; --panel:#1d192beb; --panel2:#252038;
+      --line:#d9d6e829; --muted:#aaa5bd; --paper:#f6f3ff; --acid:#d9ff4f;
+      --aqua:#58f3d2; --violet:#a581ff; --red:#ff6f7f;
+    }
+    * { box-sizing:border-box }
+    html { min-width:320px; background:var(--ink) }
+    body {
+      min-height:100vh; margin:0; color:var(--paper);
+      background:
+        linear-gradient(#58f3d206 1px,transparent 1px),
+        linear-gradient(90deg,#58f3d206 1px,transparent 1px),
+        radial-gradient(circle at 12% -8%,#a581ff40,transparent 31rem),var(--ink);
+      background-size:32px 32px,32px 32px,auto,auto;
+      font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    }
+    button,input { font:inherit }
+    button,label { -webkit-tap-highlight-color:transparent }
+    button:focus-visible,label:focus-within,[role=tab]:focus-visible {
+      outline:2px solid var(--acid); outline-offset:3px;
+    }
+    .shell { width:min(1180px,calc(100% - 40px)); margin:auto; padding:52px 0 28px }
+    .hero { display:flex; justify-content:space-between; align-items:flex-end; gap:32px; margin-bottom:36px }
+    .eyebrow { margin:0 0 10px; color:var(--aqua); letter-spacing:.18em; font:700 12px/1.2 ui-monospace,SFMono-Regular,Menlo,monospace }
+    .hero h1 { margin:0; letter-spacing:-.055em; font:800 clamp(40px,7vw,76px)/.92 ui-sans-serif,system-ui,sans-serif }
+    .lede { max-width:710px; margin:19px 0 0; color:#c7c2d5; font-size:18px; line-height:1.55 }
+    .local-badge { display:flex; flex:none; align-items:center; gap:9px; padding:10px 13px; color:#d6fff7; background:#58f3d212; border:1px solid #58f3d259; text-transform:uppercase; letter-spacing:.06em; font:650 12px/1 ui-monospace,SFMono-Regular,monospace }
+    .local-badge span,.status-dot { width:8px; height:8px; border-radius:50%; background:var(--aqua); box-shadow:0 0 14px var(--aqua) }
+    .step-strip { display:grid; grid-template-columns:repeat(3,1fr); margin-bottom:18px; background:#110f1ba6; border:1px solid var(--line) }
+    .step-strip div { position:relative; display:flex; align-items:center; gap:13px; padding:16px 18px; color:#777187; border-right:1px solid var(--line); text-transform:uppercase; letter-spacing:.08em; font-size:13px }
+    .step-strip div:last-child { border:0 }
+    .step-strip b { font:700 11px/1 ui-monospace,SFMono-Regular,monospace }
+    .step-strip .active { color:var(--paper) }
+    .step-strip .active b { color:var(--acid) }
+    .step-strip .done { color:#a9dfd4 }
+    .step-strip .done:after { content:""; position:absolute; right:0; bottom:-1px; left:0; height:2px; background:var(--aqua) }
+    .panel { background:var(--panel); border:1px solid var(--line); box-shadow:0 24px 80px #00000038 }
+    .load-panel { padding:18px }
+    .dropzone { display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:430px; padding:48px 24px; text-align:center; background:radial-gradient(circle,#a581ff1f,transparent 48%); border:1px dashed #a581ff8f; transition:.2s }
+    .dropzone:hover,.dropzone.dragging { border-color:var(--acid); background:radial-gradient(circle,#d9ff4f14,transparent 48%) }
+    .cart-mark { position:relative; width:72px; height:88px; margin-bottom:26px; border:2px solid var(--aqua); border-radius:8px 8px 3px 3px; box-shadow:inset 0 0 0 8px #58f3d20d,0 0 26px #58f3d21f }
+    .cart-mark:before { content:""; position:absolute; top:-8px; left:17px; width:34px; height:8px; background:var(--ink2); border:2px solid var(--aqua) }
+    .cart-mark:after { content:""; position:absolute; right:14px; bottom:14px; left:14px; height:12px; background:repeating-linear-gradient(90deg,var(--acid) 0 3px,transparent 3px 7px) }
+    .cart-mark span { display:grid; height:56px; place-items:center; color:var(--aqua); font:800 20px/1 ui-monospace,monospace }
+    .drop-kicker { color:var(--violet); text-transform:uppercase; letter-spacing:.16em; font:700 11px/1 ui-monospace,monospace }
+    .dropzone h2 { margin:3px 0 10px; letter-spacing:-.03em; font-size:clamp(25px,4vw,38px) }
+    .dropzone>p:not(.drop-kicker) { max-width:620px; color:var(--muted); line-height:1.55 }
+    .primary,.download { padding:14px 22px; color:#171520; background:var(--acid); border:0; cursor:pointer; font-weight:800; box-shadow:4px 4px #d9ff4f38 }
+    .primary { min-width:160px; margin-top:17px }
+    .primary:hover,.download:hover { background:#e7ff89; transform:translateY(-1px) }
+    .primary:disabled,.download:disabled { opacity:.36; cursor:not-allowed; transform:none }
+    .spec-row { display:grid; grid-template-columns:repeat(3,1fr); margin-top:18px; border-top:1px solid var(--line) }
+    .spec-row span { padding:18px; color:var(--muted); text-align:center; text-transform:uppercase; letter-spacing:.06em; font:12px/1.4 ui-monospace,monospace }
+    .spec-row b { color:var(--paper) }
+    .rom-bar { display:grid; grid-template-columns:minmax(280px,1.8fr) 1fr 1fr auto; align-items:center; gap:20px; margin-bottom:18px; padding:17px 20px }
+    .rom-identity { display:flex; align-items:center; gap:14px; min-width:0 }
+    .rom-identity div,.rom-stat { display:grid; gap:5px; min-width:0 }
+    .rom-bar small,.export-panel small { color:var(--muted); letter-spacing:.12em; font:700 10px/1 ui-monospace,monospace }
+    .rom-identity strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+    .rom-stat strong { font:650 13px/1.2 ui-monospace,monospace }
+    .secondary,.text-button,.audition,.replace,.revert { color:var(--paper); background:#ffffff09; border:1px solid var(--line); cursor:pointer }
+    .secondary { padding:10px 14px; font-size:13px }
+    .secondary:hover,.audition:hover,.replace:hover { background:#58f3d212; border-color:var(--aqua) }
+    .text-button { padding:10px 4px; color:var(--muted); border-color:transparent }
+    .text-button:hover { color:var(--red) }
+    .secondary:disabled,.text-button:disabled { opacity:.35; cursor:not-allowed }
+    .workspace { padding:26px }
+    .workspace-head { display:flex; justify-content:space-between; align-items:flex-end; gap:24px; margin-bottom:24px }
+    .workspace-head h2 { margin:0; letter-spacing:-.025em; font-size:25px }
+    .toolbar { display:flex; align-items:center; gap:14px }
+    .kit-tabs { display:grid; grid-template-columns:repeat(8,1fr); margin-bottom:22px; overflow-x:auto; border:1px solid var(--line) }
+    .kit-tabs button { position:relative; display:grid; align-content:center; gap:5px; min-width:95px; min-height:70px; padding:11px 14px; color:var(--muted); background:#171422; border:0; border-right:1px solid var(--line); cursor:pointer; text-align:left }
+    .kit-tabs button:last-child { border-right:0 }
+    .kit-tabs b { color:#6d667e; font:700 10px/1 ui-monospace,monospace }
+    .kit-tabs span { font-size:12px; font-weight:700; white-space:nowrap }
+    .kit-tabs button.selected { color:var(--paper); background:var(--panel2); box-shadow:inset 0 -3px var(--acid) }
+    .kit-tabs button.selected b { color:var(--acid) }
+    .kit-tabs i { position:absolute; top:9px; right:9px; width:6px; height:6px; background:var(--violet); border-radius:50%; box-shadow:0 0 10px var(--violet) }
+    .sample-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:12px }
+    .sample-card { min-width:0; padding:16px; background:#181522; border:1px solid var(--line); transition:.18s }
+    .sample-card:hover,.sample-card.dragging { border-color:#58f3d266; transform:translateY(-2px) }
+    .sample-card.changed { background:linear-gradient(145deg,#a581ff1a,transparent 62%),#181522; border-color:#a581ff8c }
+    .sample-title { display:flex; align-items:center; gap:10px; min-width:0 }
+    .pad-number { display:grid; flex:0 0 33px; width:33px; height:33px; place-items:center; color:var(--acid); border:1px solid #d9ff4f40; font:700 11px/1 ui-monospace,monospace }
+    .sample-title div { flex:1; min-width:0 }
+    .sample-title h3 { margin:0 0 4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:13px }
+    .sample-title p { margin:0; color:#756f85; text-transform:uppercase; font:10px/1 ui-monospace,monospace }
+    .changed-tag,.warning-chip { padding:4px 6px; color:#171520; background:var(--violet); font:800 9px/1 ui-monospace,monospace }
+    .warning-chip { color:#271c0f; background:#ffc85c }
+    .waveform { display:flex; align-items:center; gap:2px; height:48px; margin:15px 0 11px; overflow:hidden }
+    .waveform span { flex:1 1 0; min-width:1px; background:var(--aqua); opacity:.68 }
+    .changed .waveform span { background:var(--violet); opacity:.86 }
+    .sample-meta { display:flex; align-items:center; gap:9px; min-height:18px; color:var(--muted); text-transform:uppercase; font:10px/1 ui-monospace,monospace }
+    .sample-actions { display:grid; grid-template-columns:1fr 1fr; gap:7px; margin-top:14px }
+    .audition,.replace,.revert { display:flex; align-items:center; justify-content:center; gap:7px; min-height:34px; padding:8px; font-size:11px; font-weight:700 }
+    .replace { cursor:pointer }
+    .revert { grid-column:1/-1; color:#d3c5ff; border-color:#a581ff47 }
+    .revert:hover { color:#ffd9de; border-color:var(--red) }
+    .drop-hint { display:none; position:absolute; inset:8px; place-items:center; color:var(--acid); background:#110f1be8; border:1px dashed var(--acid); font:700 11px/1 ui-monospace,monospace }
+    .sample-card { position:relative }
+    .sample-card.dragging .drop-hint { display:grid }
+    .export-panel { display:grid; grid-template-columns:1.6fr 1fr; align-items:center; gap:40px; margin-top:18px; padding:23px 26px }
+    .capacity-label { display:flex; justify-content:space-between; align-items:flex-end; margin-bottom:10px }
+    .capacity-label>div { display:grid; gap:6px }
+    .capacity-label>span { color:var(--acid); font:700 13px/1 ui-monospace,monospace }
+    .meter { height:8px; overflow:hidden; background:#0f0d17 }
+    .meter span { display:block; height:100%; background:linear-gradient(90deg,var(--aqua),var(--acid)); transition:width .25s }
+    .capacity p { margin:9px 0 0; color:var(--muted); font-size:12px }
+    .invalid .meter span { background:var(--red) }
+    .invalid .capacity p { color:#ffb5bd }
+    .export-action { display:flex; justify-content:flex-end; align-items:center; gap:20px }
+    .export-action>div { display:grid; justify-items:end }
+    .export-action strong { color:var(--violet); font:800 24px/1 ui-monospace,monospace }
+    .export-action span { color:var(--muted); font-size:11px }
+    .download { min-height:48px }
+    .download span { margin-left:6px; color:#171520; font-size:18px }
+    .notice { display:flex; align-items:center; gap:10px; min-height:43px; margin-top:12px; padding:10px 13px; color:#b9b4c8; background:#58f3d20b; border-left:2px solid var(--aqua); font:12px/1.45 ui-monospace,monospace }
+    .notice>span { color:var(--aqua); font-size:22px }
+    .notice.error { color:#ffd7dc; background:#ff6f7f12; border-color:var(--red) }
+    .notice.error>span { color:var(--red) }
+    footer { display:flex; justify-content:space-between; gap:20px; padding:24px 2px 0; color:#5e586d; text-transform:uppercase; letter-spacing:.1em; font:9px/1.4 ui-monospace,monospace }
+    [hidden] { display:none!important }
+    @media (max-width:960px) {
+      .sample-grid { grid-template-columns:repeat(2,1fr) }
+      .rom-bar { grid-template-columns:1.5fr 1fr auto }
+      .rom-stat:first-of-type { display:none }
+      .export-panel { grid-template-columns:1fr; gap:24px }
+      .export-action { justify-content:space-between }
+    }
+    @media (max-width:680px) {
+      .shell { width:min(calc(100% - 22px),1180px); padding-top:28px }
+      .hero { flex-direction:column; align-items:flex-start }
+      .hero h1 { font-size:46px }
+      .lede { font-size:16px }
+      .step-strip div { gap:7px; padding:13px 9px; font-size:10px }
+      .load-panel { padding:9px }
+      .dropzone { min-height:370px; padding:36px 18px }
+      .spec-row { grid-template-columns:1fr }
+      .spec-row span { padding:11px; border-bottom:1px solid var(--line) }
+      .rom-bar { grid-template-columns:1fr auto; gap:12px }
+      .rom-stat { display:none }
+      .workspace { padding:17px 12px }
+      .workspace-head { flex-direction:column; align-items:flex-start }
+      .toolbar { justify-content:space-between; width:100% }
+      .sample-grid { grid-template-columns:1fr }
+      .sample-card:hover { transform:none }
+      .export-panel { padding:18px }
+      .export-action { flex-direction:column; align-items:stretch }
+      .export-action>div { grid-template-columns:auto 1fr; justify-content:start; place-items:baseline start; gap:8px }
+      footer { flex-direction:column }
+    }
+    @media (prefers-reduced-motion:reduce) { *,:before,:after { transition:none!important } }
+  </style>
+</head>
+<body>
+  <main id="app" class="shell"></main>
+  <noscript>This tool needs JavaScript enabled to read and patch ROM files locally.</noscript>
+  <script id="patcher-script">
+  (() => {
+    "use strict";
+
+    const ROM_BYTES = 262208;                 // 64-byte .lnx header + 256 KB cart
+    const POOL_OFFSET = 64 + 45 * 1024;       // cart block 45
+    const POOL_CAPACITY = ROM_BYTES - POOL_OFFSET;
+    const PCM_RATE = 7812.5;
+    const SLOT_CAP = 16000;
+    const KIT_NAMES = ["808","909","C78","606","Speech 1","Speech 2","Speech 3","Speech 4"];
+    const PAD_NAMES = ["Pad 1","Pad 2","Pad 3","Pad 4","Pad 5","Pad 6","Pad 7","Pad 8"];
+
+    function fail(message) { throw new Error(message) }
+    function readU24(bytes, offset) { return bytes[offset] | bytes[offset+1] << 8 | bytes[offset+2] << 16 }
+    function readU16(bytes, offset) { return bytes[offset] | bytes[offset+1] << 8 }
+    function writeU24(bytes, offset, value) {
+      bytes[offset] = value & 255; bytes[offset+1] = value >> 8 & 255; bytes[offset+2] = value >> 16 & 255;
+    }
+    function writeU16(bytes, offset, value) {
+      bytes[offset] = value & 255; bytes[offset+1] = value >> 8 & 255;
+    }
+
+    function parseRom(input) {
+      const bytes = input instanceof Uint8Array ? Uint8Array.from(input) : new Uint8Array(input.slice(0));
+      if (bytes.length !== ROM_BYTES) fail(`Expected a ${formatBytes(ROM_BYTES)} ALYNXDJ ROM, got ${formatBytes(bytes.length)}.`);
+      if (bytes[0] !== 76 || bytes[1] !== 89 || bytes[2] !== 78 || bytes[3] !== 88)
+        fail("This file is not a valid .lnx cartridge image (missing LYNX header).");
+      if (bytes[POOL_OFFSET] !== 80 || bytes[POOL_OFFSET+1] !== 76)
+        fail("No ALYNXDJ sample pool was found at cart block 45. Use a built ALYNXDJ ROM.");
+      const kitCount = bytes[POOL_OFFSET+2];
+      if (kitCount < 1 || kitCount > 8) fail(`The ROM declares ${kitCount} sample kits; ALYNXDJ supports 1–8.`);
+      const directorySize = 4 + kitCount * 8 * 5;
+      const kits = [];
+      let poolUsed = directorySize, previousEnd = directorySize;
+      for (let kit=0; kit<kitCount; kit++) {
+        const row = [];
+        for (let slot=0; slot<8; slot++) {
+          const entry = POOL_OFFSET + 4 + (kit*8+slot)*5;
+          const relativeOffset = readU24(bytes,entry);
+          const length = readU16(bytes,entry+3);
+          const end = relativeOffset + length;
+          if (relativeOffset < directorySize || end > POOL_CAPACITY)
+            fail(`Kit ${kit+1}, pad ${slot+1} points outside the sample pool.`);
+          if (relativeOffset < previousEnd) fail(`Kit ${kit+1}, pad ${slot+1} overlaps an earlier sample.`);
+          if (length < 1 || length > SLOT_CAP) fail(`Kit ${kit+1}, pad ${slot+1} has an unsupported sample length.`);
+          const start = POOL_OFFSET + relativeOffset;
+          row.push(new Int8Array(bytes.buffer.slice(start,start+length)));
+          previousEnd = end; poolUsed = Math.max(poolUsed,end);
+        }
+        kits.push(row);
+      }
+      return {bytes,kits,kitCount,poolUsed};
+    }
+
+    function buildPool(kits) {
+      if (kits.length < 1 || kits.length > 8) fail("A pool must contain 1–8 kits.");
+      for (const [kitIndex,kit] of kits.entries()) {
+        if (kit.length !== 8) fail(`Kit ${kitIndex+1} must contain exactly 8 pads.`);
+        for (const [slotIndex,sample] of kit.entries())
+          if (sample.length < 1 || sample.length > SLOT_CAP)
+            fail(`Kit ${kitIndex+1}, pad ${slotIndex+1} exceeds the ${SLOT_CAP}-byte slot limit.`);
+      }
+      const directorySize = 4 + kits.length * 8 * 5;
+      const used = kits.reduce((total,kit) => total + kit.reduce((sum,sample) => sum+sample.length,0),directorySize);
+      if (used > POOL_CAPACITY)
+        fail(`The sample pool needs ${formatBytes(used)}, but the ROM has ${formatBytes(POOL_CAPACITY)} available.`);
+      const pool = new Uint8Array(used);
+      pool.set([80,76,kits.length,0]);
+      let entry=4, sampleOffset=directorySize;
+      for (const kit of kits) for (const sample of kit) {
+        writeU24(pool,entry,sampleOffset); writeU16(pool,entry+3,sample.length);
+        pool.set(new Uint8Array(sample.buffer,sample.byteOffset,sample.byteLength),sampleOffset);
+        entry += 5; sampleOffset += sample.length;
+      }
+      return pool;
+    }
+
+    function patchRom(source,kits) {
+      const pool = buildPool(kits);
+      const patched = Uint8Array.from(source.bytes);
+      patched.fill(0,POOL_OFFSET); patched.set(pool,POOL_OFFSET);
+      return patched;
+    }
+
+    function roundHalfToEven(value) {
+      const sign=value<0?-1:1, absolute=Math.abs(value), lower=Math.floor(absolute), fraction=absolute-lower;
+      if (fraction<.5) return sign*lower;
+      if (fraction>.5) return sign*(lower+1);
+      return sign*(lower%2===0?lower:lower+1);
+    }
+
+    function convertChannels(channels,sourceRate) {
+      if (!channels.length || !channels[0].length || !Number.isFinite(sourceRate) || sourceRate<=0)
+        fail("The selected audio file contains no decodable samples.");
+      const sourceLength=Math.min(...channels.map(channel=>channel.length));
+      const mono=new Float32Array(sourceLength);
+      for (let i=0;i<sourceLength;i++) {
+        let sum=0; for (const channel of channels) sum+=channel[i]; mono[i]=sum/channels.length;
+      }
+      const resampledLength=Math.max(1,Math.floor(sourceLength*PCM_RATE/sourceRate));
+      const resampled=new Float32Array(resampledLength), sourcePerOutput=sourceRate/PCM_RATE;
+      for (let i=0;i<resampledLength;i++) {
+        const position=i*sourcePerOutput, left=Math.min(sourceLength-1,Math.floor(position));
+        const right=Math.min(sourceLength-1,left+1), mix=position-left;
+        resampled[i]=mono[left]+(mono[right]-mono[left])*mix;
+      }
+      const threshold=10**(-48/20); let lastAudible=-1;
+      for (let i=resampled.length-1;i>=0;i--) if (Math.abs(resampled[i])>threshold) { lastAudible=i; break }
+      const trimmedLength=lastAudible>=0?Math.min(resampled.length,lastAudible+Math.floor(.01*PCM_RATE)):resampled.length;
+      const outputLength=Math.min(trimmedLength,SLOT_CAP); let peak=0;
+      for (let i=0;i<outputLength;i++) peak=Math.max(peak,Math.abs(resampled[i]));
+      if (!peak) peak=1;
+      const pcm=new Int8Array(outputLength);
+      for (let i=0;i<outputLength;i++) pcm[i]=Math.max(-127,Math.min(127,roundHalfToEven(resampled[i]/peak*120)));
+      return {pcm,sourceDuration:sourceLength/sourceRate,outputDuration:outputLength/PCM_RATE,
+              wasCapped:trimmedLength>SLOT_CAP,wasTrimmed:trimmedLength<resampled.length};
+    }
+
+    function sampleDuration(sample) { return sample.length/PCM_RATE }
+    function formatBytes(bytes) {
+      if (bytes>=1024*1024) return `${(bytes/(1024*1024)).toFixed(2)} MB`;
+      if (bytes>=1024) return `${(bytes/1024).toFixed(1)} KB`;
+      return `${bytes} B`;
+    }
+    function outputName(name) { return `${name.replace(/\.lnx$/i,"")||"alynxdj"}-sample-patched.lnx` }
+
+    globalThis.ALynxSamplePatcherCore = {
+      ROM_BYTES,POOL_OFFSET,POOL_CAPACITY,PCM_RATE,SLOT_CAP,parseRom,buildPool,patchRom,convertChannels
+    };
+    if (typeof document === "undefined") return;
+
+    const app=document.getElementById("app");
+    const state={rom:null,romName:"",activeKit:0,replacements:new Map(),message:"Load a built ALYNXDJ ROM to begin.",error:"",busy:false,playingIndex:null,audioContext:null,audioSource:null};
+    const html=value=>String(value).replace(/[&<>"']/g,char=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]));
+    const percent=(value,total)=>Math.min(100,value/total*100);
+    const changedInKit=kit=>[...state.replacements.keys()].some(index=>Math.floor(index/8)===kit);
+    const effectiveKits=()=>state.rom.kits.map((kit,k)=>kit.map((sample,s)=>state.replacements.get(k*8+s)?.pcm||sample));
+    function poolState() {
+      if (!state.rom) return {used:0,valid:false,reason:""};
+      try { return {used:buildPool(effectiveKits()).length,valid:true,reason:""} }
+      catch (problem) {
+        const used=4+state.rom.kitCount*40+effectiveKits().flat().reduce((total,sample)=>total+sample.length,0);
+        return {used,valid:false,reason:problem instanceof Error?problem.message:"The sample pool is too large."};
+      }
+    }
+    function waveform(sample) {
+      const values=[];
+      for (let bar=0;bar<48;bar++) {
+        const start=Math.floor(bar*sample.length/48), end=Math.max(start+1,Math.floor((bar+1)*sample.length/48)); let peak=0;
+        for (let i=start;i<Math.min(end,sample.length);i++) peak=Math.max(peak,Math.abs(sample[i]));
+        values.push(Math.max(2,Math.round(peak/127*30)));
+      }
+      return values.map(height=>`<span style="height:${height}px"></span>`).join("");
+    }
+    function input(accept,id,multiple=false) {
+      return `<input id="${id}" hidden type="file" accept="${accept}"${multiple?" multiple":""}>`;
+    }
+    function renderSteps() {
+      const changed=state.replacements.size;
+      return `<section class="step-strip" aria-label="Workflow">
+        <div class="${state.rom?"done":"active"}"><b>01</b><span>Load ROM</span></div>
+        <div class="${state.rom?"active":""}"><b>02</b><span>Replace WAVs</span></div>
+        <div class="${changed?"active":""}"><b>03</b><span>Patch &amp; download</span></div>
+      </section>`;
+    }
+    function renderLoad() {
+      return `<section class="load-panel panel">
+        <div class="dropzone" data-rom-drop>
+          <div class="cart-mark" aria-hidden="true"><span>PL</span></div>
+          <p class="drop-kicker">Start with a cartridge</p>
+          <h2>Drop an ALYNXDJ <code>.lnx</code> ROM here</h2>
+          <p>The tool checks the Lynx header, ROM size, and block-45 sample directory before editing.</p>
+          <button class="primary" data-action="choose-rom" type="button" ${state.busy?"disabled":""}>${state.busy?"Reading ROM…":"Choose ROM"}</button>
+          ${input(".lnx,application/octet-stream","romInput")}
+        </div>
+        <div class="spec-row">
+          <span><b>64</b> sample slots</span><span><b>7.8125 kHz</b> signed 8-bit PCM</span><span><b>2.048 s</b> maximum per slot</span>
+        </div>
+      </section>`;
+    }
+    function renderRomBar(pool) {
+      return `<section class="rom-bar panel">
+        <div class="rom-identity"><span class="status-dot"></span><div><small>ROM LOADED</small><strong>${html(state.romName)}</strong></div></div>
+        <div class="rom-stat"><small>IMAGE</small><strong>256 KB cart</strong></div>
+        <div class="rom-stat"><small>POOL</small><strong>${formatBytes(pool.used)} / ${formatBytes(POOL_CAPACITY)}</strong></div>
+        <button class="secondary" data-action="choose-rom" type="button">Change ROM</button>
+        ${input(".lnx,application/octet-stream","romInput")}
+      </section>`;
+    }
+    function renderWorkspace(kits) {
+      const kit=state.activeKit;
+      const tabs=state.rom.kits.map((_,index)=>`<button type="button" role="tab" aria-selected="${kit===index}" class="${kit===index?"selected":""}" data-kit="${index}"><b>${String(index+1).padStart(2,"0")}</b><span>${html(KIT_NAMES[index]||`Kit ${index+1}`)}</span>${changedInKit(index)?"<i></i>":""}</button>`).join("");
+      const cards=kits[kit].map((sample,slot)=>{
+        const index=kit*8+slot, replacement=state.replacements.get(index), playing=state.playingIndex===index;
+        return `<article class="sample-card ${replacement?"changed":""}" data-slot="${index}">
+          <div class="drop-hint">DROP WAV TO REPLACE</div>
+          <div class="sample-title"><span class="pad-number">${String(slot+1).padStart(2,"0")}</span><div><h3>${html(replacement?.fileName||PAD_NAMES[slot])}</h3><p>${replacement?"Replacement WAV":"From loaded ROM"}</p></div>${replacement?'<span class="changed-tag">NEW</span>':""}</div>
+          <div class="waveform" aria-hidden="true">${waveform(sample)}</div>
+          <div class="sample-meta"><span>${sampleDuration(sample).toFixed(3)} s</span><span>${formatBytes(sample.length)}</span>${replacement?.wasCapped?'<span class="warning-chip">CAPPED</span>':""}</div>
+          <div class="sample-actions">
+            <button class="audition" data-action="audition" data-index="${index}" type="button"><span aria-hidden="true">${playing?"■":"▶"}</span>${playing?"Playing":"Audition"}</button>
+            <label class="replace">Replace<input hidden type="file" accept=".wav,audio/wav,audio/x-wav" data-sample-input="${index}"></label>
+            ${replacement?`<button class="revert" data-action="revert" data-index="${index}" type="button">Revert</button>`:""}
+          </div>
+        </article>`;
+      }).join("");
+      return `<section class="workspace panel">
+        <div class="workspace-head"><div><p class="eyebrow">SAMPLE DIRECTORY</p><h2>Choose a kit, then replace any pad</h2></div>
+          <div class="toolbar"><button class="secondary" data-action="choose-kit" type="button" ${state.busy?"disabled":""}>Replace this kit…</button>${input(".wav,audio/wav,audio/x-wav","kitInput",true)}<button class="text-button" data-action="reset" type="button" ${state.replacements.size?"":"disabled"}>Reset all</button></div>
+        </div>
+        <div class="kit-tabs" role="tablist" aria-label="Sample kits">${tabs}</div>
+        <div class="sample-grid" role="tabpanel">${cards}</div>
+      </section>`;
+    }
+    function renderExport(pool) {
+      const changed=state.replacements.size;
+      return `<section class="export-panel panel ${pool.valid?"":"invalid"}">
+        <div class="capacity"><div class="capacity-label"><div><small>CART SAMPLE CAPACITY</small><strong>${formatBytes(pool.used)} used</strong></div><span>${percent(pool.used,POOL_CAPACITY).toFixed(1)}%</span></div>
+          <div class="meter"><span style="width:${percent(pool.used,POOL_CAPACITY)}%"></span></div><p>${pool.valid?`${formatBytes(POOL_CAPACITY-pool.used)} remains after the directory and sample data.`:html(pool.reason)}</p></div>
+        <div class="export-action"><div><strong>${changed}</strong><span>sample${changed===1?"":"s"} replaced</span></div><button class="download" data-action="download" type="button" ${!changed||!pool.valid||state.busy?"disabled":""}>Patch &amp; download ROM <span aria-hidden="true">↓</span></button></div>
+      </section>`;
+    }
+    function render() {
+      const pool=poolState(), kits=state.rom?effectiveKits():[];
+      app.innerHTML=`<header class="hero"><div><p class="eyebrow">ALYNXDJ / CART LAB</p><h1>Sample Patch Browser</h1><p class="lede">Load a built ROM, swap its kit samples, audition the result, and download a new cartridge image.</p></div><div class="local-badge"><span></span>Runs entirely in your browser</div></header>
+        ${renderSteps()}${state.rom?renderRomBar(pool)+renderWorkspace(kits)+renderExport(pool):renderLoad()}
+        <div class="notice ${state.error?"error":""}" role="status" aria-live="polite"><span>${state.error?"!":"·"}</span>${html(state.error||state.message)}</div>
+        <footer><span>ALYNXDJ SAMPLE PATCH BROWSER</span><span>WAV → MONO → 7.8125 KHZ → SIGNED 8-BIT PCM</span><span>No files leave this page</span></footer>`;
+    }
+    function clearNotices() { state.error="" }
+    function report(problem,fallback) { state.error=problem instanceof Error?problem.message:fallback; state.busy=false; render() }
+    async function loadRom(file) {
+      clearNotices(); state.busy=true; render();
+      try {
+        const parsed=parseRom(await file.arrayBuffer());
+        state.rom=parsed; state.romName=file.name; state.replacements.clear(); state.activeKit=0;
+        state.message=`${file.name} loaded — ${parsed.kitCount*8} sample slots ready.`;
+        state.busy=false; render();
+      } catch (problem) { report(problem,"The ROM could not be loaded.") }
+    }
+    async function audioContext() {
+      if (!state.audioContext) {
+        const Context=window.AudioContext||window.webkitAudioContext;
+        if (!Context) fail("This browser does not provide Web Audio support.");
+        state.audioContext=new Context();
+      }
+      if (state.audioContext.state==="suspended") await state.audioContext.resume();
+      return state.audioContext;
+    }
+    async function decodeSample(file) {
+      const context=await audioContext(); let decoded;
+      try { decoded=await context.decodeAudioData(await file.arrayBuffer()) }
+      catch { fail(`${file.name} is not a WAV file this browser can decode.`) }
+      return {...convertChannels(Array.from({length:decoded.numberOfChannels},(_,channel)=>decoded.getChannelData(channel)),decoded.sampleRate),fileName:file.name};
+    }
+    async function replaceSlot(index,file) {
+      clearNotices(); state.busy=true; render();
+      try {
+        const replacement=await decodeSample(file); state.replacements.set(index,replacement);
+        state.message=`${file.name} prepared for kit ${Math.floor(index/8)+1}, pad ${index%8+1}.`;
+        state.busy=false; render();
+      } catch (problem) { report(problem,"The sample could not be converted.") }
+    }
+    async function replaceKit(files) {
+      clearNotices(); state.busy=true; render();
+      try {
+        const ordered=[...files].filter(file=>file.name.toLowerCase().endsWith(".wav")).sort((a,b)=>a.name.localeCompare(b.name)).slice(0,8);
+        if (!ordered.length) fail("Choose one to eight WAV files.");
+        const converted=await Promise.all(ordered.map(decodeSample));
+        converted.forEach((sample,slot)=>state.replacements.set(state.activeKit*8+slot,sample));
+        state.message=`${converted.length} WAV ${converted.length===1?"file":"files"} prepared for kit ${state.activeKit+1}.`;
+        state.busy=false; render();
+      } catch (problem) { report(problem,"The kit could not be converted.") }
+    }
+    async function audition(index) {
+      clearNotices();
+      if (state.playingIndex===index && state.audioSource) { state.audioSource.stop(); state.audioSource=null; state.playingIndex=null; render(); return }
+      const context=await audioContext(), sample=effectiveKits()[Math.floor(index/8)][index%8];
+      if (state.audioSource) { try { state.audioSource.stop() } catch {} }
+      const outputLength=Math.max(1,Math.ceil(sample.length*context.sampleRate/PCM_RATE));
+      const buffer=context.createBuffer(1,outputLength,context.sampleRate), output=buffer.getChannelData(0);
+      for (let i=0;i<outputLength;i++) {
+        const position=i*PCM_RATE/context.sampleRate, left=Math.min(sample.length-1,Math.floor(position));
+        const right=Math.min(sample.length-1,left+1), mix=position-left;
+        output[i]=(sample[left]+(sample[right]-sample[left])*mix)/127;
+      }
+      const source=context.createBufferSource(); source.buffer=buffer; source.connect(context.destination);
+      state.audioSource=source; state.playingIndex=index;
+      source.onended=()=>{ if (state.audioSource===source) { state.audioSource=null; state.playingIndex=null; render() } };
+      source.start(); render();
+    }
+    function downloadRom() {
+      if (!state.rom || !state.replacements.size) return;
+      try {
+        const patched=patchRom(state.rom,effectiveKits()), blob=new Blob([patched],{type:"application/octet-stream"});
+        const url=URL.createObjectURL(blob), link=document.createElement("a");
+        link.href=url; link.download=outputName(state.romName); document.body.appendChild(link); link.click(); link.remove();
+        setTimeout(()=>URL.revokeObjectURL(url),0);
+        state.message=`${outputName(state.romName)} downloaded with ${state.replacements.size} replacement${state.replacements.size===1?"":"s"}.`;
+        render();
+      } catch (problem) { report(problem,"The patched ROM could not be created.") }
+    }
+
+    app.addEventListener("click",event=>{
+      const tab=event.target.closest("[data-kit]");
+      if (tab) { state.activeKit=Number(tab.dataset.kit); render(); return }
+      const button=event.target.closest("[data-action]"); if (!button) return;
+      const action=button.dataset.action;
+      if (action==="choose-rom") document.getElementById("romInput").click();
+      else if (action==="choose-kit") document.getElementById("kitInput").click();
+      else if (action==="reset") { state.replacements.clear(); state.message="All replacements cleared; the original ROM samples are active."; clearNotices(); render() }
+      else if (action==="revert") { const index=Number(button.dataset.index); state.replacements.delete(index); state.message=`Kit ${Math.floor(index/8)+1}, pad ${index%8+1} restored to the ROM sample.`; render() }
+      else if (action==="audition") audition(Number(button.dataset.index)).catch(problem=>report(problem,"The sample could not be auditioned."));
+      else if (action==="download") downloadRom();
+    });
+    app.addEventListener("change",event=>{
+      const target=event.target;
+      if (target.id==="romInput" && target.files?.[0]) loadRom(target.files[0]);
+      else if (target.id==="kitInput" && target.files?.length) replaceKit(target.files);
+      else if (target.matches("[data-sample-input]") && target.files?.[0]) replaceSlot(Number(target.dataset.sampleInput),target.files[0]);
+      target.value="";
+    });
+    app.addEventListener("dragover",event=>{
+      const target=event.target.closest("[data-rom-drop],[data-slot]"); if (!target) return;
+      event.preventDefault(); target.classList.add("dragging");
+    });
+    app.addEventListener("dragleave",event=>event.target.closest("[data-rom-drop],[data-slot]")?.classList.remove("dragging"));
+    app.addEventListener("drop",event=>{
+      const target=event.target.closest("[data-rom-drop],[data-slot]"); if (!target) return;
+      event.preventDefault(); target.classList.remove("dragging"); const file=event.dataTransfer.files?.[0]; if (!file) return;
+      if (target.matches("[data-rom-drop]")) loadRom(file); else replaceSlot(Number(target.dataset.slot),file);
+    });
+    render();
+  })();
+  </script>
+</body>
+</html>

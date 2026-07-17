@@ -61,6 +61,14 @@ verification, and a demo-song WAV rendered by the headless harness. The ROM
 has booted and run on a real Lynx; deterministic software/audio regressions
 still use the patched Handy core. Run the ROM in RetroArch or build below.
 
+## Sample patcher
+
+Open [`sample-patch-browser.html`](sample-patch-browser.html) directly in a
+modern browser. It is a single self-contained file: load a built ALYNXDJ ROM,
+replace or audition individual WAVs (or a complete eight-sample kit), then
+patch and save a new `.lnx` image. Conversion to 7.8125 kHz signed 8-bit PCM
+happens locally; no files are uploaded.
+
 ## Building
 
 ```sh

@@ -6,6 +6,10 @@ Four-channel sampling and expressive instruments: this release restores
 Mikey's channel symmetry while adding performance-focused tone modulation
 and faster tracker editing.
 
+- Added a self-contained `sample-patch-browser.html`: it loads a built ROM,
+  validates the block-45 pool, replaces/auditions individual WAVs or full
+  kits, enforces sample and cart capacity, and writes a patched `.lnx`
+  without uploads or external dependencies.
 - Hardware-pass follow-up: NEW instruments now default to TONE, ATK 0,
   HOLD 5, DCY A; empty CHAIN rows present their internal `$FF` transpose
   sentinel as `00`.
