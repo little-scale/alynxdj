@@ -12,8 +12,9 @@ and faster tracker editing.
 - Added instrument **TBS** without growing the 16-byte record: HOLD's high
   nibble stores table speed. TBS 0 advances once per note; 1 is fastest at
   one row per tick; 2–F are progressively slower. Save format is now v6.
-- Slowed `G` tap glide to signed 1/16 tap per tick (`G10` equals the former
-  `G01`) and repurposed `B` as a signed one-shot offset from current taps.
+- Row-clocked `G` tap glide so `G01` moves exactly one tap value per
+  sequencer row regardless of groove/swing; `B` is a signed one-shot offset
+  from current taps.
 - Table VOL now shapes attack/hold but yields permanently at decay, so a
   looping volume table cannot override HOLD/DCY or keep a note alive.
 - Fixed real-hardware PCM ring races by atomically snapshotting the IRQ tail
@@ -23,7 +24,7 @@ and faster tracker editing.
   pattern for stricter SD-cart EEPROM emulators, addressing save files that
   were created but reloaded as the demo.
 - Added a hardware-fix regression covering TBS clocks, finite table-volume
-  envelopes, slow G, signed B, and long/short sample boundaries.
+  envelopes, row-clocked G, signed B, and long/short sample boundaries.
 
 - Fixed PHRASE command-field cuts so they remove only the command and its
   parameter, preserving the row's note and instrument. The clipboard now

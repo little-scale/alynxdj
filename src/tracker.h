@@ -19,7 +19,7 @@
 #define CMD_A    1      /* A xx  run table xx (one-shot; 10 = off) */
 #define CMD_C    2      /* C xy  chord: loop +0,+x,+y semitones per tick */
 #define CMD_D    3      /* D xx  delay trigger xx ticks */
-#define CMD_G    4      /* G xx  glide: signed 1/16-tap per tick (00 = off) */
+#define CMD_G    4      /* G xx  glide: signed taps per sequencer row */
 #define CMD_H    5      /* H xx  table: loop to row x; phrase: end phrase */
 #define CMD_K    6      /* K xx  kill note after xx ticks */
 #define CMD_O    7      /* O xy  pan: ATTEN left x / right y */

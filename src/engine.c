@@ -47,8 +47,8 @@ struct voice {
     unsigned char slide_rate;
     unsigned char vib_speed, vib_depth, vib_phase;
     unsigned char trm_speed, trm_depth, trm_phase;
-    unsigned int  tap_cur;      /* G: 9.4 fixed-point tap value */
-    signed char   tap_rate;     /* G: signed 1/16-tap per tick (0 = off) */
+    unsigned int  tap_cur;      /* G/B: current 9-bit tap value */
+    signed char   tap_rate;     /* G: signed taps per row (0 = off) */
     unsigned char chord[3], chord_len, chord_pos;
     unsigned char kill_in;      /* $FF = none */
     unsigned char table, tpos;  /* tpos = clock<<4 | row; table $FF = none */
@@ -273,10 +273,10 @@ static void pitch_update(unsigned char ch)
     }
 }
 
-/* Map the 9.4 live value onto Mikey's split feedback/control tap bits. */
+/* Map the live 9-bit value onto Mikey's split feedback/control tap bits. */
 static void live_taps(struct voice *v)
 {
-    unsigned taps9 = (v->tap_cur >> 4) & 0x1FF;
+    unsigned taps9 = v->tap_cur & 0x1FF;
     unsigned char lo = (unsigned char)taps9;
     v->sh_feedback = (lo & 0x3F) | ((lo & 0x80) >> 1)
                      | (((taps9 >> 8) & 1) << 7);
@@ -310,13 +310,12 @@ static void exec_cmd(unsigned char ch, unsigned char cmd, unsigned char param)
             v->chord_len = 1;
         v->chord_pos = 0;
         break;
-    case CMD_G:                     /* signed 1/16-tap per engine tick */
+    case CMD_G:                     /* signed whole taps per sequencer row */
         v->tap_rate = (signed char)param;
         break;
     case CMD_B:                     /* signed static offset from live taps */
         if (v->type <= IT_NOISE && v->env_phase) {
-            v->tap_cur = (v->tap_cur + (int)(signed char)param * 16)
-                         & 0x1FFF;
+            v->tap_cur = (v->tap_cur + (signed char)param) & 0x1FF;
             live_taps(v);
         }
         break;
@@ -350,7 +349,7 @@ static void exec_cmd(unsigned char ch, unsigned char cmd, unsigned char param)
     case CMD_N:
         /* absolute taps override (D11): bits 0-5 = taps 0-5, 6 = tap 7,
          * 7 = tap 10 (8-bit, so no tap 11); also seeds the G sweep base */
-        v->tap_cur = (unsigned)param << 4;
+        v->tap_cur = param;
         live_taps(v);
         v->retime = 1;
         break;
@@ -549,7 +548,7 @@ static void trigger(unsigned char ch, unsigned char note, unsigned char inum)
         if (!lo && !(in->taps_hi & 1))
             lo = TAPS_SQUARE;
         v->sh_ctl = 0;
-        v->tap_cur = (lo | ((in->taps_hi & 0x01) << 8)) << 4;
+        v->tap_cur = lo | ((in->taps_hi & 0x01) << 8);
         live_taps(v);
         v->retime = 1;
         v->sh_shiftlo = in->seed_lo;
@@ -1004,8 +1003,16 @@ void engine_tick(void)
     if (eng_playing && eng_tick == 0) {
         unsigned char g = sd.grooves[eng_groove][eng_gpos];
         row_ticks = g ? g : 6;
-        for (ch = 0; ch < NCH; ++ch)
+        for (ch = 0; ch < NCH; ++ch) {
+            struct voice *v = &voices[ch];
             row_start(ch);
+            /* G is tied to musical time: one signed parameter unit per
+             * sequencer row, independent of groove length or swing. */
+            if (v->env_phase && v->tap_rate) {
+                v->tap_cur = (v->tap_cur + v->tap_rate) & 0x1FF;
+                live_taps(v);            /* keep the oscillator running */
+            }
+        }
     }
 
     for (ch = 0; ch < NCH; ++ch) {
@@ -1047,12 +1054,6 @@ void engine_tick(void)
         }
         if (v->env_phase) {
             table_step(ch);
-            if (v->tap_rate) {                   /* G: slow live tap sweep */
-                unsigned old = v->tap_cur >> 4;
-                v->tap_cur = (v->tap_cur + v->tap_rate) & 0x1FFF;
-                if ((v->tap_cur >> 4) != old)
-                    live_taps(v);                /* no oscillator reseed */
-            }
             if (v->bend_rate)
                 v->bend += v->bend_rate;
             if (v->slide_off) {                  /* L: home in on the note */

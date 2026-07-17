@@ -19,6 +19,8 @@ INSTRS = SD + 0x1600
 TABLES = SD + 0x1800
 GROOVES = SD + 0x1C00
 VOICE0 = SD + 0x1E00 + 4 * 7
+WALK0 = SD + 0x1E00
+W_PROW = WALK0 + 6
 V_ENV_PHASE = VOICE0 + 2
 V_ENV_LEVEL = VOICE0 + 3
 V_TAP_CUR = VOICE0 + 20
@@ -124,16 +126,18 @@ def main():
     ram, _ = run(harness, core, rom, build, "tap-offset",
                  rig_pokes(cmd=22, param=5))
     tap = ram[V_TAP_CUR] | ram[V_TAP_CUR + 1] << 8
-    if tap != 6 << 4:
-        fail("B05 produced 9.4 taps $%04X, expected $0060" % tap)
+    if tap != 6:
+        fail("B05 produced taps $%04X, expected $0006" % tap)
 
-    # G01 now moves 1/16 tap per 59.9-Hz tick.  Over this short run it must
-    # move a few taps, not the old roughly-one-tap-per-frame rate.
+    # G01 advances exactly once at each sequencer-row start. The first row
+    # starts at tap 1 and applies G immediately, hence tap = prow + 2.
     ram, _ = run(harness, core, rom, build, "tap-glide",
                  rig_pokes(cmd=4, param=1))
-    tap = (ram[V_TAP_CUR] | ram[V_TAP_CUR + 1] << 8) >> 4
-    if not 3 <= tap <= 7:
-        fail("G01 moved to tap %d; expected the new slow range 3..7" % tap)
+    tap = ram[V_TAP_CUR] | ram[V_TAP_CUR + 1] << 8
+    expected = ram[W_PROW] + 2
+    if tap != expected:
+        fail("G01 moved to tap %d at phrase row %d; expected %d" %
+             (tap, ram[W_PROW], expected))
 
     # Pool members 0 and 1 in kit 0 have deliberately very different source
     # lengths (2270 vs 202 bytes).  Playback must honor each directory length.
@@ -148,7 +152,7 @@ def main():
              (long_dur, short_dur))
 
     print("hardware fixes: PASS — TBS note/tick clocks, finite table VOL "
-          "envelope, slow G, signed B taps, and per-sample lengths")
+          "envelope, row-clocked G, signed B taps, and per-sample lengths")
 
 
 if __name__ == "__main__":

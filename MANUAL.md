@@ -162,7 +162,7 @@ voices do not consume this two-voice budget.
 | `C xy` | chord | loop +0, +x, +y semitones per tick |
 | `D xx` | delay | trigger after xx ticks |
 | `F xx` | finetune | signed offset in 1/16 semitones (one-shot) |
-| `G xx` | glide | signed 1/16-tap-per-tick sweep: `01`–`7F` ramps up, `FF`–`80` down, `00` off — a slow live timbre morph (wraps 0–511; no reseed) |
+| `G xx` | glide | signed taps per sequencer row: `01` advances once each row, `FF` moves back once each row, `00` stops — groove and swing change elapsed time but never the per-row distance (wraps 0–511; no reseed) |
 | `H xx` | hop | phrase: end this phrase after this row; table: loop to row x |
 | `K xx` | kill | cut the note after xx ticks (00 = instant) |
 | `L xx` | slide | glide into this row's note from the previous pitch, xx/16 semitone per tick |
@@ -195,10 +195,10 @@ last row unless `H` loops. Attach via the instrument's TABLE field or a
 phrase `A` command. Table volume may reshape attack/hold, but once decay
 starts the envelope owns the level and always reaches its normal end.
 
-For scale, the former `G01` moved one whole taps value per tick: about 59.9
-values/second and an 8.55-second full wrap. It now moves 1/16 as fast: about
-3.74 values/second and a 136.8-second wrap. `G10` recreates the old `G01`
-speed.
+`G01` moves exactly one taps value per phrase row. With the default six-tick
+row that is about 10 values/second; a full 512-value wrap takes about 51.3
+seconds. Because it follows row boundaries, it remains musically locked when
+tempo or swing changes.
 
 ## Groove (GROOVE screen)
 
