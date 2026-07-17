@@ -8,6 +8,12 @@ format. It accepts the same 2,048-byte image under `.eeprom`, `.e2p`, `.eep`,
 `.sram`, `.srm`, `.sav`, or `.bin` names and exports a checksum-correct v6
 image; all parsing and editing happens locally in the browser.
 
+A valid image is always 2,048 bytes and starts with `ALDJ`. A 128-byte `.sav`
+is only 93C46-sized and cannot hold this format. One real SD-card report
+produced a 128-byte file containing FAT `.` / `..` directory entries rather
+than EEPROM bytes; the viewer diagnoses that case explicitly, but there is no
+song payload to recover or safely pad.
+
 ## Physical layer
 
 93C86 serial EEPROM, 16-bit organisation: 1024 words / 2048 bytes.

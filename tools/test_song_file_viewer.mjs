@@ -124,4 +124,17 @@ let tooBig=false;
 try { api.serializeSram(noisy,null,{present:false,palette:0,prelisten:0,repeat:12,sync:0,reserved:65535}) } catch { tooBig=true }
 assert(tooBig,"over-capacity song export was accepted");
 
+const fatDirectory=new Uint8Array(128);
+fatDirectory.fill(32,0,11); fatDirectory[0]=46; fatDirectory[11]=0x12;
+fatDirectory.fill(32,32,43); fatDirectory[32]=46; fatDirectory[33]=46; fatDirectory[43]=0x12;
+let fatMessage="";
+try { api.parseSram(fatDirectory,"broken.sav") } catch(error) { fatMessage=error.message }
+assert(fatMessage.includes("FAT directory entries"),"SD-card directory data was not diagnosed precisely");
+
+if (process.argv[3]) {
+  let suppliedMessage="";
+  try { api.parseSram(new Uint8Array(fs.readFileSync(process.argv[3])),"sd-card.sav") } catch(error) { suppliedMessage=error.message }
+  assert(suppliedMessage.includes("FAT directory entries"),"supplied SD-card file did not match the expected directory-data diagnosis");
+}
+
 console.log(`song file viewer: PASS${fixturePath?" — "+fixturePath:""}`);

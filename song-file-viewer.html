@@ -336,9 +336,22 @@
       return { present, palette:present ? bytes[CONFIG_OFFSET+2]&7 : 0, prelisten:present ? (bytes[CONFIG_OFFSET+3]?1:0) : 0, repeat, sync:present ? bytes[CONFIG_OFFSET+5]%3 : 0, reserved:readU16(bytes,CONFIG_OFFSET+6) };
     }
 
+    function looksLikeFatDirectory(bytes) {
+      if (bytes.length<64 || bytes.length%32) return false;
+      const firstDot=bytes[0]===46 && bytes.slice(1,11).every(value=>value===32) && (bytes[11]&16)!==0;
+      const parentDot=bytes[32]===46 && bytes[33]===46 && bytes.slice(34,43).every(value=>value===32) && (bytes[43]&16)!==0;
+      return firstDot && parentDot;
+    }
+
     function parseSram(input,name="song.eeprom") {
       const bytes=input instanceof Uint8Array ? Uint8Array.from(input) : new Uint8Array(input);
-      if (bytes.length!==EEPROM_BYTES) fail(`Expected a ${formatBytes(EEPROM_BYTES)} 93C86 image, got ${formatBytes(bytes.length)}.`);
+      if (bytes.length!==EEPROM_BYTES) {
+        const hasHeader=bytes.length>=4 && bytes[0]===65 && bytes[1]===76 && bytes[2]===68 && bytes[3]===74;
+        if (looksLikeFatDirectory(bytes)) fail(`This ${formatBytes(bytes.length)} file contains FAT directory entries, not ALYNXDJ EEPROM data. The SD cart or card filesystem did not persist the song; padding this file cannot recover it.`);
+        if (hasHeader) fail(`This file starts with ALDJ but is truncated to ${formatBytes(bytes.length)}. A complete ALYNXDJ 93C86 image is ${formatBytes(EEPROM_BYTES)}; the missing song bytes cannot be reconstructed.`);
+        if (bytes.length===128) fail(`This is a 128-byte, 93C46-sized file without an ALDJ header. ALYNXDJ requires a ${formatBytes(EEPROM_BYTES)} 93C86 save, so no song data can be imported from it.`);
+        fail(`Expected a ${formatBytes(EEPROM_BYTES)} 93C86 image, got ${formatBytes(bytes.length)}.`);
+      }
       if (bytes[0]!==65 || bytes[1]!==76 || bytes[2]!==68 || bytes[3]!==74) fail("This is not an ALYNXDJ song save (missing ALDJ header).");
       const length=readU16(bytes,4), sourceChecksum=bytes[6], version=bytes[7];
       if (!length || length>PAYLOAD_CAP) fail(`Packed payload length ${length} is outside the 1–${PAYLOAD_CAP} byte range.`);
@@ -572,7 +585,7 @@
     function markDirty() { state.dirty=true; state.migrated=state.sourceVersion<SAVE_VERSION; renderAll() }
 
     function showNotice(message,error=false) {
-      const notice=$("notice"); clearTimeout(noticeTimer); notice.textContent=message; notice.classList.toggle("error",error); notice.hidden=false; noticeTimer=setTimeout(()=>notice.hidden=true,5000);
+      const notice=$("notice"); clearTimeout(noticeTimer); notice.textContent=message; notice.classList.toggle("error",error); notice.hidden=false; noticeTimer=setTimeout(()=>notice.hidden=true,error?10000:5000);
     }
 
     function exportName(name) {
