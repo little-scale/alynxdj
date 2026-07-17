@@ -431,10 +431,11 @@ static void draw_instr_row(unsigned char r, unsigned char cursor_here)
     if (r >= NIFIELDS)
         return;
     y = ifield_y[r];
-    if (r == IF_WAVE) {                 /* BANK is the wavetable # for WAV */
+    if (r == IF_WAVE) {                 /* shared WAV/KIT selector */
         unsigned char ty = sd.instrs[edit_instr].type & 3;
-        draw_text(1, y, ty == IT_WAV ? "WAVE" : (ty == IT_KIT ? "KIT " : "BANK"),
-                  PEN_DIM, PEN_BG);
+        if (ty <= IT_NOISE)
+            return;                     /* no BANK concept for tone voices */
+        draw_text(1, y, ty == IT_WAV ? "WAVE" : "KIT ", PEN_DIM, PEN_BG);
     } else
         draw_text(1, y, ifield_name[r], PEN_DIM, PEN_BG);
     switch (r) {
@@ -1184,6 +1185,8 @@ static void edit_instr_cell(unsigned char dir)
             in->table = (v == 0 || v >= NTABLES) ? EMPTY : v - 1;
         return;
     case IF_WAVE:
+        if ((in->type & 3) <= IT_NOISE)
+            return;
         v = in->wave;
         if (dir == 0 || dir == 3)
             in->wave = (v >= 8) ? 0 : (v < 7 ? v + 1 : v);

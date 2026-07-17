@@ -28,7 +28,7 @@ def main():
     env["RETROSHOT_RAM_POKE"] = "C02D:A5"
     env["RETROSHOT_RAM_POKE_AT"] = "100"
     subprocess.run(
-        [harness, core, test_rom, ppm, "280"],
+        [harness, core, test_rom, ppm, "300"],
         env=env,
         check=True,
     )
@@ -63,7 +63,7 @@ def main():
     env["RETROSHOT_RAM_OUT"] = wave_ram_path
     env["RETROSHOT_RAM_POKE"] = "C02D:A8"
     subprocess.run(
-        [harness, core, test_rom, wave_ppm, "280"], env=env, check=True)
+        [harness, core, test_rom, wave_ppm, "300"], env=env, check=True)
     with open(wave_ram_path, "rb") as f:
         wave_ram = f.read()
     wave_count = wave_ram[0xC022]

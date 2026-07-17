@@ -97,7 +97,7 @@ ship as triangle, saw, square, 25% pulse.
 | **VIB** | TONE/NOISE sine vibrato, packed speed·depth nibbles; speed 0–F ≈ 0.47–7.49 Hz, depth 0–F in 1/16 semitones. Phase continues across notes and resets with transport |
 | **TRM** | TONE/NOISE tremolo, packed speed·depth nibbles; a one-way volume dip inside the AHD envelope |
 | **TAPS** | the raw 12-bit-LFSR tap mask — see below |
-| BANK | labelled by TYPE — **WAVE** (WAV: wavetable 0–7, `--` = hardware triangle) / **KIT** (sample kit 0–7) / BANK (otherwise) |
+| WAVE / KIT | WAV: wavetable 0–7 (`--` = hardware triangle); KIT: sample kit 0–7. This row is blank and inert for TONE/NOISE. |
 | **SEED** | the shifter start state, $000–$FFF |
 | TABLE | macro table to run on every note (`--` = none) |
 | **TBS** | table speed: `0` advances one row per triggered note; `1` is one row per engine tick; `2`–`F` wait that many ticks per row |

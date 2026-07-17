@@ -15,6 +15,8 @@ and faster tracker editing.
 - Row-clocked `G` tap glide so `G01` moves exactly one tap value per
   sequencer row regardless of groove/swing; `B` is a signed one-shot offset
   from current taps.
+- Hid and disabled the unused BANK row for TONE/NOISE instruments; it appears
+  only as WAVE for WAV or KIT for KIT.
 - Table VOL now shapes attack/hold but yields permanently at decay, so a
   looping volume table cannot override HOLD/DCY or keep a note alive.
 - Fixed real-hardware PCM ring races by atomically snapshotting the IRQ tail

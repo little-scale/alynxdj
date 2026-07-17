@@ -75,7 +75,7 @@ second-opinion core.
   list only after silicon listening.
 - **cc65 editor sluggishness (D2)** — if screen paints lag, move the dirty-
   cell renderer fully to asm before blaming the design.
-- **64 KB code packing** — after the row-clocked G follow-up, MAIN has 21 bytes free,
+- **64 KB code packing** — after hiding the unused TONE/NOISE BANK row, MAIN is an exact fit,
   HICODE1/HICODE3 have 16/26, HICODE2 has 1, and SONG/MIRRORRAM are exact fits; the C stack
   is 512 bytes. Growth needs measured placement/reclamation, not an
   unplanned resident helper.

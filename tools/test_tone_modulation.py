@@ -173,6 +173,11 @@ def main():
     audition_ram = os.path.join(build, "instrument-audition.ram")
     env = os.environ.copy()
     env["RETROSHOT_RAM_OUT"] = audition_ram
+    # Force every instrument type to TONE after boot so whichever demo track
+    # the navigation reaches must render the unused shared BANK row blank.
+    env["RETROSHOT_RAM_POKE"] = ",".join(
+        "%04X:00" % (0xEA00 + i * 16) for i in range(32))
+    env["RETROSHOT_RAM_POKE_AT"] = "250"
     script = (
         "0@280,"
         "100@10,180@20,100@10,0@40,"
@@ -190,10 +195,13 @@ def main():
     frame = np.asarray(Image.open(audition_ppm).convert("RGB"))
     colors, counts = np.unique(frame.reshape(-1, 3), axis=0, return_counts=True)
     background = colors[np.argmax(counts)]
-    for row in (2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16):
+    for row in (2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15, 16):
         band = frame[row * 6:(row + 1) * 6, :96]
         if np.count_nonzero(np.any(band != background, axis=2)) < 6:
             fail("INSTR field row %d was not fully rendered" % row)
+    bank_band = frame[14 * 6:15 * 6, :96]
+    if np.count_nonzero(np.any(bank_band != background, axis=2)):
+        fail("TONE instrument rendered the unused BANK row")
     _, audition = sounding_tail(audition_ppm + ".wav")
     if np.max(np.abs(audition)) < 100:
         fail("physical B tap on stopped INSTR did not audition")
