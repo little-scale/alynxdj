@@ -26,9 +26,11 @@ deliberately and update §0. The proven ancestors are **SMSGGDJ**
 | D11 | **The 12-bit LFSR is fully exposed per instrument: a raw 9-bit TAPS mask + a 12-bit SEED**, replacing curated timbre presets. User encoding is contiguous (bits 0-5 = taps 0-5, 6 = tap 7, 7 = tap 10, 8 = tap 11) so value-sweeping walks musically adjacent configs; the engine remaps to the scattered FEEDBACK/control layout at trigger. The seed picks the state-graph *cycle* — for many tap sets different seeds are genuinely different waveforms (verified: taps $0F1 seeds 000/555 → spectral cosine 0.05), and some (taps, seed) pairs hit the lock state and go silent, like the silicon. TONE and NOISE are now the same machine with different default taps. | Preset banks only (the M6 design): safe but hides the instrument that makes the Lynx unique. |
 | D12 | **One save slot: the packed song owns the whole 2,032-byte EEPROM payload** (cells 1020–1023 stay reserved for machine config). FILES manages the working set instead: NEW (confirmed wipe) and PURGE (drop unreferenced chains/phrases to shrink the pack). Off-cart backup is ComLynx's job (a future SEND/RECV pair — 2 KB moves in ~0.3 s at 62.5 kbaud); emulator users swap `.eeprom` files for free slots. | Multiple slots (SMSGGDJ has 6 in 32 KB SRAM): halving 2 KB caps every song under half capacity — the demo alone packs ~1.2 KB. Revisit only if a real flashcart offers bigger persistent storage. |
 | D13 | **One global groove, no pool.** The GROOVE screen edits a single groove that sets tempo + swing for the whole song; PROJECT's TMPO steps its entries together. The `G` (switch-groove) command is dropped from the editor menu (its CMD id is retained so every later command keeps its save encoding, and the engine executor is self-limiting to groove 0). | A 16-groove pool + `G` per-phrase (LSDJ/SMSGGDJ model): more rhythmic variation, but the pool UI and a live-mutable tempo source are complexity the Lynx build doesn't need — one swing feel per song is the common case. |
-| D14 | **`G` repurposed as a live tap glide** (the retired groove-switch slot, D13). Its parameter is a signed per-tick step added to the instrument's 9-bit tap value (wraps 0-511); the tick writes the FEEDBACK register live without reseeding the shifter, so the LFSR keeps running and the timbre morphs continuously. Reuses CMD_G's id so the save encoding of every other command is unchanged. | A brand-new command letter/id: cleaner semantically, but grows the command set and leaves a dead reserved slot. Reusing G keeps the count flat; the only cost is that a pre-D14 song still carrying a G (groove-switch, already a no-op) would now sweep taps — an acceptable edge case. |
+| D14 | **`G` repurposed as a live tap glide** (the retired groove-switch slot, D13). The tick writes FEEDBACK/control taps live without reseeding the shifter, so the LFSR keeps running while timbre morphs. Its final hardware-pass rate is signed **1/16 tap per tick** (D18), wrapping the 9-bit value. Reuses CMD_G's id so every other command keeps its save encoding. | A brand-new command letter/id: cleaner semantically, but grows the command set and leaves a dead reserved slot. Reusing G keeps the count flat. |
 | D15 | **TONE and NOISE instruments own persistent SWP/VIB/TRM modulation.** The three formerly-reserved record bytes hold signed 1/16-semitone-per-tick sweep plus packed speed/depth vibrato and tremolo. TONE and NOISE share this surface because both are the same Mikey polynomial oscillator; WAV/KIT show the fields disabled. Save v4 clears the new bytes when loading older songs. | Commands only (`P`/`V`) and tables: capable, but forces routine patch identity into phrase data and leaves no persistent tremolo. Applying the fields to sampled voices: their rate/volume paths have different costs and semantics. |
 | D16 | **Instrument byte 15 is signed TSP for every type; vibrato is a centred, transport-scoped sine capped at ~7.5 Hz.** TSP resolves once at key-on before TONE/NOISE/WAV pitch or KIT pad mapping and clamps at the playable limits. The 16-point sine uses an 8-bit phase accumulator with 16 distinct ~0.47–7.49 Hz rates, so even the maximum has eight engine updates per cycle. Phase free-runs across note retriggers and resets at the transport boundary; depth zero neither changes pitch nor advances it. Save v5 clears the formerly-reserved TSP byte on older songs. | TONE-only transpose: inconsistent with the sibling instrument model and leaves pitched WAV/KIT selection behind. A faster sine: at the 59.9 Hz engine tick it would still staircase/alias. Per-note phase reset: deterministic, but short notes repeatedly sample one half-cycle and acquire a tuning bias. |
+| D17 | **Instrument TBS occupies HOLD's formerly-unused high nibble.** TBS 0 advances the attached table once per triggered note without resetting its row; TBS 1–F restart at row 0 and advance every N engine ticks. The live row byte packs its countdown above the 0–15 playhead, so the 16-byte instrument record, voice RAM, and 2 KB persistence ceiling do not grow. Save v6 assigns the nibble; older writers already canonicalized it to zero. | Add instrument/voice bytes: clearer but impossible in the fixed save/RAM budgets. Always one row per tick: too fast and loses the sibling trackers' note-clocked table mode. |
+| D18 | **Tap motion has complementary relative commands:** `G` is a signed 1/16-tap-per-tick continuous glide; `B` is a signed one-shot offset from the current taps value. Both update FEEDBACK and the scattered tap-7 control bit without reseeding. | Keep `B` as a live WAV-bank command: useful but narrow, while WAV bank is already persistent per instrument and hardware listening called for finer LFSR control. Keep old G01 at one whole tap/tick: too fast on silicon. |
 
 Open questions: see §14 and PLAN.md — the two-voice software policy is
 regression-tested; its final silicon timing margin and Handy's LFSR fidelity
@@ -47,7 +49,7 @@ still require focused hardware comparison.
   cold-code overlays copied from cart blocks 40, 42, and 44 into `$C900`,
   `$F600`, and `$F320` before use; the sample pool starts at block 45. The
   1 KB at `$D000` is split into two 512-byte sample rings; the framebuffer
-  remains at `$A000` and the 640-byte C stack below it.
+  remains at `$A000` and the 512-byte C stack below it.
 - **Cart:** 128–512 KB, read sequentially within a 1–2 KB block after a block
   seek. Fine for streaming sample PCM (D5); useless for random byte access —
   anything random-access lives in RAM.
@@ -191,7 +193,8 @@ launcher, quantized launch) ports at M12.
 
 16-byte fixed record, union by type (ported shape): common = type, initial
 volume, AHD (attack/hold/decay), table #, pan nibbles, finetune, raw TAPS and
-SEED. Bytes 12–14 are TONE/NOISE **SWP** (signed 1/16 semitone per tick,
+SEED. HOLD's high nibble is **TBS** (D17), while its low nibble remains the
+envelope hold time. Bytes 12–14 are TONE/NOISE **SWP** (signed 1/16 semitone per tick,
 period-style direction: positive falls),
 **VIB** (speed/depth nibbles), and **TRM** (speed/depth nibbles); phrase/table
 `P` and `V` commands override the corresponding instrument state for that
@@ -208,6 +211,10 @@ preview remain distinct gestures.
 ## 7. Tables *(ported verbatim)*
 16-row macro sequencer: vol, pitch(transpose), cmd, param columns; `A`
 command one-shot override; `H` loop semantics identical to SMSGGDJ §7.
+TBS 0 advances once per note and preserves the row, while 1–F advance every
+N ticks and restart on note-on (D17). VOL can set the live level/peak during
+attack or hold, but never writes during decay, so a looping table cannot
+extend the envelope lifetime.
 
 ## 8. Command set *(ported, with Lynx re-aims)*
 
@@ -216,11 +223,11 @@ The Lynx-specific or re-aimed commands are:
 
 | Cmd | Lynx meaning |
 |---|---|
-| `G xx` | signed per-tick sweep of the raw 9-bit tap value, without reseeding |
+| `G xx` | signed 1/16-tap-per-tick sweep of the raw 9-bit tap value, without reseeding |
+| `B xx` | signed one-shot offset from the current raw tap value, without reseeding |
 | `N xx` | live low 8-bit raw-tap override (taps 0–5, 7, 10) |
 | `O xy` | pan: ATTEN left x / right y nibbles — GG semantics, 16 levels per side, Lynx II audible (D8) |
 | `S xx` | sample/wavetable **rate** — a real timer-reload pitch bend for PCM voices (not decimation) |
-| `B x`  | wave bank 0–7 (ported; applies to WAV-table voices) |
 
 ## 9. Groove *(ported timing model; one global groove, 59.9 Hz constants)*
 
@@ -236,6 +243,9 @@ The Lynx-specific or re-aimed commands are:
   owning track's `OUTPUT` register. Two independent 512-byte rings share the
   1 KB at `$D000`; the main-loop pump re-seeks before every 192-byte chunk so
   two cart streams and intervening EEPROM traffic cannot corrupt each other.
+  The IRQ-owned tail is snapshotted atomically, and each completed chunk's
+  16-bit head plus done flag is published under one brief IRQ mask; this
+  removes real-hardware torn-pointer overwrites at ring wrap.
   Ring underrun holds the last sample until refill.
 - **Budget:** at 8 kHz one PCM voice ≈ 8000 × ~45 cycles ≈ 10 % CPU; two ≈
   20 % (D6, measured properly at M7 = Q2).
@@ -266,11 +276,14 @@ The Lynx-specific or re-aimed commands are:
   the 93C86, with an 8-byte/four-word header (magic `ALDJ`, version, packed
   length, checksum). FILES shows a live packed-size meter (D10);
   SAVE refuses (with the meter red) rather than truncates.
-- Current format is v5: instrument bytes 12–14 are SWP/VIB/TRM and byte 15
-  is TSP. Loading older versions clears bytes that were reserved in that
-  version before playback (D15/D16).
+- Current format is v6: instrument HOLD's high nibble is TBS, bytes 12–14
+  are SWP/VIB/TRM, and byte 15 is TSP. Older writers always stored HOLD in
+  0–15, so v5 and earlier naturally load as TBS 0 (D15–D17).
 - LOAD: unpack EEPROM → RAM at boot if the magic checks (slot-0 autoload,
   ported policy).
+- Hardware writes use cc65's canonical 93C86 EWEN bit pattern (all ten
+  special-command address bits high), because SD-cart EEPROM emulators may
+  decode it more strictly than the physical chip's don't-care definition.
 - Emulator persistence is the core's 2048-byte `.eeprom` image. Browser
   tooling and ComLynx song dump/restore remain post-1.0 work.
 - SAVEFORMAT.md is written at M10 and kept in sync with any RAM-map change
@@ -294,11 +307,11 @@ the main loop handles input, cart-ring refill, and rendering.
 
 | Q | Question | Blocks | Path |
 |---|---|---|---|
-| Q1 | ✅ **RESOLVED at M10b** — the current factory song + out-of-loop rigs RLE-packs to **1233/2032 bytes**. `make test` power-cycles a unique Handy EEPROM and verifies the song checksum. | M10 | — |
+| Q1 | ✅ **RESOLVED at M10b** — the current v6 factory song + out-of-loop rigs RLE-packs to **1265/2032 bytes**. `make test` power-cycles a unique Handy EEPROM and verifies the song checksum. | M10 | — |
 | Q2 | 🔶 **Software policy resolved:** exactly two timer-fed sampled voices, symmetric across A–D, third steals oldest; deterministic routing/rate/retrigger regression passes. Final silicon timing margin remains. | M7 | Stress on hardware with two long 7.8 kHz streams while editing |
 | Q3 | ✅ **RESOLVED at M1 — 59.90 Hz** (crt0 timing kept; 96 VBL ticks per 120 Handy frames, i.e. Handy paces 75 fps but the emulated timer 2 runs 159 µs × 105 lines). maketables.py uses 59.90 Hz | M3 | — |
 | Q4 | Handy's LFSR/integrate fidelity vs real Mikey | M6 | Curate tap presets on hardware; Holani core as a second opinion |
-| Q5 | ✅ **RESOLVED at M10b** — `.lnx` byte 60 = 5 selects the 93C86; the custom 10-bit-address driver reads/writes full 16-bit cells. The patched core loads all 2048 bytes and `make test` proves power-cycle persistence. | M10 | — |
+| Q5 | 🔶 **Software/emulator resolved; cart re-test pending.** `.lnx` byte 60 = 5 selects the 93C86; the custom driver and patched core power-cycle all 2048 bytes. M17 changed EWEN to cc65's canonical all-ones special-command pattern after an SD cart created a save file but reloaded the demo. | M10/M17 | Re-test SAVE → power cycle → autoload on the reporting cart; record cart model, firmware, and save-file size if it still fails |
 
 ## 15. Deliverables & toolchain
 

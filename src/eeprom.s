@@ -7,9 +7,9 @@
 ; by strobing RCART0 128 times), CLK = A1 (2 strobes per level), data =
 ; AUDIN (IODAT bit 4, direction via IODIR).
 ;
-; NOTE (Handy quirk, DESIGN.md Q5): through this read path the Handy core
-; returns only the low byte of each cell; treat cells as byte-wide until
-; verified on silicon.
+; The special-command don't-care bits deliberately match cc65's hardware
+; driver exactly.  Some SD-cart EEPROM emulators decode the canonical full
+; command even though a physical 93C86 only requires its leading bits.
 
         .export         _ee_read
         .export         _ee_write
@@ -71,7 +71,7 @@ _ee_read:
 _ee_write:
         sta     ptr1
         stx     ptr1+1          ; val
-        lda     #$00            ; EWEN: op 00, addr = 11xxxxxxxx
+        lda     #$ff            ; EWEN: op 00, addr = 1111111111
         sta     ptr2
         lda     #(EE_OP_EWEN << 2) | EE_START | %11
         sta     ptr2+1

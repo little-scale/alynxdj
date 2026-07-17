@@ -16,7 +16,7 @@
 #define HDR_WORDS 4
 #define CAP_BYTES SAVE_CAP_BYTES        /* see tracker.h (Handy load cap) */
 
-#define SAVE_VER  5
+#define SAVE_VER  6
 
 /* nearest time-curve nibble for a v1 per-tick rate (0 stays special) */
 #pragma code-name (push, "HICODE3")
@@ -173,6 +173,8 @@ unsigned char save_load(void)
         for (i = 0; i < NINSTR; ++i)
             sd.instrs[i].tsp = 0;
     }
+    /* v6 assigns HOLD's formerly-unused high nibble to TBS.  Every earlier
+     * writer canonicalized HOLD to 0..15, so no data migration is needed. */
     return ST_OK;
 }
 

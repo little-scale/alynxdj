@@ -190,7 +190,7 @@ def main():
     frame = np.asarray(Image.open(audition_ppm).convert("RGB"))
     colors, counts = np.unique(frame.reshape(-1, 3), axis=0, return_counts=True)
     background = colors[np.argmax(counts)]
-    for row in (2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15, 16):
+    for row in (2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16):
         band = frame[row * 6:(row + 1) * 6, :96]
         if np.count_nonzero(np.any(band != background, axis=2)) < 6:
             fail("INSTR field row %d was not fully rendered" % row)

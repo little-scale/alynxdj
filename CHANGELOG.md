@@ -6,6 +6,25 @@ Four-channel sampling and expressive instruments: this release restores
 Mikey's channel symmetry while adding performance-focused tone modulation
 and faster tracker editing.
 
+- Hardware-pass follow-up: NEW instruments now default to TONE, ATK 0,
+  HOLD 5, DCY A; empty CHAIN rows present their internal `$FF` transpose
+  sentinel as `00`.
+- Added instrument **TBS** without growing the 16-byte record: HOLD's high
+  nibble stores table speed. TBS 0 advances once per note; 1 is fastest at
+  one row per tick; 2–F are progressively slower. Save format is now v6.
+- Slowed `G` tap glide to signed 1/16 tap per tick (`G10` equals the former
+  `G01`) and repurposed `B` as a signed one-shot offset from current taps.
+- Table VOL now shapes attack/hold but yields permanently at decay, so a
+  looping volume table cannot override HOLD/DCY or keep a note alive.
+- Fixed real-hardware PCM ring races by atomically snapshotting the IRQ tail
+  and publishing the 16-bit head/done state together; samples retain their
+  individual directory lengths rather than crossing buffer boundaries.
+- Aligned 93C86 write-enable with cc65's canonical all-ones special-command
+  pattern for stricter SD-cart EEPROM emulators, addressing save files that
+  were created but reloaded as the demo.
+- Added a hardware-fix regression covering TBS clocks, finite table-volume
+  envelopes, slow G, signed B, and long/short sample boundaries.
+
 - Fixed PHRASE command-field cuts so they remove only the command and its
   parameter, preserving the row's note and instrument. The clipboard now
   pastes that command pair only into another command column. Added scripted

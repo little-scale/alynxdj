@@ -15,14 +15,14 @@ later hardware). The ROM and project name is **ALYNXDJ**.
 
 **DESIGN.md is the contract** (with a §0 decision log — read it before design
 decisions, don't re-litigate settled ones); **PLAN.md** holds the milestone
-history through M16. Key settled decisions: 4 identical
+history through M17. Key settled decisions: 4 identical
 tracks each playing TONE/NOISE/WAV/KIT (D1), cc65 C editor + ca65 asm
 driver/IRQ/render (D2), 59.9 Hz VBlank engine tick with no region split (D3),
 flat RAM song block but **packed/RLE EEPROM save — 2 KB 93C86 is the whole
 persistence budget** (D4/D10), per-channel timer-IRQ PCM capped at 2 voices
 (D5/D6), 4×6 font on a 40×17 grid (D7). KIT and table-WAV dynamically
 target the owning channel A–D; there are no fixed sample buses. TONE/NOISE
-patches persist TSP/SWP/VIB/TRM in save-format v5 (D15/D16); VIB is a
+patches persist TSP/SWP/VIB/TRM plus TBS in save-format v6 (D15–D17); VIB is a
 centred ~0.47–7.49 Hz sine whose phase free-runs across notes and resets at
 the transport boundary.
 
@@ -31,7 +31,7 @@ the transport boundary.
 ```sh
 make          # cl65 -t lynx → build/alynxdj.lnx
 make shot     # headless Handy run → build/shot.png + build/shot.ppm.wav (audio!)
-make test     # DAC + modulation + editor mint/clone/field-cut + EEPROM round trip
+make test     # DAC/sample + modulation/TBS/taps + editor + EEPROM round trip
               # FRAMES=n and BTN=maskHex or BTN=mask@frames,mask@frames,... for input
 make clean
 ```
@@ -71,7 +71,7 @@ using a virtual environment.
   fixed address (e.g. debug mirrors) instead of scraping pixels.
 - RAM pressure is explicit: cart blocks 40/42/44 cold-load code to `$C900`,
   `$F600`, and `$F320`; the sample pool starts at block 45. The C stack is
-  640 bytes and `$D000-$D3FF` stays two 512-byte rings. Keep `alynxdj.cfg`,
+  512 bytes and `$D000-$D3FF` stays two 512-byte rings. Keep `alynxdj.cfg`,
   `Makefile`, `src/main.c`, and `src/pool.c` aligned.
 - Handy is dev-speed, not silicon: its LFSR-timbre and DAC-timing fidelity is
   suspect (DESIGN.md Q4) — hardware passes at M6/M7. **Measured 2026-07-16:

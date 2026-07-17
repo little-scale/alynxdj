@@ -47,11 +47,11 @@ struct voice {
     unsigned char slide_rate;
     unsigned char vib_speed, vib_depth, vib_phase;
     unsigned char trm_speed, trm_depth, trm_phase;
-    unsigned int  tap_cur;      /* G: current 9-bit tap value being swept */
-    signed char   tap_rate;     /* G: signed per-tick tap step (0 = off) */
+    unsigned int  tap_cur;      /* G: 9.4 fixed-point tap value */
+    signed char   tap_rate;     /* G: signed 1/16-tap per tick (0 = off) */
     unsigned char chord[3], chord_len, chord_pos;
     unsigned char kill_in;      /* $FF = none */
-    unsigned char table, tpos;  /* $FF = none */
+    unsigned char table, tpos;  /* tpos = clock<<4 | row; table $FF = none */
     signed char   tbl_tsp;
     unsigned char inum;         /* instrument (retrig refires it) */
     unsigned char rt_rate, rt_fade, rt_cnt;
@@ -273,20 +273,18 @@ static void pitch_update(unsigned char ch)
     }
 }
 
-/* Program a 9-bit tap value (D11 user layout) into the feedback shadow and
- * remember it as the sweep base. Full reprogram (retime) reseeds — same path
- * as an N override. Used by trigger, N, and the G sweep. */
-static void set_taps(struct voice *v, unsigned taps9)
+/* Map the 9.4 live value onto Mikey's split feedback/control tap bits. */
+static void live_taps(struct voice *v)
 {
+    unsigned taps9 = (v->tap_cur >> 4) & 0x1FF;
     unsigned char lo = (unsigned char)taps9;
-    v->tap_cur = taps9;
     v->sh_feedback = (lo & 0x3F) | ((lo & 0x80) >> 1)
                      | (((taps9 >> 8) & 1) << 7);
     if (lo & 0x40)
         v->sh_ctl |= AUD_TAP7;
     else
         v->sh_ctl &= ~AUD_TAP7;
-    v->retime = 1;
+    v->fb_dirty = 1;
     v->dirty = 1;
 }
 
@@ -299,7 +297,7 @@ static void exec_cmd(unsigned char ch, unsigned char cmd, unsigned char param)
     switch (cmd) {
     case CMD_A:
         v->table = (param < NTABLES) ? param : EMPTY;
-        v->tpos = 0;
+        v->tpos = 0x10;                 /* row zero, armed immediately */
         v->tbl_tsp = 0;
         break;
     case CMD_C:
@@ -312,17 +310,14 @@ static void exec_cmd(unsigned char ch, unsigned char cmd, unsigned char param)
             v->chord_len = 1;
         v->chord_pos = 0;
         break;
-    case CMD_G:                     /* Glide: signed per-tick tap sweep */
+    case CMD_G:                     /* signed 1/16-tap per engine tick */
         v->tap_rate = (signed char)param;
         break;
-    case CMD_B:                     /* set the WAV wavetable live (0-7) */
-        if (v->type == IT_WAV && v->dac_slot < NDAC && param < 8
-            && v->base_note >= 1
-            && v->base_note <= 96) {
-            wave_start(v->dac_slot, param);
-            wave_rate(v->dac_slot, wave_clock[v->base_note - 1],
-                      wave_bkup[v->base_note - 1],
-                      wave_step[v->base_note - 1]);
+    case CMD_B:                     /* signed static offset from live taps */
+        if (v->type <= IT_NOISE && v->env_phase) {
+            v->tap_cur = (v->tap_cur + (int)(signed char)param * 16)
+                         & 0x1FFF;
+            live_taps(v);
         }
         break;
     case CMD_K:
@@ -355,7 +350,9 @@ static void exec_cmd(unsigned char ch, unsigned char cmd, unsigned char param)
     case CMD_N:
         /* absolute taps override (D11): bits 0-5 = taps 0-5, 6 = tap 7,
          * 7 = tap 10 (8-bit, so no tap 11); also seeds the G sweep base */
-        set_taps(v, param);
+        v->tap_cur = (unsigned)param << 4;
+        live_taps(v);
+        v->retime = 1;
         break;
     case CMD_R:
         v->rt_rate = param & 0x0F;
@@ -389,34 +386,54 @@ static void exec_cmd(unsigned char ch, unsigned char cmd, unsigned char param)
     }
 }
 
-/* --- table macro sequencer: one row per tick --- */
+/* --- table macro sequencer: TBS 0 per note, TBS 1-F ticks per row --- */
+
+static void table_volume(struct voice *v, unsigned char vol)
+{
+    /* Table VOL may shape attack/hold, but it must stop fighting the decay
+     * once release begins or a repeating table can keep a note alive. */
+    if (vol && v->env_phase <= 2) {
+        v->env_peak = v->env_level = vol; /* editor/save contract: 01-7F */
+        v->dirty = 1;
+    }
+}
 
 static void table_step(unsigned char ch)
 {
     struct voice *v = &voices[ch];
     struct tablerow *tr;
+    unsigned char table, row, tbs, count;
 
-    if (v->table == EMPTY || v->env_phase == 0)
+    if (v->table == EMPTY)              /* caller already gates env_phase */
         return;
-    tr = &sd.tables[v->table][v->tpos];
-    if (tr->vol) {
-        v->env_level = (tr->vol <= 0x7F) ? tr->vol : 0x7F;
-        v->dirty = 1;
+    row = v->tpos & 0x0F;
+    tbs = sd.instrs[v->inum < NINSTR ? v->inum : 0].hold >> 4;
+    count = v->tpos >> 4;
+    if (tbs) {
+        if (count > 1) {
+            v->tpos = ((count - 1) << 4) | row;
+            return;
+        }
+    } else if (!count) {
+        return;                         /* note mode: wait for next trigger */
     }
+    table = v->table;
+    tr = &sd.tables[table][row];
+    table_volume(v, tr->vol);
     v->tbl_tsp = tr->tsp;
     if (tr->cmd == CMD_H) {
-        v->tpos = tr->param & 0x0F;
-        tr = &sd.tables[v->table][v->tpos];
-        if (tr->vol) {
-            v->env_level = (tr->vol <= 0x7F) ? tr->vol : 0x7F;
-            v->dirty = 1;
-        }
+        row = tr->param & 0x0F;
+        tr = &sd.tables[table][row];
+        table_volume(v, tr->vol);
         v->tbl_tsp = tr->tsp;
     }
     if (tr->cmd && tr->cmd != CMD_H)
         exec_cmd(ch, tr->cmd, tr->param);
-    if (v->tpos < PHRASE_ROWS - 1)
-        ++v->tpos;                       /* stick at the last row */
+    if (tr->cmd == CMD_A)               /* A armed its new row 0 (even same #) */
+        return;
+    if (row < PHRASE_ROWS - 1)
+        ++row;                           /* stick at the last row */
+    v->tpos = row | (tbs << 4);
 }
 
 /* --- trigger --- */
@@ -425,7 +442,7 @@ static void trigger(unsigned char ch, unsigned char note, unsigned char inum)
 {
     struct voice *v = &voices[ch];
     struct instr *in = &sd.instrs[inum < NINSTR ? inum : 0];
-    unsigned char slot;
+    unsigned char slot, old_table = v->table, old_tpos = v->tpos;
 
     /* Instrument transpose is resolved once at key-on, before a KIT note is
      * mapped to a pad and before either WAV pitch path is selected. */
@@ -496,7 +513,10 @@ static void trigger(unsigned char ch, unsigned char note, unsigned char inum)
     v->kill_in = EMPTY;
     v->rt_rate = 0;
     v->table = (in->table < NTABLES) ? in->table : EMPTY;
-    v->tpos = 0;
+    if (!(in->hold & 0xF0) && v->table == old_table)
+        v->tpos = (old_tpos & 0x0F) | 0x10; /* TBS 0: next row per note */
+    else
+        v->tpos = 0x10;                 /* tick mode/table change: row zero */
     v->tbl_tsp = 0;
 
     if (in->type == IT_WAV && in->wave < 8) {
@@ -528,10 +548,10 @@ static void trigger(unsigned char ch, unsigned char note, unsigned char inum)
         unsigned char lo = in->taps_lo;
         if (!lo && !(in->taps_hi & 1))
             lo = TAPS_SQUARE;
-        v->sh_feedback = (lo & 0x3F) | ((lo & 0x80) >> 1)
-                         | ((in->taps_hi & 0x01) << 7);
-        v->sh_ctl = (lo & 0x40) ? AUD_TAP7 : 0;
-        v->tap_cur = lo | ((in->taps_hi & 0x01) << 8);  /* G sweep base */
+        v->sh_ctl = 0;
+        v->tap_cur = (lo | ((in->taps_hi & 0x01) << 8)) << 4;
+        live_taps(v);
+        v->retime = 1;
         v->sh_shiftlo = in->seed_lo;
         v->sh_shifthi = (in->seed_hi & 0x0F) << 4;  /* OTHER bits 7-4 */
     }
@@ -639,6 +659,7 @@ static void flush(unsigned char ch)
     if (v->fb_dirty) {
         v->fb_dirty = 0;
         h->feedback = v->sh_feedback;
+        h->control = v->sh_ctl;         /* G/B may also cross user tap bit 6 */
     }
     h->reload = v->sh_bkup;
     h->volume = (eng_mute & (1 << ch)) ? 0 : tone_level(v);
@@ -1018,19 +1039,19 @@ void engine_tick(void)
                 }
                 v->hold_left = sd.instrs[v->inum < NINSTR
                                          ? v->inum : 0].hold & 0x0F;
+                if (!(sd.instrs[v->inum < NINSTR ? v->inum : 0].hold
+                      & 0xF0))
+                    v->tpos |= 0x10;    /* TBS 0: retriggers count as notes */
                 v->dirty = 1;
             }
         }
         if (v->env_phase) {
             table_step(ch);
-            if (v->tap_rate) {                   /* G: live tap sweep (D11) */
-                unsigned char lo;
-                v->tap_cur = (v->tap_cur + v->tap_rate) & 0x1FF;
-                lo = (unsigned char)v->tap_cur;
-                v->sh_feedback = (lo & 0x3F) | ((lo & 0x80) >> 1)
-                                 | (((v->tap_cur >> 8) & 1) << 7);
-                v->fb_dirty = 1;                 /* write feedback, keep the shifter */
-                v->dirty = 1;
+            if (v->tap_rate) {                   /* G: slow live tap sweep */
+                unsigned old = v->tap_cur >> 4;
+                v->tap_cur = (v->tap_cur + v->tap_rate) & 0x1FFF;
+                if ((v->tap_cur >> 4) != old)
+                    live_taps(v);                /* no oscillator reseed */
             }
             if (v->bend_rate)
                 v->bend += v->bend_rate;

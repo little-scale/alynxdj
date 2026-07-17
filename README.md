@@ -39,7 +39,8 @@ decision log):
   + seed per instrument), per-instrument TSP, TONE/NOISE SWP/free-running sine-VIB/TRM
   modulation, and 32-byte wavetables; everything verified by
   FFT / cross-correlation in the headless harness
-- **22 sequencer commands** (incl. `G` LFSR-tap glide, `B` live wavetable set), tables, one global groove, block select/cut/paste,
+- **22 sequencer commands** (incl. slow `G` LFSR-tap glide and signed `B`
+  taps offset), per-instrument TBS table clocks, one global groove, block select/cut/paste,
   clipboard, mute/solo, LIVE clip-launcher mode
 - **Cart-streamed sample pool**: all eight `samples/` kits at full
   quality (808/909/C78/606 + four speech banks), kit-per-instrument.
@@ -67,7 +68,7 @@ brew install cc65
 python3 -m pip install -r requirements.txt
 make          # → build/alynxdj.lnx
 make shot     # headless run → build/shot.png + audio WAV capture
-make test     # DAC symmetry, TONE modulation/audition, EEPROM round trip
+make test     # DAC/sample boundaries, taps/TBS/envelopes, editor, EEPROM
 ```
 
 Set `PYTHON=/path/to/python` on any `make` invocation when the build tools

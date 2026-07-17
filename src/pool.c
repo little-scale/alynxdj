@@ -58,18 +58,25 @@ void pool_init(void)
 static void pump_voice(unsigned char voice, unsigned char max)
 {
     unsigned char *base = ring_base(voice);
+    unsigned char *head = pcm_head[voice];
+    unsigned char *tail;
     unsigned char n = max;
     unsigned free_, to_end;
 
     if (!stream_left[voice])
         return;
-    free_ = (unsigned)(pcm_ptr[voice] - pcm_head[voice] - 1)
-            & (RING_SIZE - 1);
+    /* The timer IRQ advances this 16-bit pointer.  Snapshot it atomically;
+     * a torn read at $D1FF->$D000 made the pump overwrite unread audio on
+     * real hardware while Handy's scheduling tended to hide the race. */
+    __asm__("sei");
+    tail = pcm_ptr[voice];
+    __asm__("cli");
+    free_ = (unsigned)(tail - head - 1) & (RING_SIZE - 1);
     if (!free_)
         return;
     if (n > free_)
         n = (unsigned char)free_;
-    to_end = (unsigned)(base + RING_SIZE - pcm_head[voice]);
+    to_end = (unsigned)(base + RING_SIZE - head);
     if (n > to_end)
         n = (unsigned char)to_end;
     if (n > stream_left[voice])
@@ -80,18 +87,23 @@ static void pump_voice(unsigned char voice, unsigned char max)
     /* Every chunk restores its own serial-cart cursor.  Besides enabling
      * two streams, this makes OPTIONS EEPROM writes harmless to playback. */
     cart_seek(stream_block[voice], stream_off[voice]);
-    cart_read(pcm_head[voice], n);
+    cart_read(head, n);
     stream_left[voice] -= n;
     stream_off[voice] += n;
     while (stream_off[voice] >= 1024u) {
         stream_off[voice] -= 1024u;
         ++stream_block[voice];
     }
-    pcm_head[voice] += n;
-    if (pcm_head[voice] >= base + RING_SIZE)
-        pcm_head[voice] = base;
+    head += n;
+    if (head >= base + RING_SIZE)
+        head = base;
+    /* Publish the 16-bit head and final-chunk flag as one state change.
+     * The IRQ can now only see the old complete buffer or the new one. */
+    __asm__("sei");
+    pcm_head[voice] = head;
     if (!stream_left[voice])
         pcm_done[voice] = 1;
+    __asm__("cli");
 }
 
 static void do_trigger(unsigned char voice, unsigned char kit,

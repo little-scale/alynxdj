@@ -112,10 +112,14 @@ void draw_hex8(unsigned char cx, unsigned char cy, unsigned char v,
     draw_char(cx + 1, cy, hexd[v & 0x0F], fg, bg);
 }
 
-/* blank song: $FF sentinels everywhere (ported convention). Empty chain
- * steps are FF FF — tsp is don't-care until a phrase lands, and solid FF
- * runs are what keeps the EEPROM pack small (the editor zeroes tsp on
- * insert). */
+static const struct instr blank_instr = {
+    IT_TONE, 0, 0x0A, 5, EMPTY, TAPS_SQUARE, EMPTY, 0xFF,
+    0, 0, 0, 0, 0, 0, 0, 0,
+};
+
+/* Blank song: $FF sentinels everywhere (ported convention). Empty chain
+ * steps stay FF FF internally for compact saves, but the editor presents
+ * their don't-care transpose as 00. */
 void song_clear(void)
 {
     unsigned char c;
@@ -123,15 +127,10 @@ void song_clear(void)
     memset(sd.song, EMPTY, sizeof(sd.song));
     memset(sd.chains, EMPTY, sizeof(sd.chains));
     memset(sd.phrases, 0, sizeof(sd.phrases));
-    memset(sd.instrs, 0, sizeof(sd.instrs));
     memset(sd.tables, 0, sizeof(sd.tables));
     memset(sd.grooves, 0, sizeof(sd.grooves));
-    for (c = 0; c < NINSTR; ++c) {
-        sd.instrs[c].pan = 0xFF;        /* centre = full both sides */
-        sd.instrs[c].table = EMPTY;
-        sd.instrs[c].wave = EMPTY;      /* WAV default: hardware triangle */
-        sd.instrs[c].taps_lo = TAPS_SQUARE;  /* no taps = frozen LFSR */
-    }
+    for (c = 0; c < NINSTR; ++c)
+        memcpy(&sd.instrs[c], &blank_instr, sizeof(blank_instr));
     for (c = 0; c < 32; ++c) {          /* factory wavetables 0-3 */
         sd.waves[0][c] = (c < 16) ? (c * 15 - 120) : (120 - (c - 16) * 15);
         sd.waves[1][c] = c * 8 - 124;                    /* saw */

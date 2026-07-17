@@ -1,13 +1,16 @@
 # ALYNXDJ save format (EEPROM / emulator `.eeprom` images)
 
 Keep in sync with `src/tracker.h` (`struct songdata`) and `src/save.c` —
-the standing sibling rule. Version: **5** (verified 2026-07-17).
+the standing sibling rule. Version: **6** (verified 2026-07-17).
 
 ## Physical layer
 
 93C86 serial EEPROM, 16-bit organisation: 1024 words / 2048 bytes.
 Driver: `src/eeprom.s` (10-bit address commands, CS = cart counter A7,
-CLK = A1, data = AUDIN). Emulator images: Handy writes `<rom>.eeprom`
+CLK = A1, data = AUDIN). Its EWEN special command uses the canonical
+all-ones address pattern from cc65's hardware driver; this matters to some
+strict SD-cart EEPROM emulators even though those bits are don't-care on a
+physical 93C86. Emulator images: Handy writes `<rom>.eeprom`
 beside its save dir — 2048 bytes, words little-endian, so the file *is*
 the cell array.
 
@@ -42,13 +45,16 @@ The payload unpacks to `struct songdata` verbatim (**7680 bytes**):
 the factory waves in place).
 
 Instrument record bytes: 0 type, 1 vol, 2 **env** (ATK<<4 | DCY, 4-bit
-times through the engine's `env_rate[]` curve — v2), 3 hold (low nibble),
+times through the engine's `env_rate[]` curve — v2), 3 **TBS<<4 | HOLD**
+(v6 table speed in the high nibble; envelope hold in the low nibble),
 4 wave ($FF = hardware triangle, 0-7 = wavetable; v3), 5 taps bits 7-0,
 6 table, 7 pan, 8 fine, 9 taps bit 8, 10 seed bits 7-0,
 11 seed bits 11-8, 12 **SWP** (signed 1/16-semitone per tick; positive falls),
 13 **VIB** (speed/depth nibbles), 14 **TRM** (speed/depth nibbles),
 15 **TSP** (signed semitones). SWP/VIB/TRM are v4 and apply to TONE/NOISE;
 TSP is v5 and applies to every instrument type before pitch/pad selection.
+TBS is v6: 0 advances one table row per triggered note; 1–15 advance every
+N engine ticks.
 
 **v1 → v2 migration** (done automatically at load when the header version
 is 1): the old per-tick ATK/DCY rate bytes fold onto the nearest
@@ -61,6 +67,10 @@ accidental sweep, vibrato, or tremolo.
 **v4 → v5 migration:** byte 15 was reserved. The loader clears it for every
 pre-v5 song so an old file cannot acquire an accidental instrument transpose.
 
+**v5 → v6:** no rewrite is needed. All earlier writers stored HOLD as a
+canonical 0–15 byte, so the newly assigned high nibble is already zero and
+loads as note-clocked TBS 0.
+
 RLE tokens: `t < $80` → literal, the next `t+1` bytes are verbatim;
 `t >= $80` → run, the next byte repeats `(t-$80)+3` times (3–130).
 
@@ -68,7 +78,8 @@ RLE tokens: `t < $80` → literal, the next `t+1` bytes are verbatim;
 empty chain steps are `$FF $FF` (tsp is don't-care until a phrase is
 inserted — the editor zeroes it then). Alternating `FF 00` patterns defeat
 the RLE. The pre-fix demo packed at 1469 bytes; the current factory image,
-including its out-of-loop verification rigs, packs at **1233/2032 bytes**.
+including its out-of-loop verification rigs and v6 defaults, packs at
+**1265/2032 bytes**.
 
 ## Status codes (FILES screen / `save.c`)
 

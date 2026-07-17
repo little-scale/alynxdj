@@ -90,7 +90,10 @@ test-tone: $(ROM) $(RETROSHOT)
 test-editor: $(ROM) $(RETROSHOT)
 	$(PYTHON) tools/test_editor_clone.py $(RETROSHOT) $(EMUCORE) $(ROM)
 
-test: test-dac test-save test-tone test-editor
+test-hardware: $(ROM) $(RETROSHOT)
+	$(PYTHON) tools/test_hardware_fixes.py $(RETROSHOT) $(EMUCORE) $(ROM)
+
+test: test-dac test-save test-tone test-editor test-hardware
 
 # version-only release copy (attach these to GitHub releases)
 dist: $(ROM)
@@ -100,4 +103,4 @@ dist: $(ROM)
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: all shot test test-dac test-save test-tone test-editor dist clean
+.PHONY: all shot test test-dac test-save test-tone test-editor test-hardware dist clean

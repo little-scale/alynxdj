@@ -19,7 +19,7 @@
 #define CMD_A    1      /* A xx  run table xx (one-shot; 10 = off) */
 #define CMD_C    2      /* C xy  chord: loop +0,+x,+y semitones per tick */
 #define CMD_D    3      /* D xx  delay trigger xx ticks */
-#define CMD_G    4      /* G xx  glide: signed per-tick tap sweep (00 = off) */
+#define CMD_G    4      /* G xx  glide: signed 1/16-tap per tick (00 = off) */
 #define CMD_H    5      /* H xx  table: loop to row x; phrase: end phrase */
 #define CMD_K    6      /* K xx  kill note after xx ticks */
 #define CMD_O    7      /* O xy  pan: ATTEN left x / right y */
@@ -44,7 +44,7 @@
                                  passes whose bit (count mod 8) is set */
 #define CMD_J    21     /* J xy  variation: transpose x (signed nibble) on
                                  passes whose bit (count mod 4) is set in y */
-#define CMD_B    22     /* B 0x  set the WAV wavetable (0-7) live */
+#define CMD_B    22     /* B xx  add signed xx to the current LFSR taps */
 #define NCMDS    23
 
 #define IT_TONE  0
@@ -79,7 +79,8 @@ struct instr {
     unsigned char env;      /* ATK<<4 | DCY: 4-bit TIMES, higher = longer
                                (0 = instant attack / sustain-forever decay);
                                mapped through env_rate[] in the engine */
-    unsigned char hold;     /* low nibble: ticks at peak (0-15) */
+    unsigned char hold;     /* TBS<<4 | HOLD: table ticks/row (0 = per note),
+                               envelope ticks at peak in the low nibble */
     unsigned char wave;     /* the BANK byte: WAV = wavetable # ($FF =
                                hardware triangle); KIT = pool kit # */
     unsigned char taps_lo;  /* TAPS bits 7..0 */

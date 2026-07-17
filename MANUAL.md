@@ -1,4 +1,4 @@
-# ALYNXDJ manual (V0.3)
+# ALYNXDJ manual (V0.4)
 
 A pocket groovebox for the Atari Lynx in the LSDJ tradition. If you know
 LSDJ or SMSGGDJ, you already know most of this.
@@ -100,6 +100,7 @@ ship as triangle, saw, square, 25% pulse.
 | BANK | labelled by TYPE — **WAVE** (WAV: wavetable 0–7, `--` = hardware triangle) / **KIT** (sample kit 0–7) / BANK (otherwise) |
 | **SEED** | the shifter start state, $000–$FFF |
 | TABLE | macro table to run on every note (`--` = none) |
+| **TBS** | table speed: `0` advances one row per triggered note; `1` is one row per engine tick; `2`–`F` wait that many ticks per row |
 
 TSP clamps at the playable note limits rather than wrapping. SWP/VIB/TRM
 show `--` for WAV and KIT. With the transport stopped, tap
@@ -109,6 +110,10 @@ start the sequencer; A-held+B retains the separate phrase-loop transport.
 Instrument VIB and the phrase/table `V` command share the same free-running
 per-track phase. A zero depth is completely off; it does not alter tuning or
 advance the phase.
+
+After **NEW**, every instrument starts as TONE with ATK `0`, HOLD `5`, and
+DCY `A`. Empty CHAIN rows display transpose `00`; their compact-save sentinel
+remains internal and changes to a real zero as soon as a phrase is inserted.
 
 ### TAPS and SEED — the Lynx sound
 
@@ -153,11 +158,11 @@ voices do not consume this two-voice budget.
 | Cmd | Name | Param |
 |---|---|---|
 | `A xx` | table | run table xx on this note (one-shot) |
-| `B 0x` | wave | set the WAV wavetable (0–7) live — switch the timbre of a sustaining WAV note |
+| `B xx` | taps offset | add signed `xx` once to the current TONE/NOISE taps value (`01` = +1, `FF` = −1), wrapping 0–511 without reseeding |
 | `C xy` | chord | loop +0, +x, +y semitones per tick |
 | `D xx` | delay | trigger after xx ticks |
 | `F xx` | finetune | signed offset in 1/16 semitones (one-shot) |
-| `G xx` | glide | signed per-tick tap sweep: `01`–`7F` ramps the LFSR taps up, `FF`–`80` down, `00` off — a live timbre morph (wraps 0–511; taps carry over, no reseed) |
+| `G xx` | glide | signed 1/16-tap-per-tick sweep: `01`–`7F` ramps up, `FF`–`80` down, `00` off — a slow live timbre morph (wraps 0–511; no reseed) |
 | `H xx` | hop | phrase: end this phrase after this row; table: loop to row x |
 | `K xx` | kill | cut the note after xx ticks (00 = instant) |
 | `L xx` | slide | glide into this row's note from the previous pitch, xx/16 semitone per tick |
@@ -182,9 +187,18 @@ counts accumulate across the whole arrangement and reset at play-start.
 
 ## Tables (TABLE screen)
 
-16 rows × {volume, transpose, command, param}, stepped one row per tick,
-sticking at the last row unless `H` loops. Attach via the instrument's
-TABLE field or a phrase `A` command.
+16 rows × {volume, transpose, command, param}. **TBS** controls the clock:
+`0` preserves the playhead and advances exactly once per triggered note;
+`1` is the fastest at one row per ~59.9 Hz tick; `2`–`F` are progressively
+slower. Tick modes restart at row 0 on a new note. All modes stick at the
+last row unless `H` loops. Attach via the instrument's TABLE field or a
+phrase `A` command. Table volume may reshape attack/hold, but once decay
+starts the envelope owns the level and always reaches its normal end.
+
+For scale, the former `G01` moved one whole taps value per tick: about 59.9
+values/second and an 8.55-second full wrap. It now moves 1/16 as fast: about
+3.74 values/second and a 136.8-second wrap. `G10` recreates the old `G01`
+speed.
 
 ## Groove (GROOVE screen)
 
@@ -210,6 +224,10 @@ the cart's EEPROM — the PACK meter shows the packed size against
 capacity; a song that doesn't fit is refused, never truncated. The last
 saved song autoloads at boot. In an emulator the save lives in the
 `.eeprom` file beside the ROM (format: [SAVEFORMAT.md](SAVEFORMAT.md)).
+Some SD carts call this an E2P, SAV, or SRAM file even though the ROM speaks
+the Lynx serial-EEPROM protocol. The write-enable command is emitted in the
+canonical 93C86 form used by cc65's hardware driver for flashcart
+compatibility.
 
 **NEW** wipes the whole song back to a blank slate (it does not touch the
 EEPROM — your last save survives until you SAVE over it). It asks for a

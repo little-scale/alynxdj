@@ -34,11 +34,13 @@ static const char cmd_chars[NCMDS] = {
     'F', 'L', 'N', 'R', 'S', 'Z', 'E', 'T', 'I', 'J', 'B',
 };
 
-#pragma code-name (push, "HICODE3")
+#pragma code-name (push, "HICODE1")
 static unsigned char cmd_next(unsigned char c)
 {
     return (c + 1 < NCMDS) ? c + 1 : 0;
 }
+#pragma code-name (pop)
+#pragma code-name (push, "HICODE3")
 static unsigned char cmd_prev(unsigned char c)
 {
     return c ? c - 1 : NCMDS - 1;
@@ -297,7 +299,8 @@ static void draw_chain_row(unsigned char r, unsigned char cursor_here)
     else
         draw_hex8(4, y, cs->phrase, inv0 ? PEN_BG : PEN_TEXT,
                   inv0 ? PEN_TEXT : PEN_BG);
-    draw_hex8(8, y, (unsigned char)cs->tsp, inv1 ? PEN_BG : PEN_TEXT,
+    draw_hex8(8, y, cs->phrase == EMPTY ? 0 : (unsigned char)cs->tsp,
+              inv1 ? PEN_BG : PEN_TEXT,
               inv1 ? PEN_TEXT : PEN_BG);
 }
 
@@ -356,7 +359,7 @@ static void draw_phrase_screen(void)
 
 /* --- INSTR screen: field rows --- */
 
-#define NIFIELDS 13
+#define NIFIELDS 14
 #define IF_TSP   5
 #define IF_SWP   6
 #define IF_VIB   7
@@ -365,14 +368,15 @@ static void draw_phrase_screen(void)
 #define IF_SEED  10
 #define IF_WAVE  11
 #define IF_TABLE 12
+#define IF_TBS   13
 static const char *const ifield_name[NIFIELDS] = {
     "TYPE", "VOL", "ATK", "HOLD", "DCY", "TSP", "SWP", "VIB",
-    "TRM", "TAPS", "SEED", "BANK", "TABLE",
+    "TRM", "TAPS", "SEED", "BANK", "TABLE", "TBS",
 };
 /* display grid row per field (absolute): blank rows group TYPE / envelope /
  * modulation / routing, and one blank below the title */
 static const unsigned char ifield_y[NIFIELDS] = {
-    2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15, 16,
+    2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
 };
 static const char *const itype_name[4] = { "TONE", "NOISE", "WAV", "KIT" };
 
@@ -383,6 +387,7 @@ static unsigned char ifield_nib(unsigned char f)
     switch (f) {
     case 2:  return in->env >> 4;           /* ATK */
     case 3:  return in->hold & 0x0F;        /* HOLD */
+    case IF_TBS: return in->hold >> 4;       /* table ticks / note mode */
     default: return in->env & 0x0F;         /* DCY */
     }
 }
@@ -393,7 +398,8 @@ static void ifield_nib_set(unsigned char f, unsigned char v)
     struct instr *in = &sd.instrs[edit_instr];
     switch (f) {
     case 2: in->env = (in->env & 0x0F) | (v << 4); break;
-    case 3: in->hold = v; break;
+    case 3: in->hold = (in->hold & 0xF0) | v; break;
+    case IF_TBS: in->hold = (in->hold & 0x0F) | (v << 4); break;
     default: in->env = (in->env & 0xF0) | v; break;
     }
 }
@@ -1187,6 +1193,7 @@ static void edit_instr_cell(unsigned char dir)
     case 2:                             /* ATK / HOLD / DCY: 0-F times */
     case 3:
     case 4:
+    case IF_TBS:
         v = ifield_nib(i_row);
         stp = (dir < 2) ? 4 : 1;
         if (dir == 0 || dir == 3)
