@@ -27,7 +27,7 @@ action.** No simultaneous-press timing windows.
 | **B** double-tap | paste the clipboard; with nothing cut: mint the next free chain/phrase on an empty cell, or slim-clone a populated one |
 | **B** held + **A** tap | cut the field under the cursor into the clipboard |
 | **B** held + **A** long-hold | **block SELECT** (SONG/CHAIN/PHRASE): anchors at the cursor; ↑/↓ extend; **B** = copy, **B**-held+**A** = cut, **A** = cancel; paste with B double-tap (rows land at the cursor) |
-| **A** tap | back (PHRASE → CHAIN → SONG) |
+| **A** tap | back where applicable on detail/utility screens; deliberately does nothing on CHAIN and PHRASE |
 | **A** hold + d-pad | move around the screen map (see below) |
 | **A** held + **B** | play / stop — contextual: SONG plays from the cursor row, CHAIN loops the chain, PHRASE and INSTR loop the phrase last viewed (audition while editing the instrument) |
 | **Option 1** + ←/→ | select the current track |
@@ -58,7 +58,7 @@ F G            FILES (below SONG)   GROOVE (below CHAIN)
 ```
 
 All ten screens are live. A-held + → descends and *drills in* (opens the
-chain/phrase/instrument under the cursor); A-held + ← / A-tap goes back;
+chain/phrase/instrument under the cursor); A-held + ← goes back;
 A-held + ↑/↓ moves vertically (OPTIONS above SONG, PROJECT above CHAIN,
 WAVE above INSTR, FILES and GROOVE below).
 

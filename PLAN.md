@@ -75,9 +75,10 @@ second-opinion core.
   list only after silicon listening.
 - **cc65 editor sluggishness (D2)** — if screen paints lag, move the dirty-
   cell renderer fully to asm before blaming the design.
-- **64 KB code packing** — after hiding the unused TONE/NOISE BANK row, MAIN is an exact fit,
-  HICODE1/HICODE3 have 16/26, HICODE2 has 1, and SONG/MIRRORRAM are exact fits; the C stack
-  is 512 bytes. Growth needs measured placement/reclamation, not an
+- **64 KB code packing** — after moving the selection-exit helper into cold code,
+  MAIN and HICODE1 each have 7 bytes free, HICODE3 has 26, HICODE2 has 1,
+  and SONG/MIRRORRAM are exact fits; the C stack is 512 bytes. Growth needs
+  measured placement/reclamation, not an
   unplanned resident helper.
 - **Scope creep** — echo (`Q`), user instrument bank, ComLynx song exchange
   are explicitly stretch (M11+/post-1.0). The FM-editor lesson from GENMDDJ:
@@ -85,7 +86,7 @@ second-opinion core.
 
 ## Status
 
-**M0–M16 implemented as of 2026-07-17.** The tracker has all ten screens,
+**M0–M17 implemented as of 2026-07-18.** The tracker has all ten screens,
 the full command/editor workflow, ComLynx OUT/IN, packed 93C86 persistence,
 four genuinely symmetric logical/hardware tracks, persistent TSP on every
 instrument type, and TONE/NOISE SWP/sine-VIB/TRM patch modulation. Two sampled

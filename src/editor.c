@@ -1,8 +1,9 @@
 /* Editor — SONG / CHAIN / PHRASE screens (M5).
  *
  * Control frame (DESIGN.md §3, ported): A = item modifier (tap insert on
- * release, hold+dpad edit), B = project modifier (tap = back, held+dpad =
- * screen nav with drill-down, held+A = transport). The button already held
+ * release, hold+dpad edit), B = project modifier (held+dpad = screen nav;
+ * clean taps only back out of detail/utility screens, held+A = transport).
+ * The button already held
  * when the other arrives selects the action; a chord marks the held
  * button "used" so its tap action doesn't also fire on release.
  */
@@ -1185,7 +1186,7 @@ static void edit_instr_cell(unsigned char dir)
             in->table = (v == 0 || v >= NTABLES) ? EMPTY : v - 1;
         return;
     case IF_WAVE:
-        if ((in->type & 3) <= IT_NOISE)
+        if (in->type <= IT_NOISE)
             return;
         v = in->wave;
         if (dir == 0 || dir == 3)
@@ -1367,7 +1368,8 @@ static void insert_cell(void)
 /* ---------------- screen navigation ---------------- */
 
 /* B-held + Right descends (drill: load the thing under the cursor);
- * B-held + Left / B-tap ascends. */
+ * B-held + Left ascends. Clean physical-A taps deliberately do not ascend
+ * from CHAIN or PHRASE. */
 static void nav(unsigned char to_right)
 {
     a_release_age = 0xFF;
@@ -1585,12 +1587,14 @@ static void blk_clear(void)
     }
 }
 
+#pragma code-name (push, "HICODE1")
 static void sel_exit(void)
 {
     sel_active = 0;
     draw_screen();
     mirror_cursor();
 }
+#pragma code-name (pop)
 
 static void blk_paste(void)
 {
@@ -1991,6 +1995,6 @@ void editor_frame(unsigned char joy, unsigned char prev)
         }
     }
     if ((prev & JOY_BTN_B_MASK) && !(joy & JOY_BTN_B_MASK) && !b_used
-        && screen != SCR_FILES)              /* FILES: back-tap does nothing */
-        nav(0);                              /* clean B tap = back */
+        && screen > SCR_PHRASE && screen != SCR_FILES)
+        nav(0);                              /* detail/utility back only */
 }

@@ -115,7 +115,7 @@ sequential double-taps of B). Mapping uses the physical button labels:
 | Lynx | Role (sibling equivalent) |
 |---|---|
 | **B** | item-level modifier — SMSGGDJ button 1: tap = insert/activate (on stopped INSTR: audition current patch), hold + D-pad = edit value, double-tap = paste/mint/slim-clone. Empty SONG/CHAIN cells mint the lowest blank and unreferenced chain/phrase; occupied cells copy only that chain/phrase, retaining its nested references. |
-| **A** | project-level modifier — SMSGGDJ button 2: tap = back, hold + D-pad = screen-map nav, held + B = play/stop transport |
+| **A** | project-level modifier — SMSGGDJ button 2: hold + D-pad = screen-map nav, held + B = play/stop transport. A clean tap backs out of some detail/utility screens but is inert on CHAIN and PHRASE, where map navigation is authoritative. |
 | **B held + A** | cut; + long-hold = block SELECT (ported gesture set). A PHRASE command-column cut carries only CMD+PARAM and preserves NOTE+INSTR. |
 | **Option 1** | mute/solo layer: O1 held + D-pad L/R selects track, O1+B = mute toggle, O1+A = solo |
 | **Option 2** | LIVE-mode page toggle on SONG |

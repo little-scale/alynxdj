@@ -92,6 +92,37 @@ def run_command_case(harness, core, rom, build, label, paste=False):
     return ram
 
 
+def run_back_tap_case(harness, core, rom, build, depth):
+    label = "chain-a-tap" if depth == 1 else "phrase-a-tap"
+    test_rom = os.path.join(
+        build, "alynxdj-editor-%s-%d-%d.lnx"
+        % (label, os.getpid(), time.time_ns()))
+    ppm = os.path.join(build, "editor-%s.ppm" % label)
+    ram_path = os.path.join(build, "editor-%s.ram" % label)
+    shutil.copyfile(rom, test_rom)
+
+    pokes = {SONG: 0}
+    put(pokes, CHAINS, (0, 0))
+    put(pokes, PHRASES, (37, 0, 0, 0))
+    env = os.environ.copy()
+    env["RETROSHOT_RAM_OUT"] = ram_path
+    env["RETROSHOT_RAM_POKE"] = ",".join(
+        "%04X:%02X" % item for item in sorted(pokes.items()))
+    env["RETROSHOT_RAM_POKE_AT"] = "250"
+
+    drill = "100@10,180@20,100@10,0@40,"
+    script = "0@280," + drill * depth + "100@4,0@60"
+    subprocess.run(
+        [harness, core, test_rom, ppm, "600", script], env=env, check=True)
+    with open(ram_path, "rb") as f:
+        ram = f.read()
+    if len(ram) != 65536:
+        fail("%s did not return a full RAM dump" % label)
+    if ram[0xC003] != depth:
+        fail("physical A tap left %s for screen %d"
+             % ("CHAIN" if depth == 1 else "PHRASE", ram[0xC003]))
+
+
 def chain_fixture(empty_cell):
     pokes = {}
     put(pokes, SONG, bytes([0xFF] * 0x200))
@@ -171,8 +202,12 @@ def main():
     if tuple(ram[PHRASES:PHRASES + 4]) != (37, 3, 9, 0x26):
         fail("command paste overwrote the row or lost CMD/PARAM")
 
+    run_back_tap_case(harness, core, rom, build, 1)
+    run_back_tap_case(harness, core, rom, build, 2)
+
     print("editor clone: PASS — empty cells mint next blank/unreferenced; "
-          "occupied cells slim-clone; command cuts preserve note rows")
+          "occupied cells slim-clone; command cuts preserve note rows; "
+          "CHAIN/PHRASE ignore physical-A back taps")
 
 
 if __name__ == "__main__":

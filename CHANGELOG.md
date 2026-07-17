@@ -21,6 +21,8 @@ and faster tracker editing.
   from current taps.
 - Hid and disabled the unused BANK row for TONE/NOISE instruments; it appears
   only as WAVE for WAV or KIT for KIT.
+- Physical A tap no longer backs out of CHAIN or PHRASE; navigation there is
+  consistently A-held plus d-pad.
 - Table VOL now shapes attack/hold but yields permanently at decay, so a
   looping volume table cannot override HOLD/DCY or keep a note alive.
 - Fixed real-hardware PCM ring races by atomically snapshotting the IRQ tail

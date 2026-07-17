@@ -90,7 +90,7 @@ scripting, and toolchain gotchas.
 
 ## Controls (quick reference — full docs in [MANUAL.md](MANUAL.md))
 
-- **D-pad** move · **B** edit/insert · **A** back/navigate
+- **D-pad** move cursor · **B** edit/insert
 - **A held + d-pad** screen map · **A held + B** play/stop
 - **B held + d-pad** edit value · **B held + A** cut · **B double-tap** paste,
   mint the next blank/unreferenced object on an empty SONG/CHAIN cell, or
