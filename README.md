@@ -26,8 +26,8 @@ as a multi-drop sync bus.
 
 ## Status
 
-**V0.4 — four-channel sampling and expressive instruments** (runs on a real
-Atari Lynx), feature-complete against the design brief with an editor/UX pass on top
+**V0.5 — hardware polish and sample patching** (runs on a real Atari Lynx),
+feature-complete against the design brief with an editor/UX pass on top
 (see [CHANGELOG.md](CHANGELOG.md) for what changed, [PLAN.md](PLAN.md) for
 the milestone table, [DESIGN.md](DESIGN.md) for the design contract and
 decision log):

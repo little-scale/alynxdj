@@ -10,7 +10,7 @@
 BUILD := build
 ROM   := $(BUILD)/alynxdj.lnx
 CFG   := alynxdj.cfg
-VERSION := v0.4
+VERSION := v0.5
 PYTHON ?= python3
 
 SRC_C := src/main.c src/sound.c src/engine.c src/editor.c src/save.c src/sync.c src/pool.c $(BUILD)/notes.c

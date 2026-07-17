@@ -1,10 +1,10 @@
 # Changelog
 
-## v0.4 — 2026-07-17
+## v0.5 — 2026-07-18
 
-Four-channel sampling and expressive instruments: this release restores
-Mikey's channel symmetry while adding performance-focused tone modulation
-and faster tracker editing.
+Hardware polish and sample patching: this release folds the first focused
+hardware listening pass into the tracker and adds a self-contained browser
+tool for replacing the ROM's sample kits.
 
 - Added a self-contained `sample-patch-browser.html`: it loads a built ROM,
   validates the block-45 pool, replaces/auditions individual WAVs or full
@@ -36,6 +36,12 @@ and faster tracker editing.
   were created but reloaded as the demo.
 - Added a hardware-fix regression covering TBS clocks, finite table-volume
   envelopes, row-clocked G, signed B, and long/short sample boundaries.
+
+## v0.4 — 2026-07-17
+
+Four-channel sampling and expressive instruments: this release restores
+Mikey's channel symmetry while adding performance-focused tone modulation
+and faster tracker editing.
 
 - Fixed PHRASE command-field cuts so they remove only the command and its
   parameter, preserving the row's note and instrument. The clipboard now
