@@ -12,8 +12,10 @@ SD = 0xD400
 SONG = SD
 CHAINS = SD + 0x0200
 PHRASES = SD + 0x0600
+INSTRS = SD + 0x1600
 CHAIN_SIZE = 32
 PHRASE_SIZE = 64
+INSTR_SIZE = 16
 
 
 def fail(message):
@@ -123,6 +125,46 @@ def run_back_tap_case(harness, core, rom, build, depth):
              % ("CHAIN" if depth == 1 else "PHRASE", ram[0xC003]))
 
 
+def run_instr_follow_case(harness, core, rom, build):
+    label = "follow-row-instrument"
+    test_rom = os.path.join(
+        build, "alynxdj-editor-%s-%d-%d.lnx"
+        % (label, os.getpid(), time.time_ns()))
+    ppm = os.path.join(build, "editor-%s.ppm" % label)
+    ram_path = os.path.join(build, "editor-%s.ram" % label)
+    shutil.copyfile(rom, test_rom)
+
+    target = 0x1B
+    pokes = {SONG: 0, INSTRS: 0, INSTRS + target * INSTR_SIZE: 0}
+    put(pokes, CHAINS, (0, 0))
+    put(pokes, PHRASES, (37, target, 0, 0, 0, 0, 0, 0))
+    env = os.environ.copy()
+    env["RETROSHOT_RAM_OUT"] = ram_path
+    env["RETROSHOT_RAM_POKE"] = ",".join(
+        "%04X:%02X" % item for item in sorted(pokes.items()))
+    env["RETROSHOT_RAM_POKE_AT"] = "250"
+
+    # Drill to the selected row's INSTR and change TYPE once. Return to an
+    # empty PHRASE row, drill again, and change TYPE once more. Instrument 1B
+    # must advance TONE -> NOISE -> WAV while 00 stays untouched: populated
+    # rows follow their instrument and empty rows retain the previous one.
+    drill = "100@10,180@20,100@10,0@40,"
+    edit = "1@10,81@4,1@10,0@40,"
+    back = "100@10,140@4,100@10,0@40,"
+    script = ("0@280," + drill * 3 + edit + back
+              + "20@4,0@20," + drill + edit + "0@60")
+    subprocess.run(
+        [harness, core, test_rom, ppm, "1000", script], env=env, check=True)
+    with open(ram_path, "rb") as f:
+        ram = f.read()
+    if len(ram) != 65536:
+        fail("%s did not return a full RAM dump" % label)
+    if ram[0xC003] != 3:
+        fail("row-instrument drill did not reach INSTR")
+    if ram[INSTRS] != 0 or ram[INSTRS + target * INSTR_SIZE] != 2:
+        fail("INSTR entry did not follow/retain row instrument %02X" % target)
+
+
 def chain_fixture(empty_cell):
     pokes = {}
     put(pokes, SONG, bytes([0xFF] * 0x200))
@@ -204,10 +246,12 @@ def main():
 
     run_back_tap_case(harness, core, rom, build, 1)
     run_back_tap_case(harness, core, rom, build, 2)
+    run_instr_follow_case(harness, core, rom, build)
 
     print("editor clone: PASS — empty cells mint next blank/unreferenced; "
           "occupied cells slim-clone; command cuts preserve note rows; "
-          "CHAIN/PHRASE ignore physical-A back taps")
+          "CHAIN/PHRASE ignore physical-A back taps; PHRASE drill follows "
+          "the selected row's instrument")
 
 
 if __name__ == "__main__":

@@ -1396,8 +1396,8 @@ static void nav(unsigned char to_right)
             screen = SCR_PHRASE;
         } else if (screen == SCR_PHRASE) {
             struct step *s = &sd.phrases[edit_phrase][p_row];
-            if (s->note)
-                edit_instr = s->instr < NINSTR ? s->instr : 0;
+            if (s->note && s->instr < NINSTR)
+                edit_instr = s->instr;
             screen = SCR_INSTR;
         } else if (screen == SCR_INSTR) {
             unsigned char t = sd.instrs[edit_instr].table;

@@ -76,10 +76,9 @@ second-opinion core.
 - **cc65 editor sluggishness (D2)** — if screen paints lag, move the dirty-
   cell renderer fully to asm before blaming the design.
 - **64 KB code packing** — after moving the selection-exit helper into cold code,
-  MAIN and HICODE1 each have 7 bytes free, HICODE3 has 26, HICODE2 has 1,
+  MAIN has 11 bytes free, HICODE1 has 7, HICODE3 has 26, HICODE2 has 1,
   and SONG/MIRRORRAM are exact fits; the C stack is 512 bytes. Growth needs
-  measured placement/reclamation, not an
-  unplanned resident helper.
+  measured placement/reclamation, not an unplanned resident helper.
 - **Scope creep** — echo (`Q`), user instrument bank, ComLynx song exchange
   are explicitly stretch (M11+/post-1.0). The FM-editor lesson from GENMDDJ:
   one new large surface per project; here it's the PCM layer, nothing else.

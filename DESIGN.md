@@ -143,6 +143,10 @@ FILES    GROOVE
 LIVE is a SONG-screen mode toggle (M12).
 ```
 
+Horizontal drill-in follows the object under the cursor. In particular,
+PHRASE → INSTR selects the valid instrument assigned to the current phrase
+row; an empty row or invalid instrument keeps the previously viewed patch.
+
 The right column carries the **map indicator** (ported): three rows
 (`OP_W_` / `SCPIT` / `FG___`), current screen inverted, unshipped screens
 dim. FILES is the save-slot manager (lands with M10b persistence).

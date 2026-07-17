@@ -23,6 +23,9 @@ and faster tracker editing.
   only as WAVE for WAV or KIT for KIT.
 - Physical A tap no longer backs out of CHAIN or PHRASE; navigation there is
   consistently A-held plus d-pad.
+- Drilling from PHRASE to INSTR now explicitly follows the valid instrument
+  assigned to the selected row and retains the previous instrument on an
+  empty or invalid row.
 - Table VOL now shapes attack/hold but yields permanently at decay, so a
   looping volume table cannot override HOLD/DCY or keep a note alive.
 - Fixed real-hardware PCM ring races by atomically snapshotting the IRQ tail

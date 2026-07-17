@@ -58,7 +58,9 @@ F G            FILES (below SONG)   GROOVE (below CHAIN)
 ```
 
 All ten screens are live. A-held + → descends and *drills in* (opens the
-chain/phrase/instrument under the cursor); A-held + ← goes back;
+chain/phrase/instrument under the cursor). PHRASE → INSTR opens the valid
+instrument assigned to the selected row; an empty row keeps the previously
+viewed instrument. A-held + ← goes back;
 A-held + ↑/↓ moves vertically (OPTIONS above SONG, PROJECT above CHAIN,
 WAVE above INSTR, FILES and GROOVE below).
 
