@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-## v0.6 — 2026-07-24
+## v0.51 — 2026-07-24
 
 - Added non-destructive waveform trimming to the standalone sample browser.
   Every pad has draggable IN/OUT handles with live start, end, and selected-
