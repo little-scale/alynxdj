@@ -15,7 +15,7 @@ later hardware). The ROM and project name is **ALYNXDJ**.
 
 **DESIGN.md is the contract** (with a §0 decision log — read it before design
 decisions, don't re-litigate settled ones); **PLAN.md** holds the milestone
-history through M17. Key settled decisions: 4 identical
+history through M21. Key settled decisions: 4 identical
 tracks each playing TONE/NOISE/WAV/KIT (D1), cc65 C editor + ca65 asm
 driver/IRQ/render (D2), 59.9 Hz VBlank engine tick with no region split (D3),
 flat RAM song block but **packed/RLE EEPROM save — 2 KB 93C86 is the whole
@@ -24,14 +24,26 @@ persistence budget** (D4/D10), per-channel timer-IRQ PCM capped at 2 voices
 target the owning channel A–D; there are no fixed sample buses. TONE/NOISE
 patches persist TSP/SWP/VIB/TRM plus TBS in save-format v6 (D15–D17); VIB is a
 centred ~0.47–7.49 Hz sine whose phase free-runs across notes and resets at
-the transport boundary.
+the transport boundary. D19/D20 add receive-only ComLynx MIDI takeover and
+clock sync: full-status MIDI channels 1–4 route to tracks A–D/instruments
+01–04, while the Pico divides USB MIDI's 24 PPQN into one `IN24` pulse per
+tracker row. `IN` and `IN24` arm locally at the cued row as `WAIT`; their
+first row pulse starts that row and changes the transport to `PLAY`. There is
+no heartbeat.
+Command values retain their historical/save-format IDs, but PHRASE and TABLE
+selection steps through the implemented letters alphabetically in both
+directions (D21).
 
 ## Build and verify
 
 ```sh
 make          # cl65 -t lynx → build/alynxdj.lnx
+make factory-samples # rebuild samples/alynxdj-factory-samples.bin from WAVs
+make SAMPLE_BANK=/path/custom.bin # validate + inject one portable sample bank
+make sample-timing-test # diagnostic ROM: no meter redraw or DAC peak tracking
 make shot     # headless Handy run → build/shot.png + build/shot.ppm.wav (audio!)
-make test     # DAC/sample + modulation/TBS/taps + editor + EEPROM round trip
+make test     # DAC/sample + modulation/TBS/taps + editor + EEPROM + MIDI UART
+make pico     # Pico USB-MIDI bridge UF2 (PICO_SDK_PATH + full Arm toolchain)
               # FRAMES=n and BTN=maskHex or BTN=mask@frames,mask@frames,... for input
 make clean
 ```
@@ -69,10 +81,38 @@ using a virtual environment.
   of the old B-then-A. MANUAL/README control tables use physical labels.
 - `RETROSHOT_RAM_OUT=<path>` dumps the full 64 KB RAM after a run — read any
   fixed address (e.g. debug mirrors) instead of scraping pixels.
+- Regression artifacts live under `build/tests/<suite>/`; each suite clears
+  and replaces only its own directory before running. Keep the top level of
+  `build/` for canonical build products and compiler-generated inputs.
 - RAM pressure is explicit: cart blocks 40/42/44 cold-load code to `$C900`,
-  `$F600`, and `$F320`; the sample pool starts at block 45. The C stack is
+  `$F600`, and `$F320`; the sample bank occupies blocks 45–253. The C stack is
   512 bytes and `$D000-$D3FF` stays two 512-byte rings. Keep `alynxdj.cfg`,
   `Makefile`, `src/main.c`, and `src/pool.c` aligned.
+- MIDI/sync and tap-glide cold code is packed into cart block 254 and loaded at
+  `$C100-$C6FF`, overlaying the EEPROM pack buffer between SAVE/LOAD calls.
+  The MIDI RX ring overlays phrase pass counters at `$C048-$C087`, valid only
+  because takeover stops the sequencer. `IN24` must retain those counters, so
+  it has a separate 64-byte IRQ ring over the phrase clipboard at
+  `$C088-$C0C7` with state at
+  `$C0F9-$C0FB`; `$C0FC-$C0FF` holds the four per-track G countdowns. Fixed
+  live bytes occupy `$C004-$C016`. Preserve the post-pack
+  reloads and these mutual-exclusion rules.
+- Cart sample seeks use a software 16-bit bytes-remaining counter. Its low
+  byte must be tested before decrement so `$0400` borrows to `$03FF`; getting
+  that order wrong replays the preceding page at every 1 KB sample boundary.
+  The kit-00 F4 ring regression in `test_hardware_fixes.py` covers two crosses.
+- Sample refills retain the physical cart cursor while one voice owns it;
+  directory reads invalidate `$C029`, and alternating voices re-seek. Refill
+  in 64-byte pieces, publish every piece atomically, continue across the ring
+  wrap in the same pump, and top up after playhead redraws. A single long
+  chunk or a one-sided ring refill causes the IRQ to hold the last DAC value.
+  `$C027/$C028` are wrapping slot-underrun counters; isolated kit-00 F4 must
+  complete at `00/00` in `test_hardware_fixes.py`.
+- `pico-midi-comlynx/` is the companion RP2040 USB-device firmware. Its PIO
+  output is open-drain (output-low/input only), 62.5 kbaud, start + 8 data +
+  fixed-Space ninth + stop. It forwards channel 1–4 messages, divides every
+  six USB `F8` clocks into one row-rate `F8`, and forwards `FA/FB/FC/FF`; it
+  deliberately has no heartbeat and is not a USB host.
 - Handy is dev-speed, not silicon: its LFSR-timbre and DAC-timing fidelity is
   suspect (DESIGN.md Q4) — hardware passes at M6/M7. **Measured 2026-07-16:
   this core renders every FEEDBACK/tap config identically** (static square
@@ -84,8 +124,10 @@ using a virtual environment.
   *unsigned* compare — a negative int silently becomes huge (bit the L
   slide: it diverged an octave down). Cast explicitly:
   `int r = (int)uchar_var;` then compare against `r`.
-- Boot **autoloads** a valid EEPROM save over `song_demo()` — use a unique ROM
-  basename for demo/rig tests to get an isolated emulator EEPROM namespace.
+- Boot starts with `song_clear()` and **autoloads** a valid EEPROM save over
+  it; the factory `song_demo()` is loaded only through FILES → DEMO. Use a
+  unique ROM basename for save/demo/rig tests to isolate the emulator EEPROM
+  namespace.
 - **ElCheapoSD for Lynx is not song-save compatible:** it contains a physical
   128-byte 93C46 only, while ALYNXDJ requires a 2 KB 93C86. It can run the ROM
   but cannot persist a full song, and its cart API is menu-oriented rather
@@ -122,8 +164,10 @@ stale flashes, and per-region timing tables where applicable.
   - `01 808`, `02 909`, `03 C78`, `04 606` — drum-machine kits, 8 one-shots each,
     named `NN XX.wav` (BD/SD/HH/…).
   - `05 speech 1` … `08 speech 4` — speech/phoneme banks (AA.wav, AE.wav, …).
-  - A conversion tool (successor to SMSGGDJ's `smsggdj_sample.py`) will need to
-    resample these for the Lynx DAC.
+  - `alynxdj-factory-samples.bin` is the portable, build-ready 64-slot factory
+    bank. `tools/alynxdj_pool.py` rebuilds/validates it; the browser imports and
+    exports the same `PL` format. Slots are u16-sized (65,535 bytes maximum),
+    and the 256 KB ROM reserves 214,016 bytes for the complete bank.
 - `artwork/` — empty; destined for logo/splash art (siblings use an `art/` dir with
   a makelogo.py-style pipeline).
 - `task.txt` — the original project brief.

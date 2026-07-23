@@ -36,7 +36,7 @@ static unsigned char rate_nib(unsigned char rate)
 }
 
 /* pack buffer in the free RAM band above the mirrors */
-static unsigned char *const buf = (unsigned char *)0xC100;
+#define buf ((unsigned char *)0xC100)
 
 static unsigned char cksum(unsigned len)
 {

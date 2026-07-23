@@ -114,6 +114,21 @@ static int poke_ram(const char *spec, uint8_t *ram, size_t ramsz) {
     return ok;
 }
 
+/* Optional ComLynx input script: "frame:byteHex,frame:byteHex,...".
+   The repo-patched Handy core delivers each byte through Mikey's UART, so
+   this exercises the ROM's real receive interrupt rather than a RAM hook. */
+static void comlynx_inject(const char *spec, int frame, void (*rx)(int)) {
+    while (spec && *spec) {
+        char *end;
+        long at = strtol(spec, &end, 10);
+        if (*end != ':') break;
+        unsigned long byte = strtoul(end + 1, &end, 16);
+        if (at == frame) rx((int)(byte & 0xFF));
+        spec = strchr(end, ',');
+        if (spec) spec++;
+    }
+}
+
 #define SYM(n) do { *(void **)(&n) = dlsym(core, #n); \
     if (!n) { fprintf(stderr, "missing symbol %s\n", #n); return 2; } } while (0)
 
@@ -142,6 +157,8 @@ int main(int argc, char **argv) {
     size_t (*retro_get_memory_size)(unsigned);
     void (*retro_unload_game)(void);
     void (*retro_deinit)(void);
+    void (*comlynx_cable)(int);
+    void (*comlynx_rx)(int);
     SYM(retro_set_environment); SYM(retro_set_video_refresh);
     SYM(retro_set_input_poll);  SYM(retro_set_input_state);
     SYM(retro_set_audio_sample); SYM(retro_set_audio_sample_batch);
@@ -149,6 +166,8 @@ int main(int argc, char **argv) {
     SYM(retro_get_system_av_info); SYM(retro_set_controller_port_device);
     SYM(retro_get_memory_data); SYM(retro_get_memory_size);
     SYM(retro_unload_game); SYM(retro_deinit);
+    *(void **)(&comlynx_cable) = dlsym(core, "handy_comlynx_cable");
+    *(void **)(&comlynx_rx) = dlsym(core, "handy_comlynx_rx");
 
     retro_set_environment(env_cb);
     retro_set_video_refresh(video_cb);
@@ -168,6 +187,15 @@ int main(int argc, char **argv) {
     struct retro_game_info gi = {0};
     gi.path = argv[2]; gi.data = buf; gi.size = sz;
     if (!retro_load_game(&gi)) { fprintf(stderr, "retro_load_game failed\n"); return 4; }
+
+    const char *comlynx_spec = getenv("RETROSHOT_COMLYNX");
+    if (comlynx_spec) {
+        if (!comlynx_cable || !comlynx_rx) {
+            fprintf(stderr, "core lacks the ALYNXDJ ComLynx bridge exports\n");
+            return 4;
+        }
+        comlynx_cable(1);
+    }
 
     /* Optional system-RAM initialization for deterministic test hooks.
        POKE_AT defers it until that frontend frame (after core reset). */
@@ -222,6 +250,8 @@ int main(int argc, char **argv) {
                     size_t ramsz = retro_get_memory_size(RETRO_MEMORY_SYSTEM_RAM);
                     if (!ram || !poke_ram(ram_poke_spec, ram, ramsz)) return 4;
                 }
+                if (comlynx_spec)
+                    comlynx_inject(comlynx_spec, run_frame, comlynx_rx);
                 retro_run();
             }
             tok = strtok_r(NULL, ",", &save);
@@ -233,6 +263,8 @@ int main(int argc, char **argv) {
                 size_t ramsz = retro_get_memory_size(RETRO_MEMORY_SYSTEM_RAM);
                 if (!ram || !poke_ram(ram_poke_spec, ram, ramsz)) return 4;
             }
+            if (comlynx_spec)
+                comlynx_inject(comlynx_spec, i, comlynx_rx);
             retro_run();
         }
     }

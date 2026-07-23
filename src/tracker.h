@@ -19,7 +19,7 @@
 #define CMD_A    1      /* A xx  run table xx (one-shot; 10 = off) */
 #define CMD_C    2      /* C xy  chord: loop +0,+x,+y semitones per tick */
 #define CMD_D    3      /* D xx  delay trigger xx ticks */
-#define CMD_G    4      /* G xx  glide: signed taps per sequencer row */
+#define CMD_G    4      /* G xx  signed direction + tick/row tap period */
 #define CMD_H    5      /* H xx  table: loop to row x; phrase: end phrase */
 #define CMD_K    6      /* K xx  kill note after xx ticks */
 #define CMD_O    7      /* O xy  pan: ATTEN left x / right y */
@@ -80,7 +80,7 @@ struct instr {
                                (0 = instant attack / sustain-forever decay);
                                mapped through env_rate[] in the engine */
     unsigned char hold;     /* TBS<<4 | HOLD: table ticks/row (0 = per note),
-                               envelope ticks at peak in the low nibble */
+                               peak ticks in low nibble; F = indefinite */
     unsigned char wave;     /* the BANK byte: WAV = wavetable # ($FF =
                                hardware triangle); KIT = pool kit # */
     unsigned char taps_lo;  /* TAPS bits 7..0 */
@@ -116,6 +116,7 @@ struct songdata {
     unsigned char    waves[8][32];              /* signed 8-bit wavetables */
 };
 extern struct songdata sd;
+unsigned __fastcall__ instr_taps(unsigned char inum);
 
 struct walk {
     unsigned char active;
@@ -133,11 +134,13 @@ extern struct walk eng_walk[NCH];
 #define MODE_CHAIN  2
 #define MODE_PHRASE 3
 #define MODE_LIVE   4
-extern unsigned char eng_mode;
+#define eng_mode (*(volatile unsigned char *)0xC011)
+#define eng_waiting (*(volatile unsigned char *)0xC016)
 extern unsigned char live_q[NCH];   /* queued chain, $FF none, $FE stop */
 void __fastcall__ engine_live_queue(unsigned char track, unsigned char chain);
-extern unsigned char eng_mute;
-extern unsigned char eng_gpos, eng_groove;
+#define eng_mute (*(volatile unsigned char *)0xC012)
+#define eng_gpos   (*(volatile unsigned char *)0xC014)
+#define eng_groove (*(volatile unsigned char *)0xC015)
 extern unsigned char eng_level[NCH];
 void __fastcall__ engine_set_mute(unsigned char mask);
 
@@ -150,6 +153,10 @@ void engine_play_chain(unsigned char track, unsigned char chain);
 void engine_play_phrase(unsigned char track, unsigned char phrase);
 void engine_audition(unsigned char note, unsigned char inum);
 void __fastcall__ engine_audition_cmd(unsigned char cmd, unsigned char param);
+void __fastcall__ engine_midi_note_on(unsigned char track,
+                                      unsigned char note);
+void __fastcall__ engine_midi_note_off(unsigned char track);
+void engine_midi_panic(void);
 
 void sound_init(void);
 
@@ -164,6 +171,7 @@ extern volatile unsigned char dac_off[NDAC]; /* channel * 8, for AUD0+x */
 extern volatile unsigned char dac_muted[NDAC];
 extern volatile unsigned char dac_rate[NDAC];
 extern volatile unsigned char dac_peak[NDAC];
+#define dac_underrun ((volatile unsigned char *)0xC027)
 void pcm_stop(void);                      /* stop both slots */
 void __fastcall__ dac_stop(unsigned char slot);
 void __fastcall__ dac_rate_set(unsigned char slot, unsigned char rate);
@@ -184,15 +192,21 @@ extern unsigned char pcm_done[NDAC];
 #define SYNC_OFF 0
 #define SYNC_OUT 1
 #define SYNC_IN  2
-#define NSYNC    3
+#define SYNC_MIDI 3
+#define SYNC_IN24 4
+#define NSYNC     5
 #define SYNC_OP_ROW   0x01
 #define SYNC_OP_START 0x02
 #define SYNC_OP_STOP  0x03
-extern unsigned char sync_mode;
-extern unsigned char sync_row_pending;
+#define sync_mode        (*(volatile unsigned char *)0xC00F)
+#define sync_row_pending (*(volatile unsigned char *)0xC010)
 void sync_init(void);
+void sync_irq_enable(void);
+void __fastcall__ sync_set_mode(unsigned char mode);
 void __fastcall__ sync_tx(unsigned char b);
 void sync_poll(void);
+void __fastcall__ sync_test_byte(unsigned char b);
+void midi_overlay_load(void);
 
 /* Wavetable feed uses either DAC slot and therefore any owning channel. */
 void __fastcall__ wave_start(unsigned char slot, unsigned char w);
@@ -235,14 +249,16 @@ void clear_grid(void);
 #define PEN_ACCENT  3
 
 void song_clear(void);          /* blank song + sentinels (main.c) */
+void song_demo(void);           /* load factory demo into working RAM */
 
 /* palettes (main.c) */
 #define NPALETTES 8
-extern unsigned char opt_palette;
+#define opt_palette (*(volatile unsigned char *)0xC013)
 void palette_apply(void);
 
 /* editor */
 void editor_init(void);
 void editor_frame(unsigned char joy, unsigned char prev);
+void editor_clipboard_clear(void);
 
 #endif

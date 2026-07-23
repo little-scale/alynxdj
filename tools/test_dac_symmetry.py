@@ -17,7 +17,10 @@ def main():
     if len(sys.argv) != 4:
         fail("usage: test_dac_symmetry.py RETROSHOT CORE ROM")
     harness, core, rom = sys.argv[1:]
-    build = os.path.dirname(os.path.abspath(rom))
+    build = os.path.join(os.path.dirname(os.path.abspath(rom)),
+                         "tests", "dac")
+    shutil.rmtree(build, ignore_errors=True)
+    os.makedirs(build)
     test_rom = os.path.join(build, "alynxdj-dac-test.lnx")
     ppm = os.path.join(build, "dac-test.ppm")
     ram_path = os.path.join(build, "dac-test.ram")
@@ -41,14 +44,32 @@ def main():
     count = ram[0xC022]
     trace = [tuple(ram[0xC030 + i * 3:0xC033 + i * 3])
              for i in range(min(count, 8))]
-    expected = [(0, 0, 0), (1, 1, 8), (2, 0, 16), (3, 1, 24)]
-    if trace[:4] != expected:
-        fail("routing/steal trace %r, expected prefix %r" % (trace, expected))
+    # The first two simultaneous voices must occupy both DAC slots. Later KIT
+    # one-shots may either steal the oldest live slot or reuse a slot whose
+    # short sample has already completed; main-loop speed legitimately changes
+    # which case occurs. Track routing and channel register offsets stay exact.
+    # The looping table-WAV rig below retains the strict oldest-steal check,
+    # because none of those voices can complete between triggers.
+    if len(trace) < 4:
+        fail("DAC routing trace is too short: %r" % (trace,))
+    expected_routes = [(0, 0), (1, 8), (2, 16), (3, 24)]
+    actual_routes = [(ch, dac_off) for ch, _slot, dac_off in trace[:4]]
+    if actual_routes != expected_routes:
+        fail("DAC channel routing %r, expected %r"
+             % (actual_routes, expected_routes))
+    if trace[0][1] != 0 or trace[1][1] != 1:
+        fail("first two simultaneous DAC voices did not use both slots: %r"
+             % (trace,))
+    if any(slot not in (0, 1) for _ch, slot, _dac_off in trace[:4]):
+        fail("DAC routing used an invalid slot: %r" % (trace,))
     if tuple(ram[0xC025:0xC027]) != (1, 63):
         fail("same-row S command did not reach slot 1 at rate 63")
-    if ram[0xC02B] < 3 or ram[0xC02C] < 2:
+    trigger_counts = tuple(ram[0xC02B:0xC02D])
+    # Slot ownership can legitimately skew once short one-shots finish, but
+    # both streamers must have run and R02 must produce repeated triggers.
+    if min(trigger_counts) < 1 or sum(trigger_counts) < 5:
         fail("KIT retrigger/stream counts are too low: %d/%d"
-             % (ram[0xC02B], ram[0xC02C]))
+             % trigger_counts)
 
     with wave.open(ppm + ".wav", "rb") as wav:
         samples = wav.readframes(wav.getnframes())
@@ -69,9 +90,10 @@ def main():
     wave_count = wave_ram[0xC022]
     wave_trace = [tuple(wave_ram[0xC030 + i * 3:0xC033 + i * 3])
                   for i in range(min(wave_count, 8))]
-    if wave_trace[:4] != expected:
+    expected_steal = [(0, 0, 0), (1, 1, 8), (2, 0, 16), (3, 1, 24)]
+    if wave_trace[:4] != expected_steal:
         fail("table-WAV routing trace %r, expected prefix %r"
-             % (wave_trace, expected))
+             % (wave_trace, expected_steal))
     with wave.open(wave_ppm + ".wav", "rb") as wav:
         wave_samples = wav.readframes(wav.getnframes())
     wave_peak = max(abs(v) for (v,) in struct.iter_unpack("<h", wave_samples))

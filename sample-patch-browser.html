@@ -22,7 +22,7 @@
       background-size:32px 32px,32px 32px,auto,auto;
       font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
     }
-    button,input { font:inherit }
+    button,input,output { font:inherit }
     button,label { -webkit-tap-highlight-color:transparent }
     button:focus-visible,label:focus-within,[role=tab]:focus-visible {
       outline:2px solid var(--acid); outline-offset:3px;
@@ -75,7 +75,7 @@
     .workspace { padding:26px }
     .workspace-head { display:flex; justify-content:space-between; align-items:flex-end; gap:24px; margin-bottom:24px }
     .workspace-head h2 { margin:0; letter-spacing:-.025em; font-size:25px }
-    .toolbar { display:flex; align-items:center; gap:14px }
+    .toolbar { display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:10px }
     .kit-tabs { display:grid; grid-template-columns:repeat(8,1fr); margin-bottom:22px; overflow-x:auto; border:1px solid var(--line) }
     .kit-tabs button { position:relative; display:grid; align-content:center; gap:5px; min-width:95px; min-height:70px; padding:11px 14px; color:var(--muted); background:#171422; border:0; border-right:1px solid var(--line); cursor:pointer; text-align:left }
     .kit-tabs button:last-child { border-right:0 }
@@ -95,10 +95,32 @@
     .sample-title p { margin:0; color:#756f85; text-transform:uppercase; font:10px/1 ui-monospace,monospace }
     .changed-tag,.warning-chip { padding:4px 6px; color:#171520; background:var(--violet); font:800 9px/1 ui-monospace,monospace }
     .warning-chip { color:#271c0f; background:#ffc85c }
-    .waveform { display:flex; align-items:center; gap:2px; height:48px; margin:15px 0 11px; overflow:hidden }
-    .waveform span { flex:1 1 0; min-width:1px; background:var(--aqua); opacity:.68 }
-    .changed .waveform span { background:var(--violet); opacity:.86 }
+    .waveform { position:relative; height:58px; margin:15px 0 8px; overflow:hidden; background:#100e18; border:1px solid #ffffff0b }
+    .wave-bars { position:absolute; inset:8px 5px; display:flex; align-items:center; gap:2px; pointer-events:none }
+    .wave-bar { flex:1 1 0; min-width:1px; background:var(--aqua); opacity:.68 }
+    .changed .wave-bar { background:var(--violet); opacity:.86 }
+    .trim-shade { position:absolute; z-index:2; top:0; bottom:0; background:#090711b8; pointer-events:none }
+    .trim-shade.start { left:0 }
+    .trim-shade.end { right:0 }
+    .trim-line { position:absolute; z-index:3; top:0; bottom:0; width:2px; background:var(--acid); pointer-events:none; box-shadow:0 0 7px #d9ff4f9c }
+    .trim-line.end { background:var(--violet); box-shadow:0 0 7px #a581ff9c }
+    .trim-range { appearance:none; -webkit-appearance:none; position:absolute; z-index:4; inset:0; width:100%; height:100%; margin:0; background:transparent; pointer-events:none }
+    .trim-range::-webkit-slider-runnable-track { height:100%; background:transparent }
+    .trim-range::-webkit-slider-thumb { appearance:none; -webkit-appearance:none; width:14px; height:58px; margin:0; background:transparent; border:0; pointer-events:auto; cursor:ew-resize }
+    .trim-range::-moz-range-track { height:100%; background:transparent; border:0 }
+    .trim-range::-moz-range-thumb { width:14px; height:58px; background:transparent; border:0; pointer-events:auto; cursor:ew-resize }
+    .trim-readout { display:flex; justify-content:space-between; gap:8px; margin:0 0 9px; color:#746d84; text-transform:uppercase; font:700 8px/1 ui-monospace,monospace }
+    .trim-readout output { color:var(--muted); font-size:9px }
     .sample-meta { display:flex; align-items:center; gap:9px; min-height:18px; color:var(--muted); text-transform:uppercase; font:10px/1 ui-monospace,monospace }
+    .processing { display:grid; gap:10px; margin-top:13px; padding-top:12px; border-top:1px solid var(--line) }
+    .gain-control { display:grid; gap:7px }
+    .gain-head { display:flex; justify-content:space-between; align-items:center; color:var(--muted); text-transform:uppercase; letter-spacing:.08em; font:700 9px/1 ui-monospace,monospace }
+    .gain-head output { color:var(--acid); letter-spacing:0; font-size:10px }
+    .gain-control input { width:100%; margin:0; accent-color:var(--acid); cursor:pointer }
+    .drive-control { display:flex; align-items:center; justify-content:space-between; gap:10px; min-height:31px; padding:7px 9px; color:var(--muted); background:#ffffff07; border:1px solid var(--line); cursor:pointer; text-transform:uppercase; letter-spacing:.07em; font:700 9px/1 ui-monospace,monospace }
+    .drive-control span:last-child { color:#756f85; letter-spacing:0; font-weight:500; text-transform:none }
+    .drive-control.active { color:var(--paper); background:#a581ff17; border-color:#a581ff72 }
+    .drive-control input { width:15px; height:15px; margin:0; accent-color:var(--violet); cursor:pointer }
     .sample-actions { display:grid; grid-template-columns:1fr 1fr; gap:7px; margin-top:14px }
     .audition,.replace,.revert { display:flex; align-items:center; justify-content:center; gap:7px; min-height:34px; padding:8px; font-size:11px; font-weight:700 }
     .replace { cursor:pointer }
@@ -169,9 +191,13 @@
 
     const ROM_BYTES = 262208;                 // 64-byte .lnx header + 256 KB cart
     const POOL_OFFSET = 64 + 45 * 1024;       // cart block 45
-    const POOL_CAPACITY = ROM_BYTES - POOL_OFFSET;
+    const LEGACY_POOL_END = 64 + 200 * 1024;   // earlier MIDI-helper location
+    const POOL_END = 64 + 254 * 1024;          // MIDI helper starts at block 254
+    const POOL_CAPACITY = POOL_END - POOL_OFFSET;
     const PCM_RATE = 7812.5;
-    const SLOT_CAP = 16000;
+    const SLOT_CAP = 65535;                    // u16 sample length, about 8.39 s
+    const GAIN_MIN = -24;
+    const GAIN_MAX = 24;
     const KIT_NAMES = ["808","909","C78","606","Speech 1","Speech 2","Speech 3","Speech 4"];
     const PAD_NAMES = ["Pad 1","Pad 2","Pad 3","Pad 4","Pad 5","Pad 6","Pad 7","Pad 8"];
 
@@ -184,40 +210,64 @@
     function writeU16(bytes, offset, value) {
       bytes[offset] = value & 255; bytes[offset+1] = value >> 8 & 255;
     }
+    function hasData(bytes,start,end) {
+      for (let offset=start;offset<Math.min(end,bytes.length);offset++) if (bytes[offset]) return true;
+      return false;
+    }
+
+    function parsePool(bytes,poolOffset,capacity,sourceName) {
+      if (bytes[poolOffset] !== 80 || bytes[poolOffset+1] !== 76)
+        fail(`No ALYNXDJ PL sample bank was found in ${sourceName}.`);
+      const kitCount = bytes[poolOffset+2];
+      if (kitCount < 1 || kitCount > 8) fail(`${sourceName} declares ${kitCount} sample kits; ALYNXDJ supports 1–8.`);
+      const directorySize = 4 + kitCount * 8 * 5;
+      if (directorySize > capacity) fail(`${sourceName}'s sample directory is truncated.`);
+      const kits = [];
+      let poolUsed = directorySize, previousEnd = directorySize;
+      for (let kit=0; kit<kitCount; kit++) {
+        const row = [];
+        for (let slot=0; slot<8; slot++) {
+          const entry = poolOffset + 4 + (kit*8+slot)*5;
+          const relativeOffset = readU24(bytes,entry);
+          const length = readU16(bytes,entry+3);
+          const end = relativeOffset + length;
+          if (relativeOffset < directorySize || end > capacity)
+            fail(`Kit ${kit+1}, pad ${slot+1} points outside the sample pool.`);
+          if (relativeOffset < previousEnd) fail(`Kit ${kit+1}, pad ${slot+1} overlaps an earlier sample.`);
+          if (length < 1 || length > SLOT_CAP) fail(`Kit ${kit+1}, pad ${slot+1} has an unsupported sample length.`);
+          const start = poolOffset + relativeOffset;
+          row.push(new Int8Array(bytes.buffer.slice(start,start+length)));
+          previousEnd = end; poolUsed = Math.max(poolUsed,end);
+        }
+        kits.push(row);
+      }
+      return {kits,kitCount,poolUsed};
+    }
 
     function parseRom(input) {
       const bytes = input instanceof Uint8Array ? Uint8Array.from(input) : new Uint8Array(input.slice(0));
       if (bytes.length !== ROM_BYTES) fail(`Expected a ${formatBytes(ROM_BYTES)} ALYNXDJ ROM, got ${formatBytes(bytes.length)}.`);
       if (bytes[0] !== 76 || bytes[1] !== 89 || bytes[2] !== 78 || bytes[3] !== 88)
         fail("This file is not a valid .lnx cartridge image (missing LYNX header).");
-      if (bytes[POOL_OFFSET] !== 80 || bytes[POOL_OFFSET+1] !== 76)
-        fail("No ALYNXDJ sample pool was found at cart block 45. Use a built ALYNXDJ ROM.");
-      const kitCount = bytes[POOL_OFFSET+2];
-      if (kitCount < 1 || kitCount > 8) fail(`The ROM declares ${kitCount} sample kits; ALYNXDJ supports 1–8.`);
-      const directorySize = 4 + kitCount * 8 * 5;
-      const kits = [];
-      let poolUsed = directorySize, previousEnd = directorySize;
-      for (let kit=0; kit<kitCount; kit++) {
-        const row = [];
-        for (let slot=0; slot<8; slot++) {
-          const entry = POOL_OFFSET + 4 + (kit*8+slot)*5;
-          const relativeOffset = readU24(bytes,entry);
-          const length = readU16(bytes,entry+3);
-          const end = relativeOffset + length;
-          if (relativeOffset < directorySize || end > POOL_CAPACITY)
-            fail(`Kit ${kit+1}, pad ${slot+1} points outside the sample pool.`);
-          if (relativeOffset < previousEnd) fail(`Kit ${kit+1}, pad ${slot+1} overlaps an earlier sample.`);
-          if (length < 1 || length > SLOT_CAP) fail(`Kit ${kit+1}, pad ${slot+1} has an unsupported sample length.`);
-          const start = POOL_OFFSET + relativeOffset;
-          row.push(new Int8Array(bytes.buffer.slice(start,start+length)));
-          previousEnd = end; poolUsed = Math.max(poolUsed,end);
-        }
-        kits.push(row);
-      }
-      return {bytes,kits,kitCount,poolUsed};
+      const currentMidi=hasData(bytes,POOL_END,POOL_END+0x600);
+      const legacyMidi=!currentMidi&&hasData(bytes,LEGACY_POOL_END,LEGACY_POOL_END+0x600);
+      const poolEnd=legacyMidi?LEGACY_POOL_END:POOL_END;
+      const poolCapacity=poolEnd-POOL_OFFSET;
+      return {bytes,poolEnd,poolCapacity,legacyLayout:legacyMidi,
+              ...parsePool(bytes,POOL_OFFSET,poolCapacity,"the ROM at cart block 45")};
     }
 
-    function buildPool(kits) {
+    function parseBank(input) {
+      const bytes = input instanceof Uint8Array ? Uint8Array.from(input) : new Uint8Array(input.slice(0));
+      if (bytes.length > POOL_CAPACITY)
+        fail(`The sample bank is ${formatBytes(bytes.length)}; this ROM has ${formatBytes(POOL_CAPACITY)} available.`);
+      const parsed=parsePool(bytes,0,bytes.length,"the selected file");
+      if (parsed.poolUsed !== bytes.length)
+        fail(`The sample bank has ${formatBytes(bytes.length-parsed.poolUsed)} of trailing data.`);
+      return {bytes,...parsed};
+    }
+
+    function buildPool(kits,capacity=POOL_CAPACITY) {
       if (kits.length < 1 || kits.length > 8) fail("A pool must contain 1–8 kits.");
       for (const [kitIndex,kit] of kits.entries()) {
         if (kit.length !== 8) fail(`Kit ${kitIndex+1} must contain exactly 8 pads.`);
@@ -227,8 +277,8 @@
       }
       const directorySize = 4 + kits.length * 8 * 5;
       const used = kits.reduce((total,kit) => total + kit.reduce((sum,sample) => sum+sample.length,0),directorySize);
-      if (used > POOL_CAPACITY)
-        fail(`The sample pool needs ${formatBytes(used)}, but the ROM has ${formatBytes(POOL_CAPACITY)} available.`);
+      if (used > capacity)
+        fail(`The sample pool needs ${formatBytes(used)}, but the ROM has ${formatBytes(capacity)} available.`);
       const pool = new Uint8Array(used);
       pool.set([80,76,kits.length,0]);
       let entry=4, sampleOffset=directorySize;
@@ -241,9 +291,9 @@
     }
 
     function patchRom(source,kits) {
-      const pool = buildPool(kits);
+      const pool = buildPool(kits,source.poolCapacity);
       const patched = Uint8Array.from(source.bytes);
-      patched.fill(0,POOL_OFFSET); patched.set(pool,POOL_OFFSET);
+      patched.fill(0,POOL_OFFSET,source.poolEnd); patched.set(pool,POOL_OFFSET);
       return patched;
     }
 
@@ -252,6 +302,34 @@
       if (fraction<.5) return sign*lower;
       if (fraction>.5) return sign*(lower+1);
       return sign*(lower%2===0?lower:lower+1);
+    }
+
+    /* Gain is applied before the optional tanh stage. With drive disabled,
+     * values outside the signed 8-bit range hard-clip as they will in the
+     * ROM. With drive enabled, tanh provides a bounded soft saturation. */
+    function processSample(source,gainDb=0,tanhDrive=false) {
+      if (!source?.length) fail("A sample must contain at least one PCM byte.");
+      gainDb=Math.max(GAIN_MIN,Math.min(GAIN_MAX,Number(gainDb)||0));
+      if (gainDb===0 && !tanhDrive) return Int8Array.from(source);
+      const gain=10**(gainDb/20), output=new Int8Array(source.length);
+      for (let i=0;i<source.length;i++) {
+        const amplified=source[i]/127*gain;
+        const shaped=tanhDrive?Math.tanh(amplified):Math.max(-1,Math.min(1,amplified));
+        output[i]=Math.max(-127,Math.min(127,roundHalfToEven(shaped*127)));
+      }
+      return output;
+    }
+
+    function prepareSample(source,gainDb=0,tanhDrive=false,trimStart=0,trimEnd=source?.length) {
+      if (!source?.length) fail("A sample must contain at least one PCM byte.");
+      const basePcm=source instanceof Int8Array?source:Int8Array.from(source), length=basePcm.length;
+      const requestedStart=Number(trimStart), requestedEnd=Number(trimEnd);
+      trimStart=Math.max(0,Math.min(length-1,Math.floor(Number.isFinite(requestedStart)?requestedStart:0)));
+      trimEnd=Math.max(trimStart+1,Math.min(length,Math.floor(Number.isFinite(requestedEnd)?requestedEnd:length)));
+      gainDb=Math.max(GAIN_MIN,Math.min(GAIN_MAX,Number(gainDb)||0));
+      tanhDrive=Boolean(tanhDrive);
+      const fullPcm=processSample(basePcm,gainDb,tanhDrive);
+      return {basePcm,fullPcm,pcm:fullPcm.slice(trimStart,trimEnd),gainDb,tanhDrive,trimStart,trimEnd};
     }
 
     function convertChannels(channels,sourceRate) {
@@ -288,23 +366,43 @@
       return `${bytes} B`;
     }
     function outputName(name) { return `${name.replace(/\.lnx$/i,"")||"alynxdj"}-sample-patched.lnx` }
+    function bankOutputName(name) { return `${name.replace(/\.(?:lnx|bin)$/i,"")||"alynxdj"}-samples.bin` }
 
     globalThis.ALynxSamplePatcherCore = {
-      ROM_BYTES,POOL_OFFSET,POOL_CAPACITY,PCM_RATE,SLOT_CAP,parseRom,buildPool,patchRom,convertChannels
+      ROM_BYTES,POOL_OFFSET,LEGACY_POOL_END,POOL_END,POOL_CAPACITY,PCM_RATE,SLOT_CAP,GAIN_MIN,GAIN_MAX,
+      parseRom,parseBank,buildPool,patchRom,convertChannels,processSample,prepareSample
     };
     if (typeof document === "undefined") return;
 
     const app=document.getElementById("app");
-    const state={rom:null,romName:"",activeKit:0,replacements:new Map(),message:"Load a built ALYNXDJ ROM to begin.",error:"",busy:false,playingIndex:null,audioContext:null,audioSource:null};
+    const state={rom:null,romName:"",bank:null,bankName:"",activeKit:0,replacements:new Map(),message:"Load a built ALYNXDJ ROM to begin.",error:"",busy:false,playingIndex:null,audioContext:null,audioSource:null};
     const html=value=>String(value).replace(/[&<>"']/g,char=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]));
     const percent=(value,total)=>Math.min(100,value/total*100);
-    const changedInKit=kit=>[...state.replacements.keys()].some(index=>Math.floor(index/8)===kit);
-    const effectiveKits=()=>state.rom.kits.map((kit,k)=>kit.map((sample,s)=>state.replacements.get(k*8+s)?.pcm||sample));
+    const gainLabel=value=>`${value>0?"+":""}${Number(value).toFixed(1)} dB`;
+    const baseSource=()=>state.bank||state.rom;
+    const currentCapacity=()=>state.rom?.poolCapacity||POOL_CAPACITY;
+    const changedCount=()=>state.bank?state.bank.kitCount*8:state.replacements.size;
+    const changedInKit=kit=>Boolean(state.bank)||[...state.replacements.keys()].some(index=>Math.floor(index/8)===kit);
+    const effectiveKits=()=>baseSource().kits.map((kit,k)=>kit.map((sample,s)=>state.replacements.get(k*8+s)?.pcm||sample));
+    function sourceSample(index) {
+      const edit=state.replacements.get(index);
+      return edit?.basePcm||baseSource().kits[Math.floor(index/8)][index%8];
+    }
+    function updateProcessing(index,changes) {
+      const current=state.replacements.get(index), gainDb=Math.max(GAIN_MIN,Math.min(GAIN_MAX,Number(changes.gainDb??current?.gainDb??0)||0));
+      const tanhDrive=Boolean(changes.tanhDrive??current?.tanhDrive??false), basePcm=sourceSample(index);
+      let trimStart=current?.trimStart??0, trimEnd=current?.trimEnd??basePcm.length;
+      if (changes.trimStart!==undefined) trimStart=Math.max(0,Math.min(trimEnd-1,Math.floor(Number(changes.trimStart)||0)));
+      if (changes.trimEnd!==undefined) trimEnd=Math.min(basePcm.length,Math.max(trimStart+1,Math.floor(Number(changes.trimEnd)||1)));
+      const prepared=prepareSample(basePcm,gainDb,tanhDrive,trimStart,trimEnd);
+      if (!current?.fileName && gainDb===0 && !tanhDrive && prepared.trimStart===0 && prepared.trimEnd===basePcm.length) state.replacements.delete(index);
+      else state.replacements.set(index,{...(current||{}),...prepared});
+    }
     function poolState() {
       if (!state.rom) return {used:0,valid:false,reason:""};
-      try { return {used:buildPool(effectiveKits()).length,valid:true,reason:""} }
+      try { return {used:buildPool(effectiveKits(),state.rom.poolCapacity).length,valid:true,reason:""} }
       catch (problem) {
-        const used=4+state.rom.kitCount*40+effectiveKits().flat().reduce((total,sample)=>total+sample.length,0);
+        const used=4+baseSource().kitCount*40+effectiveKits().flat().reduce((total,sample)=>total+sample.length,0);
         return {used,valid:false,reason:problem instanceof Error?problem.message:"The sample pool is too large."};
       }
     }
@@ -315,16 +413,17 @@
         for (let i=start;i<Math.min(end,sample.length);i++) peak=Math.max(peak,Math.abs(sample[i]));
         values.push(Math.max(2,Math.round(peak/127*30)));
       }
-      return values.map(height=>`<span style="height:${height}px"></span>`).join("");
+      return values.map(height=>`<span class="wave-bar" style="height:${height}px"></span>`).join("");
     }
+    const sampleTime=position=>`${(position/PCM_RATE).toFixed(3)} s`;
     function input(accept,id,multiple=false) {
       return `<input id="${id}" hidden type="file" accept="${accept}"${multiple?" multiple":""}>`;
     }
     function renderSteps() {
-      const changed=state.replacements.size;
+      const changed=changedCount();
       return `<section class="step-strip" aria-label="Workflow">
         <div class="${state.rom?"done":"active"}"><b>01</b><span>Load ROM</span></div>
-        <div class="${state.rom?"active":""}"><b>02</b><span>Replace WAVs</span></div>
+        <div class="${state.rom?"active":""}"><b>02</b><span>Replace / process</span></div>
         <div class="${changed?"active":""}"><b>03</b><span>Patch &amp; download</span></div>
       </section>`;
     }
@@ -339,7 +438,7 @@
           ${input(".lnx,application/octet-stream","romInput")}
         </div>
         <div class="spec-row">
-          <span><b>64</b> sample slots</span><span><b>7.8125 kHz</b> signed 8-bit PCM</span><span><b>2.048 s</b> maximum per slot</span>
+          <span><b>64</b> sample slots</span><span><b>7.8125 kHz</b> signed 8-bit PCM</span><span><b>8.388 s</b> maximum per slot</span>
         </div>
       </section>`;
     }
@@ -347,50 +446,61 @@
       return `<section class="rom-bar panel">
         <div class="rom-identity"><span class="status-dot"></span><div><small>ROM LOADED</small><strong>${html(state.romName)}</strong></div></div>
         <div class="rom-stat"><small>IMAGE</small><strong>256 KB cart</strong></div>
-        <div class="rom-stat"><small>POOL</small><strong>${formatBytes(pool.used)} / ${formatBytes(POOL_CAPACITY)}</strong></div>
+        <div class="rom-stat"><small>POOL</small><strong>${formatBytes(pool.used)} / ${formatBytes(currentCapacity())}</strong></div>
         <button class="secondary" data-action="choose-rom" type="button">Change ROM</button>
         ${input(".lnx,application/octet-stream","romInput")}
       </section>`;
     }
     function renderWorkspace(kits) {
       const kit=state.activeKit;
-      const tabs=state.rom.kits.map((_,index)=>`<button type="button" role="tab" aria-selected="${kit===index}" class="${kit===index?"selected":""}" data-kit="${index}"><b>${String(index+1).padStart(2,"0")}</b><span>${html(KIT_NAMES[index]||`Kit ${index+1}`)}</span>${changedInKit(index)?"<i></i>":""}</button>`).join("");
+      const tabs=baseSource().kits.map((_,index)=>`<button type="button" role="tab" aria-selected="${kit===index}" class="${kit===index?"selected":""}" data-kit="${index}"><b>${String(index+1).padStart(2,"0")}</b><span>${html(KIT_NAMES[index]||`Kit ${index+1}`)}</span>${changedInKit(index)?"<i></i>":""}</button>`).join("");
       const cards=kits[kit].map((sample,slot)=>{
         const index=kit*8+slot, replacement=state.replacements.get(index), playing=state.playingIndex===index;
+        const gainDb=replacement?.gainDb??0, tanhDrive=replacement?.tanhDrive??false;
+        const basePcm=replacement?.basePcm||baseSource().kits[kit][slot], previewPcm=replacement?.fullPcm||basePcm;
+        const trimStart=replacement?.trimStart??0, trimEnd=replacement?.trimEnd??basePcm.length;
+        const isTrimmed=trimStart>0||trimEnd<basePcm.length, trimLeft=trimStart/basePcm.length*100, trimRight=(1-trimEnd/basePcm.length)*100;
+        const sourceLabel=replacement?.fileName?"Replacement WAV":isTrimmed?"Trimmed sample":replacement?"Processed sample":state.bank?"From imported bank":"From loaded ROM";
+        const changeTag=replacement?(replacement.fileName?"NEW":isTrimmed?"TRIM":"FX"):"";
         return `<article class="sample-card ${replacement?"changed":""}" data-slot="${index}">
           <div class="drop-hint">DROP WAV TO REPLACE</div>
-          <div class="sample-title"><span class="pad-number">${String(slot+1).padStart(2,"0")}</span><div><h3>${html(replacement?.fileName||PAD_NAMES[slot])}</h3><p>${replacement?"Replacement WAV":"From loaded ROM"}</p></div>${replacement?'<span class="changed-tag">NEW</span>':""}</div>
-          <div class="waveform" aria-hidden="true">${waveform(sample)}</div>
-          <div class="sample-meta"><span>${sampleDuration(sample).toFixed(3)} s</span><span>${formatBytes(sample.length)}</span>${replacement?.wasCapped?'<span class="warning-chip">CAPPED</span>':""}</div>
+          <div class="sample-title"><span class="pad-number">${String(slot+1).padStart(2,"0")}</span><div><h3>${html(replacement?.fileName||PAD_NAMES[slot])}</h3><p>${sourceLabel}</p></div>${changeTag?`<span class="changed-tag">${changeTag}</span>`:""}</div>
+          <div class="waveform" data-trim-waveform="${index}"><div class="wave-bars" aria-hidden="true">${waveform(previewPcm)}</div><div class="trim-shade start" style="width:${trimLeft}%"></div><div class="trim-shade end" style="width:${trimRight}%"></div><i class="trim-line start" style="left:${trimLeft}%"></i><i class="trim-line end" style="right:${trimRight}%"></i><input class="trim-range" type="range" min="0" max="${basePcm.length}" step="1" value="${trimStart}" data-trim-start="${index}" aria-label="Sample start point for kit ${kit+1}, pad ${slot+1}"><input class="trim-range" type="range" min="0" max="${basePcm.length}" step="1" value="${trimEnd}" data-trim-end="${index}" aria-label="Sample end point for kit ${kit+1}, pad ${slot+1}"></div>
+          <div class="trim-readout"><span>IN <output data-trim-start-output="${index}">${sampleTime(trimStart)}</output></span><span>OUT <output data-trim-end-output="${index}">${sampleTime(trimEnd)}</output></span><span>LEN <output data-trim-length-output="${index}">${sampleTime(trimEnd-trimStart)}</output></span></div>
+          <div class="sample-meta"><span>${sampleDuration(sample).toFixed(3)} s</span><span>${formatBytes(sample.length)}</span>${isTrimmed?'<span class="warning-chip">TRIMMED</span>':""}${replacement?.wasCapped?'<span class="warning-chip">CAPPED</span>':""}</div>
+          <div class="processing">
+            <label class="gain-control"><span class="gain-head"><span>Gain</span><output data-gain-output="${index}">${gainLabel(gainDb)}</output></span><input type="range" min="${GAIN_MIN}" max="${GAIN_MAX}" step="0.5" value="${gainDb}" data-gain="${index}" aria-label="Gain for kit ${kit+1}, pad ${slot+1}"></label>
+            <label class="drive-control ${tanhDrive?"active":""}" title="Apply tanh soft saturation after gain"><span>Tanh drive</span><span>soft clip</span><input type="checkbox" data-drive="${index}" ${tanhDrive?"checked":""} aria-label="Tanh drive for kit ${kit+1}, pad ${slot+1}"></label>
+          </div>
           <div class="sample-actions">
             <button class="audition" data-action="audition" data-index="${index}" type="button"><span aria-hidden="true">${playing?"■":"▶"}</span>${playing?"Playing":"Audition"}</button>
             <label class="replace">Replace<input hidden type="file" accept=".wav,audio/wav,audio/x-wav" data-sample-input="${index}"></label>
-            ${replacement?`<button class="revert" data-action="revert" data-index="${index}" type="button">Revert</button>`:""}
+            ${replacement?`<button class="revert" data-action="revert" data-index="${index}" type="button">Revert sample</button>`:""}
           </div>
         </article>`;
       }).join("");
       return `<section class="workspace panel">
-        <div class="workspace-head"><div><p class="eyebrow">SAMPLE DIRECTORY</p><h2>Choose a kit, then replace any pad</h2></div>
-          <div class="toolbar"><button class="secondary" data-action="choose-kit" type="button" ${state.busy?"disabled":""}>Replace this kit…</button>${input(".wav,audio/wav,audio/x-wav","kitInput",true)}<button class="text-button" data-action="reset" type="button" ${state.replacements.size?"":"disabled"}>Reset all</button></div>
+        <div class="workspace-head"><div><p class="eyebrow">SAMPLE DIRECTORY</p><h2>Replace, gain, or drive any pad</h2></div>
+          <div class="toolbar"><button class="secondary" data-action="choose-bank" type="button" ${state.busy?"disabled":""}>Import sample bank…</button>${input(".bin,application/octet-stream","bankInput")}<button class="secondary" data-action="download-bank" type="button" ${state.busy?"disabled":""}>Download sample bank</button><button class="secondary" data-action="choose-kit" type="button" ${state.busy?"disabled":""}>Replace this kit…</button>${input(".wav,audio/wav,audio/x-wav","kitInput",true)}<button class="text-button" data-action="reset" type="button" ${changedCount()?"":"disabled"}>Reset all</button></div>
         </div>
         <div class="kit-tabs" role="tablist" aria-label="Sample kits">${tabs}</div>
         <div class="sample-grid" role="tabpanel">${cards}</div>
       </section>`;
     }
     function renderExport(pool) {
-      const changed=state.replacements.size;
+      const changed=changedCount(), capacity=currentCapacity();
       return `<section class="export-panel panel ${pool.valid?"":"invalid"}">
-        <div class="capacity"><div class="capacity-label"><div><small>CART SAMPLE CAPACITY</small><strong>${formatBytes(pool.used)} used</strong></div><span>${percent(pool.used,POOL_CAPACITY).toFixed(1)}%</span></div>
-          <div class="meter"><span style="width:${percent(pool.used,POOL_CAPACITY)}%"></span></div><p>${pool.valid?`${formatBytes(POOL_CAPACITY-pool.used)} remains after the directory and sample data.`:html(pool.reason)}</p></div>
-        <div class="export-action"><div><strong>${changed}</strong><span>sample${changed===1?"":"s"} replaced</span></div><button class="download" data-action="download" type="button" ${!changed||!pool.valid||state.busy?"disabled":""}>Patch &amp; download ROM <span aria-hidden="true">↓</span></button></div>
+        <div class="capacity"><div class="capacity-label"><div><small>CART SAMPLE CAPACITY</small><strong>${formatBytes(pool.used)} used</strong></div><span>${percent(pool.used,capacity).toFixed(1)}%</span></div>
+          <div class="meter"><span style="width:${percent(pool.used,capacity)}%"></span></div><p>${pool.valid?`${formatBytes(capacity-pool.used)} remains after the directory and sample data.${state.rom.legacyLayout?" Legacy block-200 ROM layout detected.":""}`:html(pool.reason)}</p></div>
+        <div class="export-action"><div><strong>${changed}</strong><span>sample${changed===1?"":"s"} sourced or changed</span></div><button class="download" data-action="download" type="button" ${!changed||!pool.valid||state.busy?"disabled":""}>Patch &amp; download ROM <span aria-hidden="true">↓</span></button></div>
       </section>`;
     }
     function render() {
       const pool=poolState(), kits=state.rom?effectiveKits():[];
-      app.innerHTML=`<header class="hero"><div><p class="eyebrow">ALYNXDJ / CART LAB</p><h1>Sample Patch Browser</h1><p class="lede">Load a built ROM, swap its kit samples, audition the result, and download a new cartridge image.</p></div><div class="local-badge"><span></span>Runs entirely in your browser</div></header>
+      app.innerHTML=`<header class="hero"><div><p class="eyebrow">ALYNXDJ / CART LAB</p><h1>Sample Patch Browser</h1><p class="lede">Load a built ROM, import or export a portable sample bank, replace or process its samples, and download a new cartridge image.</p></div><div class="local-badge"><span></span>Runs entirely in your browser</div></header>
         ${renderSteps()}${state.rom?renderRomBar(pool)+renderWorkspace(kits)+renderExport(pool):renderLoad()}
         <div class="notice ${state.error?"error":""}" role="status" aria-live="polite"><span>${state.error?"!":"·"}</span>${html(state.error||state.message)}</div>
-        <footer><span>ALYNXDJ SAMPLE PATCH BROWSER</span><span>WAV → MONO → 7.8125 KHZ → SIGNED 8-BIT PCM</span><span>No files leave this page</span></footer>`;
+        <footer><span>ALYNXDJ SAMPLE PATCH BROWSER</span><span>WAV → MONO → 7.8125 KHZ → GAIN / TANH → SIGNED 8-BIT PCM</span><span>No files leave this page</span></footer>`;
     }
     function clearNotices() { state.error="" }
     function report(problem,fallback) { state.error=problem instanceof Error?problem.message:fallback; state.busy=false; render() }
@@ -398,10 +508,19 @@
       clearNotices(); state.busy=true; render();
       try {
         const parsed=parseRom(await file.arrayBuffer());
-        state.rom=parsed; state.romName=file.name; state.replacements.clear(); state.activeKit=0;
-        state.message=`${file.name} loaded — ${parsed.kitCount*8} sample slots ready.`;
+        state.rom=parsed; state.romName=file.name; state.bank=null; state.bankName=""; state.replacements.clear(); state.activeKit=0;
+        state.message=`${file.name} loaded — ${parsed.kitCount*8} sample slots ready${parsed.legacyLayout?"; legacy block-200 layout protected":""}.`;
         state.busy=false; render();
       } catch (problem) { report(problem,"The ROM could not be loaded.") }
+    }
+    async function loadBank(file) {
+      clearNotices(); state.busy=true; render();
+      try {
+        const parsed=parseBank(await file.arrayBuffer());
+        state.bank=parsed; state.bankName=file.name; state.replacements.clear(); state.activeKit=0;
+        state.message=`${file.name} imported — ${parsed.kitCount*8} samples will replace the ROM bank.`;
+        state.busy=false; render();
+      } catch (problem) { report(problem,"The sample bank could not be loaded.") }
     }
     async function audioContext() {
       if (!state.audioContext) {
@@ -416,7 +535,8 @@
       const context=await audioContext(); let decoded;
       try { decoded=await context.decodeAudioData(await file.arrayBuffer()) }
       catch { fail(`${file.name} is not a WAV file this browser can decode.`) }
-      return {...convertChannels(Array.from({length:decoded.numberOfChannels},(_,channel)=>decoded.getChannelData(channel)),decoded.sampleRate),fileName:file.name};
+      const converted=convertChannels(Array.from({length:decoded.numberOfChannels},(_,channel)=>decoded.getChannelData(channel)),decoded.sampleRate);
+      return {...converted,...prepareSample(converted.pcm),fileName:file.name};
     }
     async function replaceSlot(index,file) {
       clearNotices(); state.busy=true; render();
@@ -455,15 +575,42 @@
       source.start(); render();
     }
     function downloadRom() {
-      if (!state.rom || !state.replacements.size) return;
+      if (!state.rom || !changedCount()) return;
       try {
         const patched=patchRom(state.rom,effectiveKits()), blob=new Blob([patched],{type:"application/octet-stream"});
         const url=URL.createObjectURL(blob), link=document.createElement("a");
         link.href=url; link.download=outputName(state.romName); document.body.appendChild(link); link.click(); link.remove();
         setTimeout(()=>URL.revokeObjectURL(url),0);
-        state.message=`${outputName(state.romName)} downloaded with ${state.replacements.size} replacement${state.replacements.size===1?"":"s"}.`;
+        state.message=`${outputName(state.romName)} downloaded with the current ${effectiveKits().length*8}-sample bank.`;
         render();
       } catch (problem) { report(problem,"The patched ROM could not be created.") }
+    }
+    function downloadBank() {
+      try {
+        const bank=buildPool(effectiveKits()), blob=new Blob([bank],{type:"application/octet-stream"});
+        const name=bankOutputName(state.bankName||state.romName), url=URL.createObjectURL(blob), link=document.createElement("a");
+        link.href=url; link.download=name; document.body.appendChild(link); link.click(); link.remove();
+        setTimeout(()=>URL.revokeObjectURL(url),0);
+        state.message=`${name} downloaded. Use it in this browser or as SAMPLE_BANK in a future ROM build.`;
+        render();
+      } catch (problem) { report(problem,"The sample bank could not be created.") }
+    }
+    function updateTrimPreview(card,moved) {
+      const index=Number(card.dataset.slot), startInput=card.querySelector(`[data-trim-start="${index}"]`), endInput=card.querySelector(`[data-trim-end="${index}"]`);
+      const length=Number(startInput.max); let trimStart=Number(startInput.value), trimEnd=Number(endInput.value);
+      if (moved?.matches("[data-trim-start]")) trimStart=Math.max(0,Math.min(trimEnd-1,trimStart));
+      else if (moved?.matches("[data-trim-end]")) trimEnd=Math.min(length,Math.max(trimStart+1,trimEnd));
+      trimStart=Math.max(0,Math.min(length-1,trimStart)); trimEnd=Math.min(length,Math.max(trimStart+1,trimEnd));
+      startInput.value=String(trimStart); endInput.value=String(trimEnd);
+      const left=trimStart/length*100, right=(1-trimEnd/length)*100;
+      card.querySelector(".trim-shade.start").style.width=`${left}%`;
+      card.querySelector(".trim-shade.end").style.width=`${right}%`;
+      card.querySelector(".trim-line.start").style.left=`${left}%`;
+      card.querySelector(".trim-line.end").style.right=`${right}%`;
+      card.querySelector(`[data-trim-start-output="${index}"]`).textContent=sampleTime(trimStart);
+      card.querySelector(`[data-trim-end-output="${index}"]`).textContent=sampleTime(trimEnd);
+      card.querySelector(`[data-trim-length-output="${index}"]`).textContent=sampleTime(trimEnd-trimStart);
+      return {index,trimStart,trimEnd};
     }
 
     app.addEventListener("click",event=>{
@@ -472,18 +619,43 @@
       const button=event.target.closest("[data-action]"); if (!button) return;
       const action=button.dataset.action;
       if (action==="choose-rom") document.getElementById("romInput").click();
+      else if (action==="choose-bank") document.getElementById("bankInput").click();
       else if (action==="choose-kit") document.getElementById("kitInput").click();
-      else if (action==="reset") { state.replacements.clear(); state.message="All replacements cleared; the original ROM samples are active."; clearNotices(); render() }
-      else if (action==="revert") { const index=Number(button.dataset.index); state.replacements.delete(index); state.message=`Kit ${Math.floor(index/8)+1}, pad ${index%8+1} restored to the ROM sample.`; render() }
+      else if (action==="reset") { state.bank=null; state.bankName=""; state.replacements.clear(); state.activeKit=Math.min(state.activeKit,state.rom.kitCount-1); state.message="Imported bank and sample edits cleared; the original ROM samples are active."; clearNotices(); render() }
+      else if (action==="revert") { const index=Number(button.dataset.index); state.replacements.delete(index); state.message=`Kit ${Math.floor(index/8)+1}, pad ${index%8+1} restored to the ${state.bank?"imported bank":"ROM"} sample.`; render() }
       else if (action==="audition") audition(Number(button.dataset.index)).catch(problem=>report(problem,"The sample could not be auditioned."));
+      else if (action==="download-bank") downloadBank();
       else if (action==="download") downloadRom();
     });
     app.addEventListener("change",event=>{
       const target=event.target;
       if (target.id==="romInput" && target.files?.[0]) loadRom(target.files[0]);
+      else if (target.id==="bankInput" && target.files?.[0]) loadBank(target.files[0]);
       else if (target.id==="kitInput" && target.files?.length) replaceKit(target.files);
       else if (target.matches("[data-sample-input]") && target.files?.[0]) replaceSlot(Number(target.dataset.sampleInput),target.files[0]);
-      target.value="";
+      else if (target.matches("[data-trim-start],[data-trim-end]")) {
+        const trim=updateTrimPreview(target.closest("[data-slot]"),target);
+        updateProcessing(trim.index,{trimStart:trim.trimStart,trimEnd:trim.trimEnd}); clearNotices();
+        state.message=`Kit ${Math.floor(trim.index/8)+1}, pad ${trim.index%8+1} trimmed to ${sampleTime(trim.trimEnd-trim.trimStart)}.`; render();
+      }
+      else if (target.matches("[data-gain]")) {
+        const index=Number(target.dataset.gain), gainDb=Number(target.value);
+        updateProcessing(index,{gainDb}); clearNotices();
+        state.message=`Kit ${Math.floor(index/8)+1}, pad ${index%8+1} gain set to ${gainLabel(gainDb)}.`; render();
+      } else if (target.matches("[data-drive]")) {
+        const index=Number(target.dataset.drive), tanhDrive=target.checked;
+        updateProcessing(index,{tanhDrive}); clearNotices();
+        state.message=`Kit ${Math.floor(index/8)+1}, pad ${index%8+1} tanh drive ${tanhDrive?"enabled":"disabled"}.`; render();
+      }
+      if (target.type==="file") target.value="";
+    });
+    app.addEventListener("input",event=>{
+      const target=event.target;
+      if (target.matches("[data-trim-start],[data-trim-end]")) updateTrimPreview(target.closest("[data-slot]"),target);
+      else if (target.matches("[data-gain]")) {
+        const output=app.querySelector(`[data-gain-output="${target.dataset.gain}"]`);
+        if (output) output.textContent=gainLabel(Number(target.value));
+      }
     });
     app.addEventListener("dragover",event=>{
       const target=event.target.closest("[data-rom-drop],[data-slot]"); if (!target) return;

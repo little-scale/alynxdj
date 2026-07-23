@@ -7,6 +7,8 @@ import subprocess
 import sys
 import time
 
+SD = 0xD400
+
 
 def fail(message):
     raise SystemExit("save roundtrip test: " + message)
@@ -31,7 +33,10 @@ def main():
     if len(sys.argv) != 4:
         fail("usage: test_save_roundtrip.py RETROSHOT CORE ROM")
     harness, core, rom = sys.argv[1:]
-    build = os.path.dirname(os.path.abspath(rom))
+    build = os.path.join(os.path.dirname(os.path.abspath(rom)),
+                         "tests", "save")
+    shutil.rmtree(build, ignore_errors=True)
+    os.makedirs(build)
     # The PID creates a clean emulator-side EEPROM namespace without deleting
     # any user's or prior test's persistent file.
     test_rom = os.path.join(
@@ -45,6 +50,8 @@ def main():
     checksum = u16(first, 0xC018)
     if first[0xC01D] != 1:
         fail("write status is %d, expected ST_OK" % first[0xC01D])
+    if first[SD:SD + 0x200] != bytes([0xFF]) * 0x200:
+        fail("an empty EEPROM booted into a populated song instead of NEW")
     if not 0 < packed <= 2032:
         fail("packed size %d is outside the 93C86 payload budget" % packed)
 

@@ -15,6 +15,7 @@ import sys
 
 A4 = 440.0
 NAMES = ["C-", "C#", "D-", "D#", "E-", "F-", "F#", "G-", "G#", "A-", "A#", "B-"]
+MAX_WAVE_IRQ = 6250.0       # real-hardware dual-DAC budget (WAV + KIT)
 
 
 def freq(n):            # n: 0 = C-1 ... MIDI-style semitone index from C1
@@ -76,16 +77,18 @@ def main(out):
         cf.write("    " + ",".join("\"%s\"" % r[0] for r in rows[i:i+12]) + ",\n")
     cf.write("};\n")
     cf.close()
-    # wavetable playback: IRQ rate = f*32/step; keep IRQ <= ~12.5 kHz by
-    # step-doubling (coarser table read at high pitch), and use the timer
-    # clock prescale for low notes so BACKUP stays 8-bit.
+    # Wavetable playback: IRQ rate = f*32/step. Real hardware loses VBlank
+    # music ticks when a ~10.5 kHz WAV shares the IRQ core with a 7.8 kHz KIT,
+    # so cap WAV at ~6.25 kHz by step-doubling. Pitch stays unchanged while
+    # higher notes read 16 or 8 effective table points per cycle. Use the
+    # timer clock prescale for low notes so BACKUP stays 8-bit.
     fo = open(out.replace(".h", ".c"), "a")
     fo.write("/* wavetable feed: timer clock sel, BACKUP, table step */\n")
     wc, wb, ws = [], [], []
     for i in range(96):
         f = freq(i)
         step = 1
-        while f * 32 / step > 12500 and step < 8:
+        while f * 32 / step > MAX_WAVE_IRQ and step < 8:
             step *= 2
         interval = 1e6 * step / (32 * f)      # us per IRQ
         clock = 0
@@ -100,8 +103,20 @@ def main(out):
             fo.write("    " + ",".join("%3d" % v for v in arr[i:i+12]) + ",\n")
         fo.write("};\n")
     fo.close()
-    err = max(abs(r[5]) for r in rows)
-    print("notes.h: 96 notes + wave tables, worst error %.2f cents (%s)" % worst)
+    actual_wave_irq = [
+        1e6 / ((wb[i] + 1) * (1 << wc[i])) for i in range(96)
+    ]
+    # The 8-entry maximum phase step cannot represent the very highest notes
+    # below a 6.25 kHz Nyquist limit without changing pitch.  Guard the four
+    # actual demo-pad notes that motivated the hardware fix; extreme notes
+    # retain pitch and may exceed the target rather than being silently
+    # clamped. Indices are A3, E4, C4, and G4 (the chain's +3 pass).
+    demo_wave_notes = (33, 40, 36, 43)
+    demo_wave_max = max(actual_wave_irq[i] for i in demo_wave_notes)
+    assert demo_wave_max < MAX_WAVE_IRQ * 1.01
+    print("notes.h: 96 notes + wave tables, worst error %.2f cents (%s); "
+          "demo WAV IRQ max %.1f Hz" %
+          (worst[0], worst[1], demo_wave_max))
 
 
 if __name__ == "__main__":

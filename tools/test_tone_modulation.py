@@ -120,7 +120,10 @@ def main():
     if len(sys.argv) != 4:
         fail("usage: test_tone_modulation.py RETROSHOT CORE ROM")
     harness, core, rom = sys.argv[1:]
-    build = os.path.dirname(os.path.abspath(rom))
+    build = os.path.join(os.path.dirname(os.path.abspath(rom)),
+                         "tests", "tone")
+    shutil.rmtree(build, ignore_errors=True)
+    os.makedirs(build)
     test_rom = os.path.join(
         build, "alynxdj-tone-test-%d-%d.lnx" % (os.getpid(), time.time_ns()))
     shutil.copyfile(rom, test_rom)
@@ -130,9 +133,15 @@ def main():
         fail("positive SWP did not produce a sustained downward pitch sweep: %r"
              % swp)
 
+    vib_mid = pitch_track(run_mod(
+        harness, core, test_rom, build, "vib-mid", vib=0x48))
     vib = pitch_track(run_mod(harness, core, test_rom, build, "vib", vib=0x4F))
-    if len(vib) < 8 or np.ptp(vib) < 15:
-        fail("VIB did not produce a repeating pitch excursion: %r" % vib)
+    if len(vib_mid) < 8 or not 15 <= np.ptp(vib_mid) <= 35:
+        fail("VIB depth 8 did not follow the 10/16-semitone curve: %r"
+             % vib_mid)
+    if len(vib) < 8 or np.ptp(vib) < np.ptp(vib_mid) * 4:
+        fail("VIB depth F did not reach the nonlinear 60/16-semitone range: %r"
+             % vib)
 
     continuity_path = run_vib_continuity(
         harness, core, test_rom, build)
@@ -149,15 +158,24 @@ def main():
         fail("VIB phase reset on retrigger or acquired a tuning bias: %r"
              % continuity_pitch)
 
-    trm_path = run_mod(harness, core, test_rom, build, "trm", trm=0x4F)
+    # Slow, deep TRM must be a repeating decay saw: predominantly descending
+    # for the whole cycle, followed by one large upward reset.  A triangle
+    # would spend half the cycle rising gradually and fail this shape check.
+    trm_path = run_mod(harness, core, test_rom, build, "trm", trm=0x0F)
     rate, trm = sounding_tail(trm_path)
     size = rate // 20
     rms = np.asarray([
         np.sqrt(np.mean(trm[start:start + size].astype(float) ** 2))
         for start in range(0, len(trm) - size, size)
     ])
-    if len(rms) < 12 or rms.max() < rms.min() * 2.5:
-        fail("TRM did not produce a strong level cycle: %r" % rms)
+    if len(rms) < 25 or rms.max() < rms.min() * 5:
+        fail("TRM decay saw did not produce a strong level cycle: %r" % rms)
+    trm_diff = np.diff(rms[:25])
+    snap = int(np.argmax(trm_diff))
+    gradual_rises = np.delete(trm_diff, snap) > 100
+    if (snap < 16 or trm_diff[snap] < rms.max() * 0.5
+            or np.count_nonzero(gradual_rises) > 1):
+        fail("TRM is not a descending ramp with one upward reset: %r" % rms)
 
     base = pitch_track(run_mod(harness, core, test_rom, build, "tsp-base"))
     up = pitch_track(run_mod(
@@ -206,8 +224,8 @@ def main():
     if np.max(np.abs(audition)) < 100:
         fail("physical B tap on stopped INSTR did not audition")
 
-    print("tone modulation: PASS — TSP/SWP/free-running sine-VIB/TRM audible "
-          "and stopped INSTR physical-B audition works")
+    print("tone modulation: PASS — TSP/SWP/nonlinear free-running sine-VIB/"
+          "decay-saw TRM audible and stopped INSTR physical-B audition works")
 
 
 if __name__ == "__main__":

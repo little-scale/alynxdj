@@ -9,7 +9,9 @@
 
         .export         _cart_seek
         .export         _cart_read
+        .export         _position_cart
         .import         popa, popax
+        .import         _stream_off, _stream_block
         .importzp       ptr1
 
         .include        "lynx.inc"
@@ -64,24 +66,24 @@ _cart_seek:
         sta     ptr1            ; off lo
         stx     ptr1+1
         jsr     popa            ; block
+seek:
         jsr     select
 @skip:  lda     ptr1
         ora     ptr1+1
         beq     @done
         lda     RCART0          ; discard
-        dec     left_lo
+        ; 16-bit decrement: borrow when the old low byte is zero.  Testing
+        ; the low byte after DEC inflated $0400 to $04FF, so a seek near the
+        ; end of a 1 KB cart page made the following read wrap into the start
+        ; of that same page before the software selected the next one.
+        lda     left_lo
         bne     :+
-        lda     left_hi
-        beq     @next
         dec     left_hi
-:       lda     ptr1
+:       dec     left_lo
+        lda     ptr1
         bne     :+
         dec     ptr1+1
 :       dec     ptr1
-        bra     @skip
-@next:  lda     cur_block       ; block exhausted mid-skip (off < 1024 so
-        inc     a               ; this only fires at exactly 1024)
-        jsr     select
         bra     @skip
 @done:  rts
 
@@ -113,3 +115,28 @@ _cart_read:
         inc     a
         jsr     select
         bra     @loop
+
+; void __fastcall__ position_cart(unsigned char voice);
+; Keep a lone sample on the serial cartridge's current byte.  Re-seek only
+; when the other DAC voice (or a directory read, which stores $FF) invalidates
+; ownership.  This is in the cold support overlay because MAIN/HICODE1 are
+; full; doing the two-byte array index here is substantially smaller than the
+; cc65-generated equivalent.
+        .segment "HICODE2"
+_position_cart:
+        cmp     $C029
+        beq     @positioned
+        sta     $C029
+        asl     a               ; unsigned stream_off[voice] -> byte index
+        tax
+        lda     _stream_off,x
+        sta     ptr1
+        lda     _stream_off+1,x
+        sta     ptr1+1
+        txa
+        lsr     a               ; recover voice index for stream_block[]
+        tax
+        lda     _stream_block,x
+        jmp     seek
+@positioned:
+        rts

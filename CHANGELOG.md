@@ -2,6 +2,116 @@
 
 ## Unreleased
 
+## v0.6 — 2026-07-24
+
+- Added non-destructive waveform trimming to the standalone sample browser.
+  Every pad has draggable IN/OUT handles with live start, end, and selected-
+  length readouts; audition, gain/tanh processing, portable-bank export, and
+  patched-ROM export all use the selected region. Revert restores the full
+  source sample.
+- Added the canonical `samples/alynxdj-factory-samples.bin`: a complete,
+  portable 64-slot `PL` bank injected verbatim by the ROM build. The sample
+  browser can import/export the same `.bin`, and `make SAMPLE_BANK=...` validates
+  and injects a custom bank so sample sets carry cleanly between releases.
+  `make factory-samples` deliberately rebuilds the factory binary from WAVs.
+- Moved the MIDI/live helper from cart block 200 to the final blocks 254–255.
+  The sample region is now a contiguous, protected 214,016 bytes at blocks
+  45–253; browser ROM export clears only that region and can no longer overwrite
+  MIDI code. The browser also detects older block-200 MIDI ROMs and preserves
+  their smaller sample boundary. The per-sample artificial 16,000-byte cap is replaced by the
+  format's u16 maximum of 65,535 bytes (~8.39 seconds).
+- The standalone sample patch browser now provides per-pad gain from −24 to
+  +24 dB and optional tanh drive. Both existing ROM samples and replacement
+  WAVs can be processed non-destructively; audition, waveform preview, and
+  patched ROM export all use the same resulting signed 8-bit PCM.
+- Fixed cartridge seeks across 1 KB pages. The seek-side 16-bit remaining-byte
+  counter borrowed after decrementing its low byte, inflating `$0400` to
+  `$04FF`; samples crossing a page could therefore replay bytes from the
+  preceding page before resuming. Kit-00 F4 now streams its complete 1,822-byte
+  mid-conga continuously across both page boundaries, with a byte-exact ring
+  regression guarding the path.
+- Removed the remaining single-sample cart-refill bottleneck: the active voice
+  now retains the sequential cartridge cursor between chunks instead of
+  re-selecting its page and discarding up to 1,023 bytes every frame. Two
+  simultaneous samples still re-seek when ownership alternates. Refills are
+  published in 64-byte pieces, continue immediately across the 512-byte ring
+  wrap, and are topped up after playhead redraws, preventing the IRQ from
+  holding one DAC value through a missed refill. The `NP` ROM now shows
+  `NPxx`, where `xx` is the live DAC-underrun count, and regression requires
+  kit-00 F4 to finish with both slot counters at zero.
+- PHRASE note entry now remembers the last instrument number explicitly edited
+  in the instrument column and assigns it to every subsequently placed note.
+  Command/parameter B double-taps are field-safe: they paste a command pair or
+  clear only CMD+PARAM, and can no longer overwrite NOTE+INSTR through a stale
+  full-row clipboard.
+- Reduced table-WAV's normal-range timer-interrupt target from ~12.5 kHz to
+  ~6.25 kHz after real hardware showed a tempo drop when the demo's WAV pad
+  and 7.8 kHz drum stream overlapped on rows 04–05. Higher WAV notes now skip
+  2/4/8 table entries per interrupt, retaining pitch while trading waveform
+  resolution for dual-DAC CPU margin; KIT/sample rate is unchanged.
+- Changed TONE/NOISE instrument TRM from a triangle-shaped attenuation to a
+  descending saw: every cycle begins at the live envelope level, ramps toward
+  silence according to depth, then snaps back to the top. The existing packed
+  speed/depth byte, rate range, envelope interaction, and save version remain
+  unchanged.
+- Added a distinct `alynxdj-no-meters.lnx` hardware diagnostic build (`make
+  meter-test`). It retains normal engine/audio level calculation but skips all
+  right-edge channel-meter redraws and shows `NM` in the top bar, allowing a
+  controlled test for main-loop rendering pressure on real hardware.
+- Added a deeper `alynxdj-no-meters-no-peaks.lnx` sample-timing diagnostic
+  (`make sample-timing-test`). Its `NP` marker identifies a build that also
+  compiles DAC peak measurement out of both timer-IRQ sample feeders and skips
+  the engine-tick peak snapshot, isolating that overhead without changing the
+  normal ROM or the earlier `NM` comparison ROM.
+- Boot now starts with a clean NEW song when EEPROM has no valid save; valid
+  saves still autoload. FILES adds a confirmed DEMO action immediately above
+  PURGE, restoring the factory song in working RAM without touching EEPROM.
+- `G` now has a hybrid signed tick/row period. Magnitudes 1–7 move one tap
+  after 1–7 tracker ticks (`G01`…`G07`, with `GFF`…`GF9` downward); magnitude
+  8 starts the row range at one row and later values add one row (`G08` =
+  +1/row, `G0B` = +1/4 rows, `GF8`/`GF5` downward). Each command restores the
+  active instrument's stored TAPS and leaves it audible for one complete
+  selected period before moving. Ordinary notes preserve the live value and
+  partially elapsed countdown, while `G00` resets and stops without reseeding
+  the LFSR. Positive/negative, loop-reset, and note-continuity regressions
+  cover both timing ranges.
+- VIB now uses SMSGGDJ's proven nonlinear depth curve while retaining
+  ALYNXDJ's smoother sine, slower rate range, transport-scoped phase, and
+  key-independent semitone pitch. Low values remain fine; `8` reaches
+  ±10/16 semitone and `F` reaches ±3.75 semitones.
+- WAVE selection now requires physical-A-held + left/right; unmodified
+  up/down no longer changes the current wave.
+- NEW instruments now default to TONE, VOL `7F`, ATK `0`, HOLD `5`, DCY `5`,
+  and TAPS `001`.
+- HOLD `F` is now indefinite sustain until retrigger, `K`, transport stop, or
+  live MIDI Note Off; HOLD `0`–`E` retain timed behavior.
+- The INSTR TAPS strip now uses nine dim/accent solid blocks in tap order,
+  matching the channel meters while retaining the exact hexadecimal value.
+- PHRASE and TABLE command selection now steps alphabetically in both
+  directions: `A B C D E F G H I J K L N O P R S T V W X Z`. Stored command
+  IDs are unchanged, so existing songs and save-format v6 remain compatible.
+- Regression ROMs, RAM dumps, screenshots, and audio now live in per-suite
+  `build/tests/` directories which are replaced on each run, keeping the
+  canonical `build/` outputs uncluttered.
+- A clean physical-A tap is now inert on OPTIONS and PROJECT, matching CHAIN
+  and PHRASE; those screens use physical-A-held plus D-pad for map navigation.
+- Added ComLynx USB-MIDI takeover: MIDI channels 1–4 play tracks A–D with
+  instruments 01–04 through the ordinary engine, with no heartbeat timeout.
+- Added `IN24` sync. The Pico divides standard 24-PPQN USB MIDI Clock into one
+  ComLynx pulse per tracker row and forwards Start/Continue/Stop. Existing
+  row-level Lynx-to-Lynx `IN` remains unchanged.
+- `IN` and `IN24` transport now arms the user-selected row without sounding
+  and displays `WAIT`. The first row pulse starts that exact row and changes
+  the display to `PLAY`; an incoming Start does not overwrite a local cue.
+- Added the standalone `pico-midi-comlynx/` RP2040 firmware. It enumerates as
+  a USB-MIDI destination, forwards notes and row-rate clock/transport
+  together, and generates ComLynx's 62.5-kbaud 11-bit open-drain framing in
+  PIO.
+- Documented the one-Pico/one-Lynx prototype interface: 470 ohm series plus a
+  BAT54 clamp to 3V3, common ground, ComLynx +5 V disconnected. Jaycar
+  BAT46/BAT48 and 1N5819 parts are listed as practical substitutes, while
+  1N5711 is measurement-only and 1N4148 is explicitly rejected for inadequate
+  RP2040 clamp margin.
 - Added the standalone `song-file-viewer.html` for validating, viewing,
   editing, and exporting complete ALYNXDJ EEPROM/SRAM song images locally.
 - Documented the ElCheapoSD hardware boundary: its physical 93C46 provides

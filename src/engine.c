@@ -48,7 +48,7 @@ struct voice {
     unsigned char vib_speed, vib_depth, vib_phase;
     unsigned char trm_speed, trm_depth, trm_phase;
     unsigned int  tap_cur;      /* G/B: current 9-bit tap value */
-    signed char   tap_rate;     /* G: signed taps per row (0 = off) */
+    signed char   tap_rate;     /* G: sign=direction, magnitude selects rate */
     unsigned char chord[3], chord_len, chord_pos;
     unsigned char kill_in;      /* $FF = none */
     unsigned char table, tpos;  /* tpos = clock<<4 | row; table $FF = none */
@@ -66,8 +66,11 @@ struct voice {
     unsigned char fb_dirty;     /* G: feedback changed live (no reseed) */
 };
 
+void __fastcall__ reset_instr_taps(struct voice *v);
+void __fastcall__ clock_tap_glide(struct voice *v);
+
 #pragma bss-name (push, "SONG")
-static struct voice voices[NCH];
+struct voice voices[NCH];              /* assembly G clock shares this array */
 #pragma bss-name (pop)
 /* Per-phrase pass counts use the otherwise-free upper debug/mirror page.
  * This releases 64 bytes of HIRAM for the sine-LFO cold overlay. */
@@ -88,8 +91,6 @@ const unsigned char env_rate[16] = {
     0, 127, 64, 43, 32, 26, 22, 16, 12, 8, 6, 5, 4, 3, 2, 1,
 };
 
-unsigned char eng_mode;
-unsigned char eng_mute;         /* per-track mute bitmask (editor-owned) */
 unsigned char eng_level[NCH];   /* live per-track levels (meters) */
 unsigned char live_q[NCH];      /* LIVE: queued chain, $FF none, $FE stop */
 static unsigned char live_bar;  /* global 16-row bar counter (LIVE grid) */
@@ -106,13 +107,17 @@ static unsigned char live_bar;  /* global 16-row bar counter (LIVE grid) */
 #define MIRROR_DAC_TRACE  ((volatile unsigned char *)0xC030)
 
 static unsigned char eng_tick;
-unsigned char eng_gpos;                 /* groove row (GROOVE playhead) */
-unsigned char eng_groove;               /* active groove number */
 static unsigned char row_ticks;         /* this row's length (W overrides) */
+#pragma bss-name (push, "TAPRAM")
+static unsigned char tap_wait[NCH];      /* independent signed G countdowns */
+#pragma bss-name (pop)
 
 static volatile struct _mikey_audio *const CHAN[NCH] = {
     &MIKEY.channel_a, &MIKEY.channel_b, &MIKEY.channel_c, &MIKEY.channel_d,
 };
+#pragma rodata-name (push, "HICODE1")
+static const unsigned char track_bit[NCH] = { 1, 2, 4, 8 };
+#pragma rodata-name (pop)
 
 /* --- symmetric DAC ownership (D1/D5/D6) --- */
 
@@ -178,7 +183,7 @@ static unsigned char dac_acquire(unsigned char ch)
     }
     dac_stamp[slot] = dac_clock;
     dac_off[slot] = ch << 3;
-    dac_muted[slot] = (eng_mute >> ch) & 1;
+    dac_muted[slot] = (eng_mute & track_bit[ch]) ? 1 : 0;
     {
         unsigned char i = MIRROR_DAC_COUNT;
         if (i < 8) {
@@ -198,15 +203,23 @@ static unsigned char dac_acquire(unsigned char ch)
 
 /* --- pitch --- */
 
+/* SMSGGDJ's depth response, expressed here as symmetric 1/16-semitone
+ * amplitudes instead of raw PSG-period deltas.  Depth zero never enters the
+ * helper, so omitting it lets this table occupy HICODE1's final 15 bytes. */
+#pragma rodata-name (push, "HICODE1")
+static const unsigned char vib_depth[15] = {
+     1,  2,  3,  4,  5,  6,  8, 10,
+    13, 17, 22, 28, 36, 46, 60,
+};
+#pragma rodata-name (pop)
+
 /* Sixteen signed samples are sufficient because pitch itself resolves to
  * 1/16 semitone and the 59.9 Hz engine supplies at least eight updates even
  * at the fastest setting.  Starting at zero avoids a pitch jump on key-on. */
-#pragma rodata-name (push, "HICODE3")
 static const signed char vib_sine[16] = {
      0,  6, 11, 15, 16, 15, 11,  6,
      0, -6,-11,-15,-16,-15,-11, -6,
 };
-#pragma rodata-name (pop)
 
 #pragma code-name (push, "HICODE3")
 static signed char vibrato_value(struct voice *v)
@@ -217,7 +230,7 @@ static signed char vibrato_value(struct voice *v)
     /* Round the magnitude before restoring the sign.  This keeps shallow
      * vibrato centred; a signed right shift makes the negative half one
      * pitch unit deeper than the positive half. */
-    mag = (unsigned char)((((unsigned)mag * v->vib_depth) + 8) >> 4);
+    mag = (unsigned char)((((unsigned)mag * vib_depth[v->vib_depth - 1]) + 8) >> 4);
     return (s < 0) ? -(signed char)mag : (signed char)mag;
 }
 
@@ -274,7 +287,7 @@ static void pitch_update(unsigned char ch)
 }
 
 /* Map the live 9-bit value onto Mikey's split feedback/control tap bits. */
-static void live_taps(struct voice *v)
+void __fastcall__ live_taps(struct voice *v)
 {
     unsigned taps9 = v->tap_cur & 0x1FF;
     unsigned char lo = (unsigned char)taps9;
@@ -310,8 +323,20 @@ static void exec_cmd(unsigned char ch, unsigned char cmd, unsigned char param)
             v->chord_len = 1;
         v->chord_pos = 0;
         break;
-    case CMD_G:                     /* signed whole taps per sequencer row */
+    case CMD_G:                   /* signed tick/row period for one tap step */
         v->tap_rate = (signed char)param;
+        /* Magnitudes 1..7 are tick periods.  Magnitude 8 starts the row
+         * range at one row, so store its normalized signed countdown here:
+         * +8 -> +1 and -8 -> -1.  The raw byte remains in tap_rate for mode
+         * selection and direction; clock_tap_glide performs the same
+         * normalization whenever it reloads the countdown. */
+        if (param >= 8 && param < 0x80)
+            tap_wait[ch] = param - 7;
+        else if (param >= 0x80 && param <= 0xF8)
+            tap_wait[ch] = param + 7;
+        else
+            tap_wait[ch] = param;
+        reset_instr_taps(v);          /* restart from patch without reseed */
         break;
     case CMD_B:                     /* signed static offset from live taps */
         if (v->type <= IT_NOISE && v->env_phase) {
@@ -387,6 +412,7 @@ static void exec_cmd(unsigned char ch, unsigned char cmd, unsigned char param)
 
 /* --- table macro sequencer: TBS 0 per note, TBS 1-F ticks per row --- */
 
+#pragma code-name (push, "MIDICODE")
 static void table_volume(struct voice *v, unsigned char vol)
 {
     /* Table VOL may shape attack/hold, but it must stop fighting the decay
@@ -396,6 +422,7 @@ static void table_volume(struct voice *v, unsigned char vol)
         v->dirty = 1;
     }
 }
+#pragma code-name (pop)
 
 static void table_step(unsigned char ch)
 {
@@ -505,7 +532,9 @@ static void trigger(unsigned char ch, unsigned char note, unsigned char inum)
     } else
         v->vib_speed = v->vib_depth = v->trm_speed = v->trm_depth = 0;
     v->trm_phase = 0;
-    v->tap_rate = 0;                    /* G sweep off until a G command */
+    /* G is track automation, not a note-local effect.  A fresh G command
+     * later in row_start() may reset/redefine it, but ordinary note triggers
+     * preserve both its live tap position and partially elapsed period. */
     v->chord[0] = 0;
     v->chord_len = 1;
     v->chord_pos = 0;
@@ -548,7 +577,8 @@ static void trigger(unsigned char ch, unsigned char note, unsigned char inum)
         if (!lo && !(in->taps_hi & 1))
             lo = TAPS_SQUARE;
         v->sh_ctl = 0;
-        v->tap_cur = lo | ((in->taps_hi & 0x01) << 8);
+        if (!v->tap_rate)               /* active G owns the track's taps */
+            v->tap_cur = lo | ((in->taps_hi & 0x01) << 8);
         live_taps(v);
         v->retime = 1;
         v->sh_shiftlo = in->seed_lo;
@@ -578,6 +608,8 @@ static void envelope(unsigned char ch)
             l += v->e_atk;
         break;
     case 2:
+        if (v->hold_left == 0x0F)       /* HOLD F sustains until retrigger/K */
+            return;
         if (v->hold_left == 0)
             v->env_phase = 3;
         else
@@ -601,20 +633,19 @@ static void envelope(unsigned char ch)
     }
 }
 
-/* TONE/NOISE tremolo is a one-directional dip inside the AHD envelope.
- * A 6-bit triangle and the 0-F depth produce up to 116 Lynx volume steps;
- * depth F therefore reaches near-silence without ever exceeding the peak. */
+/* TONE/NOISE tremolo is a repeating decay saw inside the AHD envelope:
+ * start at the envelope level, ramp downward, then snap back to the top.
+ * The 6-bit ramp and 0-F depth produce up to 118 Lynx volume steps, so
+ * depth F reaches near-silence without ever exceeding the envelope peak. */
 #pragma code-name (push, "HICODE2")
 static unsigned char tone_level(struct voice *v)
 {
     unsigned char level = v->env_level;
 
     if (v->trm_depth) {
-        unsigned char tri = v->trm_phase & 0x1F;
+        unsigned char ramp = v->trm_phase & 0x3F;
         unsigned char dip;
-        if (v->trm_phase & 0x20)
-            tri = 0x1F - tri;
-        dip = (unsigned char)(((unsigned)tri * v->trm_depth) >> 2);
+        dip = (unsigned char)(((unsigned)ramp * v->trm_depth) >> 3);
         level = (level > dip) ? level - dip : 0;
     }
     return level;
@@ -648,7 +679,7 @@ static void flush(unsigned char ch)
         h->other = v->sh_shifthi;       /* seed bits 11-8 in bits 7-4 */
         h->count = v->sh_bkup;
         h->reload = v->sh_bkup;
-        h->volume = (eng_mute & (1 << ch)) ? 0 : tone_level(v);
+        h->volume = (eng_mute & track_bit[ch]) ? 0 : tone_level(v);
         (&MIKEY.attena)[ch] = v->sh_pan;
         h->control = v->sh_ctl;
         return;
@@ -661,22 +692,25 @@ static void flush(unsigned char ch)
         h->control = v->sh_ctl;         /* G/B may also cross user tap bit 6 */
     }
     h->reload = v->sh_bkup;
-    h->volume = (eng_mute & (1 << ch)) ? 0 : tone_level(v);
+    h->volume = (eng_mute & track_bit[ch]) ? 0 : tone_level(v);
 }
 
 /* editor mute/solo: apply immediately, even mid-note */
 #pragma code-name (push, "HICODE2")
 void __fastcall__ engine_set_mute(unsigned char mask)
 {
-    unsigned char ch, slot;
+    struct voice *v = voices;
+    volatile unsigned char *volume = &MIKEY.channel_a.volume;
+    unsigned char ch, owner;
+
     eng_mute = mask;
-    for (ch = 0; ch < NCH; ++ch)
-        CHAN[ch]->volume = ((mask & (1 << ch))
-                            || voices[ch].dac_slot < NDAC)
-                           ? 0 : tone_level(&voices[ch]);
-    for (slot = 0; slot < NDAC; ++slot)
-        dac_muted[slot] = (dac_owner[slot] < NCH
-                           && (mask & (1 << dac_owner[slot]))) ? 1 : 0;
+    for (ch = 0; ch < NCH; ++ch, ++v, volume += 8)
+        *volume = ((mask & track_bit[ch]) || v->dac_slot < NDAC)
+                  ? 0 : tone_level(v);
+    owner = dac_owner[0];
+    dac_muted[0] = (owner < NCH && (mask & track_bit[owner])) ? 1 : 0;
+    owner = dac_owner[1];
+    dac_muted[1] = (owner < NCH && (mask & track_bit[owner])) ? 1 : 0;
 }
 #pragma code-name (pop)
 
@@ -823,6 +857,8 @@ static void stop_nolock(void)
     if (eng_mode)
         sync_tx(SYNC_OP_STOP);
     eng_mode = MODE_STOP;
+    eng_waiting = 0;
+    sync_row_pending = 0;
     pcm_stop();
     for (slot = 0; slot < NDAC; ++slot) {
         pool_cancel(slot);
@@ -847,8 +883,11 @@ static void play_common(void)
 {
     memset(play_cnt, 0, sizeof(play_cnt));  /* I/J counts reset (ported) */
     eng_tick = 0;
+    sync_row_pending = 0;
+    eng_waiting = (sync_mode == SYNC_IN || sync_mode == SYNC_IN24);
     eng_gpos = 0;
     eng_groove = 0;
+    live_bar = 0;                       /* LIVE grid */
     row_ticks = sd.grooves[0][0] ? sd.grooves[0][0] : 6;
     MIRROR_DAC_COUNT = 0;
     MIRROR_DAC_S_SLOT = EMPTY;
@@ -860,6 +899,7 @@ static void play_common(void)
 
 /* the engine tick runs in the VBlank IRQ: every main-thread mutation of
  * engine state sits inside a brief IRQ-masked window */
+#pragma code-name (push, "MIDICODE")
 void engine_stop(void)
 {
     __asm__("sei");
@@ -879,6 +919,7 @@ void engine_play_song(unsigned char row)
     sync_tx(SYNC_OP_START);
     __asm__("cli");
 }
+#pragma code-name (pop)
 
 void engine_play_chain(unsigned char track, unsigned char chain)
 {
@@ -955,8 +996,59 @@ void engine_audition(unsigned char note, unsigned char inum)
     flush(0);
     __asm__("cli");
 }
+#pragma code-name (pop)
+
+/* MIDI takeover is deliberately a thin live-key layer over the tracker
+ * trigger.  Displayed MIDI channels 1-4 select physical tracks A-D and
+ * displayed instruments 01-04 respectively.  Velocity is intentionally
+ * left to the bridge for now: KIT DAC voices have no cheap per-voice gain,
+ * so accepting it here would make the four instrument types inconsistent. */
+#pragma code-name (push, "MIDICODE")
+void __fastcall__ engine_midi_note_on(unsigned char track,
+                                      unsigned char note)
+{
+    if (track >= NCH || note < NOTE_MIN || note > NOTE_MAX)
+        return;
+    __asm__("sei");
+    trigger(track, note, track + 1);
+    flush(track);
+    __asm__("cli");
+}
+
+void __fastcall__ engine_midi_note_off(unsigned char track)
+{
+    struct voice *v;
+
+    if (track >= NCH)
+        return;
+    __asm__("sei");
+    v = &voices[track];
+    if (v->type == IT_KIT) {
+        dac_release(track);
+        v->env_phase = 0;
+        v->env_level = 0;
+    } else if (v->env_phase) {
+        if (v->e_dcy) {
+            v->env_phase = 3;           /* release through patch DECAY */
+            v->hold_left = 0;
+        } else {
+            v->env_phase = 0;           /* DCY 0 sustains: Note Off cuts */
+            v->env_level = 0;
+        }
+        v->dirty = 1;
+        flush(track);
+    }
+    __asm__("cli");
+}
+
+void engine_midi_panic(void)
+{
+    engine_stop();
+}
+#pragma code-name (pop)
 
 /* prelisten a phrase row's command too, so editing C/V/P/N... is audible */
+#pragma code-name (push, "HICODE2")
 void __fastcall__ engine_audition_cmd(unsigned char cmd, unsigned char param)
 {
     if (cmd && cmd != CMD_D && cmd != CMD_Z && cmd != CMD_H && cmd != CMD_L) {
@@ -987,31 +1079,57 @@ void engine_init(void)
 void engine_tick(void)
 {
     unsigned char ch;
+#ifndef ALYNXDJ_NO_DAC_PEAKS
     /* snapshot + clear the IRQ DAC peaks for KIT/WAV meters (this frame) */
     unsigned char dac_lvl0 = dac_peak[0], dac_lvl1 = dac_peak[1];
     dac_peak[0] = 0;
     dac_peak[1] = 0;
+#endif
 
-    /* sync slave: rows are granted by received ROW bytes, not the groove */
-    if (eng_playing && sync_mode == SYNC_IN && eng_tick && sync_row_pending) {
-        --sync_row_pending;
-        for (ch = 0; ch < NCH; ++ch)
-            walk_advance(ch);
-        eng_tick = 0;
+    /* Sync slaves arm at the selected row.  The first external pulse starts
+     * that row; later pulses advance before starting the next one. */
+    if (eng_playing
+        && (sync_mode == SYNC_IN || sync_mode == SYNC_IN24)
+        && sync_row_pending) {
+        if (eng_waiting) {
+            --sync_row_pending;
+            eng_waiting = 0;
+            eng_tick = 0;
+        } else if (eng_tick) {
+            --sync_row_pending;
+            for (ch = 0; ch < NCH; ++ch)
+                walk_advance(ch);
+            eng_tick = 0;
+        }
     }
 
-    if (eng_playing && eng_tick == 0) {
+    /* The fast G range is clocked in tracker ticks.  Do this before
+     * row_start(), including at a row boundary, so a G encountered on that
+     * row resets afterwards and leaves its original TAPS audible for one
+     * complete tick period.  Raw signed magnitudes 1..7 occupy 01..07 and
+     * F9..FF. */
+    if (eng_playing && !eng_waiting) {
+        for (ch = 0; ch < NCH; ++ch) {
+            struct voice *v = &voices[ch];
+            unsigned char r = (unsigned char)v->tap_rate;
+            if (v->env_phase && r
+                && (r <= 7 || r >= 0xF9))
+                clock_tap_glide(v);
+        }
+    }
+
+    if (eng_playing && !eng_waiting && eng_tick == 0) {
         unsigned char g = sd.grooves[eng_groove][eng_gpos];
         row_ticks = g ? g : 6;
         for (ch = 0; ch < NCH; ++ch) {
             struct voice *v = &voices[ch];
+            unsigned char r = (unsigned char)v->tap_rate;
+            /* Magnitudes 8+ use complete sequencer rows, with 8 mapping to
+             * one row.  As above, clock before row_start() so a newly
+             * encountered G begins a fresh full period at patch TAPS. */
+            if (v->env_phase && r > 7 && r < 0xF9)
+                clock_tap_glide(v);
             row_start(ch);
-            /* G is tied to musical time: one signed parameter unit per
-             * sequencer row, independent of groove length or swing. */
-            if (v->env_phase && v->tap_rate) {
-                v->tap_cur = (v->tap_cur + v->tap_rate) & 0x1FF;
-                live_taps(v);            /* keep the oscillator running */
-            }
         }
     }
 
@@ -1097,6 +1215,7 @@ void engine_tick(void)
             dac_release(ch);
         }
         flush(ch);
+#ifndef ALYNXDJ_NO_DAC_PEAKS
         /* meter source: TONE/NOISE use the envelope (it scales VOLUME);
          * KIT/WAV play the DAC full-amplitude, so use the real DAC peak */
         {
@@ -1107,14 +1226,16 @@ void engine_tick(void)
                 lvl = dac_lvl1;
             else
                 lvl = tone_level(v);
-            eng_level[ch] = (eng_mute & (1 << ch)) ? 0 : lvl;
+            eng_level[ch] = (eng_mute & track_bit[ch]) ? 0 : lvl;
         }
+#endif
     }
 
     if (!eng_playing)
         return;
 
-    if (sync_mode == SYNC_IN) {         /* slave: hold until the next clock */
+    if (sync_mode == SYNC_IN || sync_mode == SYNC_IN24) {
+        /* Both slave modes hold the row until the next external grant. */
         eng_tick = 1;
         return;
     }

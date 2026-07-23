@@ -1,7 +1,7 @@
 /* Global Mikey mixer/stereo initialization. */
 #include <lynx.h>
 
-#pragma code-name (push, "HICODE2")
+#pragma code-name (push, "MIDICODE")
 
 void sound_init(void)
 {

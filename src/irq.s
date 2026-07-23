@@ -37,6 +37,18 @@ TIM7BKUP := $FD1C
 TIM7CTLA := $FD1D
 AUD0DAC  := $FD22               ; channel A OUTPUT; channels are +8 bytes
 AUD0CTL  := $FD25
+SERCTL   := $FD8C
+SERDAT   := $FD8D
+MIDI_RX  := $C048
+SYNC_RX_HEAD := $C004
+SYNC_RX_TAIL := $C005
+SYNC_RX_OVERRUN := $C006
+SYNC_MODE := $C00F
+CLOCK_RX_HEAD := $C0F9
+CLOCK_RX_TAIL := $C0FA
+CLOCK_RX_OVERRUN := $C0FB
+CLOCK_RX := $C088
+PCM_UNDERRUN := $C027             ; two wrapping diagnostic counters
 
 PCM_CTLA = $98                  ; int enable | count | reload | 1us
 WAVES_OFF = 7424                ; offsetof(struct songdata, waves)
@@ -79,6 +91,8 @@ _vbl_install:
         sta     $FFFF
         stz     _frames
         stz     _frames+1
+        stz     PCM_UNDERRUN
+        stz     PCM_UNDERRUN+1
         lda     #$9F            ; TIM2: int enable | reload | count | linked
         sta     TIM2CTLA
         cli
@@ -251,6 +265,56 @@ _wave_stop:
 handler:
         pha
         lda     INTSET
+        and     #$10            ; timer 4 -> MIDI UART receive
+        beq     @slot0check
+        lda     SERCTL
+        and     #$40            ; level IRQ can outlive RX ready by a cycle
+        beq     @serialspurious
+        phx
+        lda     SERDAT          ; reading promptly prevents UART overrun
+        pha                     ; level IRQ: drain RX before acknowledging it
+        lda     #$10
+        sta     INTRST
+        pla
+        ldx     SYNC_MODE
+        cpx     #4              ; SYNC_IN24 uses its own live ring
+        beq     @clockrx
+        ldx     SYNC_RX_HEAD
+        sta     MIDI_RX,x
+        inx
+        txa
+        and     #$3F
+        tax
+        cpx     SYNC_RX_TAIL
+        beq     @serialfull
+        stx     SYNC_RX_HEAD
+        bra     @serialdone
+@serialfull:
+        inc     SYNC_RX_OVERRUN
+@serialdone:
+        plx
+        bra     @slot0check
+@clockrx:
+        ldx     CLOCK_RX_HEAD
+        sta     CLOCK_RX,x
+        inx
+        txa
+        and     #$3F
+        tax
+        cpx     CLOCK_RX_TAIL
+        beq     @clockfull
+        stx     CLOCK_RX_HEAD
+        bra     @clockdone
+@clockfull:
+        inc     CLOCK_RX_OVERRUN
+@clockdone:
+        plx
+        bra     @slot0check
+@serialspurious:
+        lda     #$10
+        sta     INTRST
+@slot0check:
+        lda     INTSET
         and     #$80            ; timer 7 -> DAC slot 0
         bne     @slot0
         jmp     @slot1
@@ -272,7 +336,10 @@ handler:
         cmp     _pcm_head+1
         bne     @s0feed
         lda     _pcm_done
-        beq     @slot1          ; underrun: hold the last DAC value
+        bne     @s0finish
+        inc     PCM_UNDERRUN     ; underrun: hold the last DAC value
+        bra     @slot1
+@s0finish:
         stz     TIM7CTLA
         stz     _dac_mode
         phx
@@ -285,12 +352,15 @@ handler:
         phy
         lda     (_pcm_ptr)
         tay
+.ifndef ALYNXDJ_NO_DAC_PEAKS
         bpl     :+
         eor     #$ff
 :       cmp     _dac_peak
         bcc     :+
         sta     _dac_peak
-:       lda     _dac_muted
+:
+.endif
+        lda     _dac_muted
         bne     :+
         tya
         bra     :++
@@ -315,6 +385,7 @@ handler:
         phy
         ldy     wav_pos
         lda     (wav_ptr0),y
+.ifndef ALYNXDJ_NO_DAC_PEAKS
         pha
         bpl     :+
         eor     #$ff
@@ -322,6 +393,7 @@ handler:
         bcc     :+
         sta     _dac_peak
 :       pla
+.endif
         ldx     _dac_muted
         beq     :+
         lda     #0
@@ -358,7 +430,10 @@ handler:
         cmp     _pcm_head+3
         bne     @s1feed
         lda     _pcm_done+1
-        beq     @vbl
+        bne     @s1finish
+        inc     PCM_UNDERRUN+1
+        jmp     @vbl
+@s1finish:
         stz     TIM5CTLA
         stz     _dac_mode+1
         phx
@@ -371,12 +446,15 @@ handler:
         phy
         lda     (_pcm_ptr+2)
         tay
+.ifndef ALYNXDJ_NO_DAC_PEAKS
         bpl     :+
         eor     #$ff
 :       cmp     _dac_peak+1
         bcc     :+
         sta     _dac_peak+1
-:       lda     _dac_muted+1
+:
+.endif
+        lda     _dac_muted+1
         bne     :+
         tya
         bra     :++
@@ -401,6 +479,7 @@ handler:
         phy
         ldy     wav_pos+1
         lda     (wav_ptr1),y
+.ifndef ALYNXDJ_NO_DAC_PEAKS
         pha
         bpl     :+
         eor     #$ff
@@ -408,6 +487,7 @@ handler:
         bcc     :+
         sta     _dac_peak+1
 :       pla
+.endif
         ldx     _dac_muted+1
         beq     :+
         lda     #0

@@ -1,0 +1,39 @@
+; ALYNXDJ ComLynx transmitter: 62,500 baud, start + 8 data + Space + stop.
+;
+; The pin never drives high.  Direction 1 drives the preloaded zero; direction
+; 0 releases the pin.  This works both with the resistor/Schottky prototype
+; and with a non-inverting open-drain buffer such as SN74LVC1G07.
+
+.program comlynx_tx
+.side_set 1 opt pindirs
+
+.wrap_target
+    pull block side 0 [7]       ; released stop/idle, stall released if empty
+    set x, 7 side 1 [7]         ; start bit: drive low for eight SM clocks
+bitloop:
+    out pindirs, 1              ; inverted byte: 1 drives low, 0 releases
+    jmp x-- bitloop [6]         ; eight SM clocks per data bit
+    nop side 1 [7]              ; fixed Space ninth bit
+.wrap
+
+% c-sdk {
+#include "hardware/clocks.h"
+
+static inline void comlynx_tx_program_init(PIO pio, uint sm, uint offset,
+                                           uint pin, uint baud)
+{
+    pio_gpio_init(pio, pin);
+    gpio_pull_up(pin);           /* released state for a buffered output too */
+    pio_sm_set_pins_with_mask(pio, sm, 0, 1u << pin);
+    pio_sm_set_pindirs_with_mask(pio, sm, 0, 1u << pin);
+
+    pio_sm_config c = comlynx_tx_program_get_default_config(offset);
+    sm_config_set_out_shift(&c, true, false, 32);
+    sm_config_set_out_pins(&c, pin, 1);
+    sm_config_set_sideset_pins(&c, pin);
+    sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_TX);
+    sm_config_set_clkdiv(&c, (float)clock_get_hz(clk_sys) / (8u * baud));
+    pio_sm_init(pio, sm, offset, &c);
+    pio_sm_set_enabled(pio, sm, true);
+}
+%}

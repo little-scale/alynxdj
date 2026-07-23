@@ -1,11 +1,10 @@
 /* Two-voice cart-streamed sample pool (DESIGN D5/D6).
  *
  * DAC slot 0 owns $D000-$D1FF and slot 1 owns $D200-$D3FF.  Each timer
- * drains its 512-byte ring independently.  The main-loop pump re-seeks the
- * cart before every chunk; this costs a little throughput but makes two
- * interleaved streams possible and repairs the cart position after EEPROM
- * config traffic.  At 7.8 kHz each voice drains ~131 bytes/frame and gets
- * up to 192 bytes/frame of refill bandwidth.
+ * drains its 512-byte ring independently.  A lone stream retains the cart
+ * cursor; two interleaved streams re-seek when ownership changes.  Reads are
+ * published in 64-byte pieces so the IRQ never has to wait behind one long
+ * cartridge transfer, while each pump can restore the full 511-byte cushion.
  */
 #include <string.h>
 
@@ -16,23 +15,34 @@
 #define RING0      ((unsigned char *)0xD000)
 #define RING1      ((unsigned char *)0xD200)
 #define RING_SIZE  512u
-#define PUMP_BYTES 192
+#define PUMP_CHUNK 64
+#define PUMP_PASSES 8
 
 extern unsigned char *pcm_ptr[NDAC];    /* ring tails (IRQ-owned) */
 #pragma zpsym("pcm_ptr")
 
-#pragma code-name (push, "HICODE1")
+/* Which stream currently owns the physical cart cursor.  With one active
+ * sample, preserving this lets every refill continue sequentially instead
+ * of re-selecting the block and discarding up to 1023 bytes.  A second voice
+ * still re-seeks when ownership alternates, preserving D5/D6 symmetry. */
+#define cart_stream (*(volatile unsigned char *)0xC029)
 
 /* Cold stream state occupies the unused end of the harness/debug RAM page. */
 #pragma bss-name (push, "MIRRORRAM")
 static unsigned char pool_nkits;
 static unsigned stream_left[NDAC];
-static unsigned stream_off[NDAC];
-static unsigned char stream_block[NDAC];
+/* Externally named so cart.s can perform the tiny cursor-owner fast path
+ * without cc65's comparatively large 16-bit indexed-array helper. */
+unsigned stream_off[NDAC];
+unsigned char stream_block[NDAC];
 static volatile unsigned char stream_cancel[NDAC];
 static volatile unsigned char trig_kit[NDAC];
 static volatile unsigned char trig_member[NDAC];
 #pragma bss-name (pop)
+
+void __fastcall__ position_cart(unsigned char voice); /* cart.s */
+
+#pragma code-name (push, "HICODE1")
 
 static unsigned char *ring_base(unsigned char voice)
 {
@@ -43,6 +53,7 @@ void pool_init(void)
 {
     unsigned char hdr[4];
 
+    cart_stream = EMPTY;
     trig_kit[0] = trig_kit[1] = EMPTY;
     stream_cancel[0] = stream_cancel[1] = 0;
     stream_left[0] = stream_left[1] = 0;
@@ -55,55 +66,59 @@ void pool_init(void)
     pool_nkits = (hdr[2] <= 8) ? hdr[2] : 8;
 }
 
-static void pump_voice(unsigned char voice, unsigned char max)
+static void pump_voice(unsigned char voice)
 {
     unsigned char *base = ring_base(voice);
     unsigned char *head = pcm_head[voice];
     unsigned char *tail;
-    unsigned char n = max;
+    unsigned char passes = PUMP_PASSES;
+    unsigned char n;
     unsigned free_, to_end;
 
-    if (!stream_left[voice])
-        return;
-    /* The timer IRQ advances this 16-bit pointer.  Snapshot it atomically;
-     * a torn read at $D1FF->$D000 made the pump overwrite unread audio on
-     * real hardware while Handy's scheduling tended to hide the race. */
-    __asm__("sei");
-    tail = pcm_ptr[voice];
-    __asm__("cli");
-    free_ = (unsigned)(tail - head - 1) & (RING_SIZE - 1);
-    if (!free_)
-        return;
-    if (n > free_)
-        n = (unsigned char)free_;
-    to_end = (unsigned)(base + RING_SIZE - head);
-    if (n > to_end)
-        n = (unsigned char)to_end;
-    if (n > stream_left[voice])
-        n = (unsigned char)stream_left[voice];
-    if (!n)
-        return;
+    do {
+        if (!stream_left[voice])
+            return;
+        /* The timer IRQ advances this 16-bit pointer.  Snapshot it atomically;
+         * a torn read at $D1FF->$D000 made the pump overwrite unread audio on
+         * real hardware while Handy's scheduling tended to hide the race. */
+        __asm__("sei");
+        tail = pcm_ptr[voice];
+        __asm__("cli");
+        free_ = (unsigned)(tail - head - 1) & (RING_SIZE - 1);
+        if (!free_)
+            return;
+        n = PUMP_CHUNK;
+        if (n > free_)
+            n = (unsigned char)free_;
+        to_end = (unsigned)(base + RING_SIZE - head);
+        if (n > to_end)
+            n = (unsigned char)to_end;
+        if (n > stream_left[voice])
+            n = (unsigned char)stream_left[voice];
+        if (!n)
+            return;
 
-    /* Every chunk restores its own serial-cart cursor.  Besides enabling
-     * two streams, this makes OPTIONS EEPROM writes harmless to playback. */
-    cart_seek(stream_block[voice], stream_off[voice]);
-    cart_read(head, n);
-    stream_left[voice] -= n;
-    stream_off[voice] += n;
-    while (stream_off[voice] >= 1024u) {
-        stream_off[voice] -= 1024u;
-        ++stream_block[voice];
-    }
-    head += n;
-    if (head >= base + RING_SIZE)
-        head = base;
-    /* Publish the 16-bit head and final-chunk flag as one state change.
-     * The IRQ can now only see the old complete buffer or the new one. */
-    __asm__("sei");
-    pcm_head[voice] = head;
-    if (!stream_left[voice])
-        pcm_done[voice] = 1;
-    __asm__("cli");
+        /* Retain the cursor while one voice streams.  Interleaved voices and
+         * directory reads invalidate ownership and take the re-seek path. */
+        position_cart(voice);
+        cart_read(head, n);
+        stream_left[voice] -= n;
+        stream_off[voice] += n;
+        while (stream_off[voice] >= 1024u) {
+            stream_off[voice] -= 1024u;
+            ++stream_block[voice];
+        }
+        head += n;
+        if (head >= base + RING_SIZE)
+            head = base;
+        /* Publish each short piece immediately.  The IRQ can now only see
+         * the old complete buffer or the newly extended one. */
+        __asm__("sei");
+        pcm_head[voice] = head;
+        if (!stream_left[voice])
+            pcm_done[voice] = 1;
+        __asm__("cli");
+    } while (--passes);
 }
 
 static void do_trigger(unsigned char voice, unsigned char kit,
@@ -131,6 +146,7 @@ static void do_trigger(unsigned char voice, unsigned char kit,
     }
     /* The five-byte directory entry is cold trigger data, so read only the
      * selected one instead of pinning all 320 bytes in scarce RAM. */
+    cart_stream = EMPTY;                /* directory seek leaves sample data */
     cart_seek(POOL_BLOCK, 4 + kit * 40 + (member & 7) * 5);
     cart_read(e, 5);
     len = e[3] | ((unsigned)e[4] << 8);
@@ -148,8 +164,7 @@ static void do_trigger(unsigned char voice, unsigned char kit,
     pcm_done[voice] = 0;
     pcm_ptr[voice] = base;
     pcm_head[voice] = base;
-    pump_voice(voice, PUMP_BYTES);
-    pump_voice(voice, PUMP_BYTES);       /* 384-byte startup cushion */
+    pump_voice(voice);                   /* full 511-byte startup cushion */
 
     /* Cart reads are deliberately interruptible.  Recheck atomically: a
      * trigger that landed during prefill stays pending for the next frame,
@@ -183,7 +198,7 @@ void pool_pump(void)
         __asm__("cli");
         if (kit != EMPTY)
             do_trigger(voice, kit, member);
-        pump_voice(voice, PUMP_BYTES);
+        pump_voice(voice);
     }
 }
 

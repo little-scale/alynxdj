@@ -17,6 +17,7 @@
 #define MIRROR_ROW    (*(volatile unsigned char *)0xC001)
 #define MIRROR_COL    (*(volatile unsigned char *)0xC002)
 #define MIRROR_SCREEN (*(volatile unsigned char *)0xC003)
+#define MIRROR_TRANSPORT (*(volatile unsigned char *)0xC017)
 
 #define SCR_SONG   0
 #define SCR_CHAIN  1
@@ -35,16 +36,29 @@ static const char cmd_chars[NCMDS] = {
     'F', 'L', 'N', 'R', 'S', 'Z', 'E', 'T', 'I', 'J', 'B',
 };
 
+/* Stored command IDs are historical/save-format values, not alphabetical.
+ * Keep those IDs stable and map editor stepping through:
+ * - A B C D E F G H I J K L N O P R S T V W X Z. */
+static const unsigned char cmd_next_order[NCMDS] = {
+    CMD_A, CMD_B, CMD_D, CMD_E, CMD_H, CMD_I, CMD_L, CMD_P,
+    CMD_R, CMD_W, CMD_X, CMD_Z, CMD_G, CMD_N, CMD_O, CMD_S,
+    CMD_T, CMD_NONE, CMD_F, CMD_V, CMD_J, CMD_K, CMD_C,
+};
+
 #pragma code-name (push, "HICODE1")
 static unsigned char cmd_next(unsigned char c)
 {
-    return (c + 1 < NCMDS) ? c + 1 : 0;
+    return c < NCMDS ? cmd_next_order[c] : CMD_NONE;
 }
 #pragma code-name (pop)
 #pragma code-name (push, "HICODE3")
 static unsigned char cmd_prev(unsigned char c)
 {
-    return c ? c - 1 : NCMDS - 1;
+    unsigned char p;
+    for (p = 0; p < NCMDS; ++p)
+        if (cmd_next_order[p] == c)
+            return p;
+    return CMD_NONE;
 }
 #pragma code-name (pop)
 
@@ -63,9 +77,9 @@ static unsigned char c_row, c_col;      /* CHAIN: 0-15 x {phrase,tsp} */
 static unsigned char p_row, p_col;      /* PHRASE: note,instr,cmd,param */
 static unsigned char i_row;             /* INSTR: field index */
 static unsigned char t_row, t_col;      /* TABLE: 0-15 x vol,tsp,cmd,param */
-static unsigned char f_row;             /* FILES: SAVE/LOAD/NEW/PURGE */
+static unsigned char f_row;             /* FILES: SAVE/LOAD/NEW/DEMO/PURGE */
 static unsigned char f_status;          /* last save/load ST_* result */
-static unsigned char f_confirm;         /* NEW: armed, awaiting 2nd tap */
+static unsigned char f_confirm;         /* action armed, awaiting 2nd tap */
 static void purge(void);
 static unsigned char g_row;             /* GROOVE: 0-15 */
 static unsigned char w_col;             /* WAVE: 0-31 */
@@ -101,6 +115,14 @@ static struct chainstep blk_chst[16];
 #pragma bss-name (pop)
 static unsigned char blk_n;
 
+#pragma code-name (push, "MIDICODE")
+void editor_clipboard_clear(void)
+{
+    clip_kind = CLIP_NONE;
+    blk_n = 0;
+}
+#pragma code-name (pop)
+
 /* block select (A-held + B long-hold, ported gesture) */
 #define SEL_HOLD 20
 static unsigned char sel_active;
@@ -122,6 +144,10 @@ static unsigned char tap_was_empty;
 static unsigned char last_note = 37;    /* C-4 */
 static unsigned char last_chain = 0;
 static unsigned char last_phrase = 0;
+/* TAILRAM is not zeroed by crt0.  editor_init() initializes this latch. */
+#pragma bss-name (push, "TAILRAM")
+static unsigned char last_instr;        /* last explicitly edited PHRASE instr */
+#pragma bss-name (pop)
 
 /* channel activity meters (right column): cached bar heights */
 static unsigned char meter_h[NCH] = {0xFF, 0xFF, 0xFF, 0xFF};
@@ -195,11 +221,17 @@ static void top_bar(void)
     draw_hex8(13, 0, cur_track + 1, PEN_DIM, PEN_BG);
 }
 
+#pragma code-name (push, "MIDICODE")
 static void transport_label(void)
 {
-    draw_text(30, 0, eng_mode ? "PLAY" : "STOP",
-              eng_mode ? PEN_ACCENT : PEN_DIM, PEN_BG);
+    unsigned char state = eng_mode ? (eng_waiting ? 1 : 2) : 0;
+    if (state == MIRROR_TRANSPORT)
+        return;
+    MIRROR_TRANSPORT = state;
+    draw_text(30, 0, state == 1 ? "WAIT" : (state == 2 ? "PLAY" : "STOP"),
+              state ? PEN_ACCENT : PEN_DIM, PEN_BG);
 }
+#pragma code-name (pop)
 
 /* Screen-map indicator (right column, ported from SMSGGDJ): the middle row
  * is the shipped SONG-CHAIN-PHRASE-INSTR-TABLE strip (current = inverted);
@@ -240,7 +272,7 @@ static void draw_map(void)
 
 #define SONG_COLX(c) (4 + (c) * 3)
 
-#pragma code-name (push, "HICODE2")
+#pragma code-name (push, "MIDICODE")
 static unsigned char song_page(void)  { return s_row & 0xF0; }
 #pragma code-name (pop)
 
@@ -406,21 +438,12 @@ static void ifield_nib_set(unsigned char f, unsigned char v)
 }
 
 #pragma code-name (push, "HICODE1")
-static unsigned instr_taps(void)
-{
-    struct instr *in = &sd.instrs[edit_instr];
-    return in->taps_lo | ((in->taps_hi & 1) << 8);
-}
-
 static unsigned instr_seed(void)
 {
     struct instr *in = &sd.instrs[edit_instr];
     return in->seed_lo | ((in->seed_hi & 0x0F) << 8);
 }
 #pragma code-name (pop)
-
-/* which taps the mask lights, in user-bit order (D11) */
-static const char tap_glyph[9] = { '0','1','2','3','4','5','7','A','B' };
 
 static void draw_instr_row(unsigned char r, unsigned char cursor_here)
 {
@@ -447,13 +470,13 @@ static void draw_instr_row(unsigned char r, unsigned char cursor_here)
     case IF_TAPS: {
         unsigned char i;
         char b[2];
-        v = instr_taps();
+        v = instr_taps(edit_instr);
         draw_hex8(8, y, (unsigned char)(v >> 8), fg, bg);
         draw_hex8(10, y, (unsigned char)v, fg, bg);
-        /* lit tap glyphs: 0-5 7 A B */
+        /* Nine meter-style blocks, in user tap order: 0-5, 7, 10, 11. */
         b[1] = 0;
         for (i = 0; i < 9; ++i) {
-            b[0] = tap_glyph[i];
+            b[0] = '`';
             draw_text(14 + i, y, b, (v & (1 << i)) ? PEN_ACCENT : PEN_DIM,
                       PEN_BG);
         }
@@ -557,7 +580,7 @@ static void draw_table_screen(void)
         draw_table_row(r, r == t_row);
 }
 
-/* --- FILES screen: SAVE / LOAD + packed-size meter (D10) --- */
+/* --- FILES screen: working-set actions + packed-size meter (D10/D12) --- */
 
 static void draw_files_status(void)
 {
@@ -565,15 +588,16 @@ static void draw_files_status(void)
         "     ", "OK   ", "FULL!", "EMPTY", "BAD! ",
     };
     unsigned len = save_pack();
+    midi_overlay_load();              /* save buffer doubles as MIDI code RAM */
 
-    draw_text(1, 10, "PACK $", PEN_DIM, PEN_BG);
-    draw_hex8(7, 10, (unsigned char)(len >> 8), len ? PEN_TEXT : PEN_ACCENT,
+    draw_text(1, 12, "PACK $", PEN_DIM, PEN_BG);
+    draw_hex8(7, 12, (unsigned char)(len >> 8), len ? PEN_TEXT : PEN_ACCENT,
               PEN_BG);
-    draw_hex8(9, 10, (unsigned char)len, len ? PEN_TEXT : PEN_ACCENT, PEN_BG);
-    draw_text(12, 10, "OF $", PEN_DIM, PEN_BG);
-    draw_hex8(16, 10, (unsigned char)(SAVE_CAP_BYTES >> 8), PEN_DIM, PEN_BG);
-    draw_hex8(18, 10, (unsigned char)SAVE_CAP_BYTES, PEN_DIM, PEN_BG);
-    draw_text(1, 12, st[f_status], f_status == ST_OK ? PEN_ACCENT : PEN_TEXT,
+    draw_hex8(9, 12, (unsigned char)len, len ? PEN_TEXT : PEN_ACCENT, PEN_BG);
+    draw_text(12, 12, "OF $", PEN_DIM, PEN_BG);
+    draw_hex8(16, 12, (unsigned char)(SAVE_CAP_BYTES >> 8), PEN_DIM, PEN_BG);
+    draw_hex8(18, 12, (unsigned char)SAVE_CAP_BYTES, PEN_DIM, PEN_BG);
+    draw_text(1, 14, st[f_status], f_status == ST_OK ? PEN_ACCENT : PEN_TEXT,
               PEN_BG);
     MIRROR_PACKLEN = len;
     MIRROR_STATUS = f_status;
@@ -612,12 +636,14 @@ static void purge(void)
 
 static void draw_files_row(unsigned char r, unsigned char cursor_here)
 {
-    static const char *const label[4] = { "SAVE ", "LOAD ", "NEW  ", "PURGE" };
+    static const char *const label[5] = {
+        "SAVE ", "LOAD ", "NEW  ", "DEMO ", "PURGE",
+    };
     unsigned char fg = cursor_here ? PEN_BG : PEN_TEXT;
     unsigned char bg = cursor_here ? PEN_TEXT : PEN_BG;
     unsigned char y = GRID_TOP + 1 + r * 2;
 
-    if (r >= 4)
+    if (r >= 5)
         return;
     if (f_confirm && r == f_row)
         draw_text(1, y, "SURE?", fg, bg);
@@ -629,7 +655,8 @@ static void draw_files_row(unsigned char r, unsigned char cursor_here)
 static void draw_files_screen(void)
 {
     unsigned char r;
-    for (r = 0; r < 4; ++r)
+    engine_stop();                    /* pack buffer temporarily holds code */
+    for (r = 0; r < 5; ++r)
         draw_files_row(r, r == f_row);
     draw_files_status();
 }
@@ -772,7 +799,9 @@ static void draw_proj_screen(void)
 
 static void draw_opts_row(unsigned char r, unsigned char cursor_here)
 {
-    static const char *const sync_name[NSYNC] = { "OFF", "OUT", "IN " };
+    static const char *const sync_name[NSYNC] = {
+        "OFF ", "OUT ", "IN  ", "MIDI", "IN24"
+    };
     unsigned char fg = cursor_here ? PEN_BG : PEN_TEXT;
     unsigned char bg = cursor_here ? PEN_TEXT : PEN_BG;
 
@@ -825,6 +854,17 @@ static void draw_screen(void)
 {
     clear_grid();
     top_bar();
+#ifdef ALYNXDJ_NO_METERS
+#ifdef ALYNXDJ_NO_DAC_PEAKS
+    /* IRQ/engine peak-free sample-timing diagnostic.  The following byte is
+     * a live total of held-sample IRQs, so hardware starvation is visible. */
+    draw_text(14, 0, "NP", PEN_ACCENT, PEN_BG);
+    draw_hex8(16, 0, dac_underrun[0] + dac_underrun[1], PEN_ACCENT, PEN_BG);
+#else
+    /* Redraw-only hardware A/B diagnostic. */
+    draw_text(14, 0, "NM", PEN_ACCENT, PEN_BG);
+#endif
+#endif
     transport_label();
     switch (screen) {
     case SCR_SONG:   draw_song_screen(); break;
@@ -928,9 +968,8 @@ static void move_cursor(unsigned char dir)
     case SCR_FILES:
         if (dir == 0 || dir == 1) {
             f_confirm = 0;
-            draw_files_row(2, f_row == 2);
-            f_row = (dir == 1) ? (f_row < 3 ? f_row + 1 : 0)
-                               : (f_row ? f_row - 1 : 3);
+            f_row = (dir == 1) ? (f_row < 4 ? f_row + 1 : 0)
+                               : (f_row ? f_row - 1 : 4);
         }
         break;
     case SCR_GROOVE:                        /* single groove (D13): no pool */
@@ -954,8 +993,6 @@ static void move_cursor(unsigned char dir)
     case SCR_WAVE: {
         unsigned char oc = w_col;
         switch (dir) {
-        case 0: if (edit_wave < 7) { ++edit_wave; draw_screen(); } break;
-        case 1: if (edit_wave) { --edit_wave; draw_screen(); } break;
         case 2: if (w_col) --w_col; else w_col = 31; break;
         case 3: if (w_col < 31) ++w_col; else w_col = 0; break;
         }
@@ -1031,7 +1068,8 @@ static void edit_phrase_cell(unsigned char dir)
     struct step *s = &sd.phrases[edit_phrase][p_row];
 
     if (p_col == 0) {
-        unsigned char n = s->note ? s->note : last_note;
+        unsigned char was_empty = !s->note;
+        unsigned char n = was_empty ? last_note : s->note;
         switch (dir) {
         case 0: n = (n + 12 <= NOTE_MAX) ? n + 12 : n; break;
         case 1: n = (n > 12) ? n - 12 : n; break;
@@ -1039,6 +1077,8 @@ static void edit_phrase_cell(unsigned char dir)
         case 3: n = (n < NOTE_MAX) ? n + 1 : n; break;
         }
         s->note = n;
+        if (was_empty)
+            s->instr = last_instr;
         last_note = n;
         if (!eng_mode && opt_prelisten)
             engine_audition(n, s->instr);
@@ -1049,6 +1089,7 @@ static void edit_phrase_cell(unsigned char dir)
         case 2: --s->instr; break;
         case 3: ++s->instr; break;
         }
+        last_instr = s->instr;
     } else if (p_col == 2) {
         switch (dir) {
         case 0: case 3: s->cmd = cmd_next(s->cmd); break;
@@ -1169,7 +1210,7 @@ static void edit_instr_cell(unsigned char dir)
         else ++*p;
         break;
     case IF_TAPS:
-        t = edit_u16(instr_taps(), dir, 0x1FF);
+        t = edit_u16(instr_taps(edit_instr), dir, 0x1FF);
         in->taps_lo = (unsigned char)t;
         in->taps_hi = (unsigned char)(t >> 8);
         break;
@@ -1259,9 +1300,9 @@ static void edit_cell(unsigned char dir)
     case SCR_OPTS:
         switch (o_row) {
         case 0:
-            sync_mode = (dir == 0 || dir == 3)
-                        ? (sync_mode + 1) % NSYNC
-                        : (sync_mode + NSYNC - 1) % NSYNC;
+            sync_set_mode((dir == 0 || dir == 3)
+                          ? (sync_mode + 1) % NSYNC
+                          : (sync_mode + NSYNC - 1) % NSYNC);
             break;
         case 1:
             opt_prelisten ^= 1;
@@ -1318,14 +1359,16 @@ static void insert_cell(void)
             sd.chains[edit_chain][c_row].tsp = 0;
         }
         break;
-    case SCR_PHRASE:
-        if (p_col == 0 && !sd.phrases[edit_phrase][p_row].note) {
-            sd.phrases[edit_phrase][p_row].note = last_note;
+    case SCR_PHRASE: {
+        struct step *s = &sd.phrases[edit_phrase][p_row];
+        if (p_col == 0 && !s->note) {
+            s->note = last_note;
+            s->instr = last_instr;
             if (!eng_mode)
-                engine_audition(last_note,
-                                sd.phrases[edit_phrase][p_row].instr);
+                engine_audition(last_note, last_instr);
         }
         break;
+    }
     case SCR_INSTR:
         if (!eng_mode)                    /* physical B tap: audition patch */
             engine_audition(last_note, edit_instr);
@@ -1349,6 +1392,12 @@ static void insert_cell(void)
             f_status = ST_OK;
             break;
         case 3:
+            __asm__("sei");
+            song_demo();
+            __asm__("cli");
+            f_status = ST_OK;
+            break;
+        case 4:
             purge();
             f_status = ST_OK;
             break;
@@ -1687,13 +1736,18 @@ static void double_tap(void)
             last_phrase = np;
         }
         break;
-    case SCR_PHRASE:
-        if (clip_kind == CLIP_CMD && p_col == 2) {
-            sd.phrases[edit_phrase][p_row].cmd = clip_step.cmd;
-            sd.phrases[edit_phrase][p_row].param = clip_step.param;
+    case SCR_PHRASE: {
+        struct step *s = &sd.phrases[edit_phrase][p_row];
+        if (p_col >= 2) {
+            if (clip_kind == CLIP_CMD) {
+                s->cmd = clip_step.cmd;
+                s->param = clip_step.param;
+            } else
+                s->cmd = s->param = 0;
         } else if (clip_kind == CLIP_STEP)
-            sd.phrases[edit_phrase][p_row] = clip_step;
+            *s = clip_step;
         break;
+    }
     default:
         return;
     }
@@ -1778,13 +1832,16 @@ static unsigned char dir_of(unsigned char pressed)
 void editor_init(void)
 {
     unsigned char c;
+    last_instr = 0;
     for (c = 0; c < NCH; ++c)
         ph_song[c] = 0xFF;
+    MIRROR_TRANSPORT = 0xFF;
     screen = SCR_SONG;
     draw_screen();
     mirror_cursor();
 }
 
+#ifndef ALYNXDJ_NO_METERS
 static void meters_update(void)
 {
     unsigned char t, h, i;
@@ -1806,14 +1863,32 @@ static void meters_update(void)
         }
     }
 }
+#endif
 
 void editor_frame(unsigned char joy, unsigned char prev)
 {
     unsigned char pressed = joy & ~prev;
     unsigned char dir = 0xFF;
+#ifdef ALYNXDJ_NO_DAC_PEAKS
+    static unsigned char old_underruns = 0xFF;
+    unsigned char underruns = dac_underrun[0] + dac_underrun[1];
+#endif
 
     playhead_update();
+    /* Row redraws can take several hardware frames.  Refill immediately
+     * afterward instead of waiting for the outer main-loop pass; a 512-byte
+     * KIT ring otherwise reaches its tail while the display is catching up. */
+    pool_pump();
+#ifdef ALYNXDJ_NO_DAC_PEAKS
+    if (underruns != old_underruns) {
+        old_underruns = underruns;
+        draw_hex8(16, 0, underruns, PEN_ACCENT, PEN_BG);
+    }
+#endif
+#ifndef ALYNXDJ_NO_METERS
     meters_update();
+#endif
+    transport_label();
     if (a_release_age != 0xFF)
         ++a_release_age;
 
@@ -1915,6 +1990,11 @@ void editor_frame(unsigned char joy, unsigned char prev)
     if ((joy & JOY_BTN_B_MASK) && (pressed & JOY_BTN_A_MASK)) {
         b_used = 1;
         a_used = 1;
+        if (sync_mode == SYNC_MIDI) {
+            engine_midi_panic();         /* takeover owns all four tracks */
+            transport_label();
+            return;
+        }
         if (live_mode && screen == SCR_SONG) {
             unsigned char cn = sd.song[s_row][s_col];
             engine_live_queue(s_col, cn == EMPTY ? 0xFE : cn);
@@ -1987,7 +2067,9 @@ void editor_frame(unsigned char joy, unsigned char prev)
         }
     }
     if (pressed & JOY_BTN_B_MASK)
-        b_used = 0;
+        /* Physical A is the map/transport modifier.  OPTIONS and PROJECT
+         * consume only its clean-tap action; held chords remain live. */
+        b_used = screen >= SCR_PROJ;
     if ((prev & JOY_BTN_A_MASK) && !(joy & JOY_BTN_A_MASK)) {
         if (!a_used) {
             insert_cell();                   /* clean A tap */

@@ -39,8 +39,7 @@ static const unsigned char palettes[NPALETTES][4][2] = {
     { {0x5,0xE1}, {0xE,0x2F}, {0x9,0x77}, {0xF,0x7F} },  /* 6 KIDD sky    */
     { {0x4,0x40}, {0xE,0xA6}, {0x8,0x62}, {0xF,0xDA} },  /* 7 MINT teal   */
 };
-unsigned char opt_palette;
-
+#pragma code-name (push, "MIDICODE")
 void palette_apply(void)
 {
     unsigned char i;
@@ -49,6 +48,7 @@ void palette_apply(void)
         MIKEY.palette[i + 16] = palettes[opt_palette][i][1];
     }
 }
+#pragma code-name (pop)
 
 static void palette_init(void)
 {
@@ -113,7 +113,7 @@ void draw_hex8(unsigned char cx, unsigned char cy, unsigned char v,
 }
 
 static const struct instr blank_instr = {
-    IT_TONE, 0, 0x0A, 5, EMPTY, TAPS_SQUARE, EMPTY, 0xFF,
+    IT_TONE, 0x7F, 0x05, 5, EMPTY, TAPS_SQUARE, EMPTY, 0xFF,
     0, 0, 0, 0, 0, 0, 0, 0,
 };
 
@@ -145,7 +145,7 @@ void song_clear(void)
  * T1 = arp / lead / seed-plucks, T2 = bass (Z ghosts, J variation),
  * T3 = wavetable pads / speech, T4 = 808 then 909 drums + retrig fill.
  * Verification rigs live from song row 16 (out of the demo's loop). */
-static void song_demo(void)
+void song_demo(void)
 {
     unsigned char i;
 
@@ -492,19 +492,34 @@ static void overlay_load(unsigned char block, unsigned char *dst,
 }
 
 #pragma code-name (push, "HICODE2")
+void midi_overlay_load(void)
+{
+    unsigned char *dst = (unsigned char *)0xC100;
+    unsigned char chunks = 48;          /* MIDICODE: $0600 bytes */
+
+    cart_seek(254, 0);                  /* final two blocks, after sample bank */
+    do {
+        cart_read(dst, 32);
+        dst += 32;
+    } while (--chunks);
+}
+
 static void test_hook_run(void)
 {
     unsigned char hook = TEST_HOOK;
 
     TEST_HOOK = 0;
-    if (hook == 0xA5)
+    if (hook == 0xA5) {
+        song_demo();                     /* install the private DAC rig */
         engine_play_song(29);            /* symmetric-DAC test rig */
-    else if (hook == 0xA6) {
+    } else if (hook == 0xA6) {
         *(volatile unsigned int *)0xC01A = save_pack();
         *(volatile unsigned char *)0xC01D = save_do();
         *(volatile unsigned int *)0xC018 = save_sum();
+        midi_overlay_load();
     } else if (hook == 0xA8) {
         /* Reuse the same four-track rig as table-WAV voices. */
+        song_demo();
         sd.instrs[12].type = IT_WAV;
         sd.instrs[12].env = 0x0E;
         sd.instrs[12].hold = 15;
@@ -524,22 +539,25 @@ void main(void)
     overlay_load(40, (unsigned char *)0xC900, 56); /* HICODE1: $0700 */
     overlay_load(42, (unsigned char *)0xF600, 48); /* HICODE2: $0600 */
     overlay_load(44, (unsigned char *)0xF320, 23); /* HICODE3: $02E0 */
+    midi_overlay_load();
+    sync_init();
     config_load();
     palette_init();
     screen_clear();
     MIKEY.scrbase = SCREEN;
     sound_init();
-    sync_init();
     engine_init();
     pool_init();
-    song_demo();
+    song_clear();
 
-    /* autoload: a valid save replaces the demo song (ported slot-0
-     * policy); mirrors let the harness verify the round trip */
+    /* Autoload a valid slot-0 save over the clean working song.  The factory
+     * demo is an explicit FILES action, not the empty-EEPROM fallback. */
     *(volatile unsigned char *)0xC01D = save_load();
     *(volatile unsigned int *)0xC018 = save_sum();
+    midi_overlay_load();
 
     vbl_install();
+    sync_irq_enable();
     splash();
     editor_init();
     draw_text(18, 0, BUILDID, PEN_DIM, PEN_BG);
@@ -547,6 +565,7 @@ void main(void)
 
     for (;;) {
         unsigned char f = (unsigned char)frames;
+        sync_poll();                    /* MIDI is serviced between frames */
         if (f == last)
             continue;
         last = f;
@@ -557,7 +576,6 @@ void main(void)
         joy = (unsigned char)((joy & 0xFC)
                               | ((joy & 0x01) << 1) | ((joy & 0x02) >> 1));
         JOY_MIRROR = joy;
-        sync_poll();
         pool_pump();
         editor_frame(joy, prev_joy);
         prev_joy = joy;

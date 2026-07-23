@@ -256,7 +256,7 @@
       data.fill(255,OFF.chains,OFF.chains+SIZES.chains);
       for (let i=0;i<32;i++) {
         const o=OFF.instruments+i*16;
-        data.set([0,0,0x0A,5,255,1,255,255,0,0,0,0,0,0,0,0],o);
+        data.set([0,127,0x05,5,255,1,255,255,0,0,0,0,0,0,0,0],o);
       }
       for (let x=0;x<32;x++) {
         data[OFF.waves+x]=u8(x<16 ? x*15-120 : 120-(x-16)*15);
@@ -493,7 +493,7 @@
         field("Volume",iField("vol",hex(state.data[o+1])),"$00–$7F envelope peak"),
         field("Attack",iField("attack",hex(env>>4,1),"hex",1),"0 instant; higher is slower"),
         field("Decay",iField("decay",hex(env&15,1),"hex",1),"0 sustains; higher is slower"),
-        field("Hold",iField("hold",hex(hold&15,1),"hex",1),"Envelope ticks at peak"),
+        field("Hold",iField("hold",hex(hold&15,1),"hex",1),"0–E timed; F indefinite sustain"),
         field("TBS",iField("tbs",hex(hold>>4,1),"hex",1),"0 per note; 1–F ticks per row"),
         field(type===2?"Wave":type===3?"Kit bank":"Bank (unused)",iField("bank",hex(state.data[o+4])),type===2?"FF triangle; 00–07 wavetable":type===3?"00–07 sample kit":"Preserved but ignored"),
         field("Table",iField("table",hex(state.data[o+6])),"FF none; 00–0F table"),
