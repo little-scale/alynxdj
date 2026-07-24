@@ -67,18 +67,24 @@ static unsigned char cmd_prev(unsigned char c)
 #define GRID_TOP 1
 #define BODY_X_OFFSET 8
 
-static unsigned char screen;
+unsigned char screen;
 static unsigned char cur_track;         /* set by the SONG cursor column */
 static unsigned char edit_chain;        /* what CHAIN shows */
 static unsigned char edit_phrase;       /* what PHRASE shows */
-static unsigned char edit_instr;        /* what INSTR shows */
+unsigned char edit_instr;               /* what INSTR shows */
 static unsigned char edit_table;        /* what TABLE shows */
 
 /* per-screen cursors */
-static unsigned char s_row, s_col;      /* SONG: 0-127 x 0-3 */
-static unsigned char c_row, c_col;      /* CHAIN: 0-15 x {phrase,tsp} */
-static unsigned char p_row, p_col;      /* PHRASE: note,instr,cmd,param */
-static unsigned char i_row;             /* INSTR: field index */
+unsigned char s_row;
+static unsigned char s_col;             /* SONG: 0-127 x 0-3 */
+unsigned char c_row;
+static unsigned char c_col;             /* CHAIN: 0-15 x {phrase,tsp} */
+unsigned char p_row;
+static unsigned char p_col;             /* PHRASE: note,instr,cmd,param */
+unsigned char i_row;                    /* INSTR: field index */
+unsigned char ifield_type;
+unsigned char __fastcall__ ifield_screen_y(unsigned char f);
+unsigned char __fastcall__ instr_selector(unsigned char dir);
 static unsigned char t_row, t_col;      /* TABLE: 0-15 x vol,tsp,cmd,param */
 static unsigned char f_row;             /* FILES: SAVE/LOAD/NEW/DEMO/PURGE */
 static unsigned char f_status;          /* last save/load ST_* result */
@@ -128,8 +134,8 @@ void editor_clipboard_clear(void)
 
 /* block select (A-held + B long-hold, ported gesture) */
 #define SEL_HOLD 20
-static unsigned char sel_active;
-static unsigned char sel_anchor;
+unsigned char sel_active;
+unsigned char sel_anchor;
 static unsigned char ab_pending, ab_timer;
 
 /* A double-tap window (paste / mint / clone), ~0.3 s */
@@ -312,7 +318,7 @@ static void draw_song_row(unsigned char vr, unsigned char cursor_here)
     }
 }
 
-static void draw_song_screen(void)
+void draw_song_screen(void)
 {
     unsigned char r;
     for (r = 0; r < 16; ++r)
@@ -340,7 +346,7 @@ static void draw_chain_row(unsigned char r, unsigned char cursor_here)
               inv1 ? PEN_TEXT : PEN_BG);
 }
 
-static void draw_chain_screen(void)
+void draw_chain_screen(void)
 {
     unsigned char r;
     for (r = 0; r < 16; ++r)
@@ -386,7 +392,7 @@ static void draw_phrase_row(unsigned char r, unsigned char cursor_here)
                   inv3 ? PEN_TEXT : PEN_BG);
 }
 
-static void draw_phrase_screen(void)
+void draw_phrase_screen(void)
 {
     unsigned char r;
     for (r = 0; r < 16; ++r)
@@ -411,15 +417,17 @@ static const char *const ifield_name[NIFIELDS] = {
     "TRM", "TAPS", "SEED", "BANK", "TABLE", "TBS", "INSTR",
 };
 /* INSTR is field 14 to preserve the established field IDs, but draws above
- * TYPE.  Up from TYPE and Down from INSTR therefore form the visual wrap. */
-static const unsigned char ifield_y[NIFIELDS] = {
-    2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 1,
-};
-#pragma rodata-name (push, "HICODE1")
+ * TYPE.  The assembly layout helper owns fixed rows and type visibility so
+ * drawing and cursor movement cannot disagree. */
+#pragma rodata-name (push, "MIDICODE")
 static const char itype_wav[] = "WAV";
 #pragma rodata-name (pop)
+#pragma rodata-name (push, "HICODE3")
+static const char itype_lfsr[] = "LFSR";
+#pragma rodata-name (pop)
+static const char itype_kit[] = "KIT ";
 static const char *const itype_name[4] = {
-    "TONE", "NOISE", itype_wav, "KIT"
+    itype_lfsr, itype_lfsr, itype_wav, itype_kit
 };
 
 #pragma code-name (push, "HICODE3")
@@ -463,12 +471,13 @@ static void draw_instr_row(unsigned char r, unsigned char cursor_here)
 
     if (r >= NIFIELDS)
         return;
-    y = ifield_y[r];
+    y = ifield_screen_y(r);
+    if (!y)
+        return;
     if (r == IF_WAVE) {                 /* shared WAV/KIT selector */
-        unsigned char ty = sd.instrs[edit_instr].type & 3;
-        if (ty <= IT_NOISE)
-            return;                     /* no BANK concept for tone voices */
-        draw_text(1, y, ty == IT_WAV ? "WAVE" : "KIT ", PEN_DIM, PEN_BG);
+        draw_text(1, y, ifield_type == IT_WAV ? (const char *)"WAVE"
+                                               : itype_kit,
+                  PEN_DIM, PEN_BG);
     } else
         draw_text(1, y, ifield_name[r], PEN_DIM, PEN_BG);
     switch (r) {
@@ -476,8 +485,9 @@ static void draw_instr_row(unsigned char r, unsigned char cursor_here)
         draw_hex8(8, y, edit_instr, fg, bg);
         break;
     case 0:
+        ifield_type = sd.instrs[edit_instr].type & 3;
         draw_text(8, y, "     ", PEN_BG, PEN_BG);
-        draw_text(8, y, itype_name[sd.instrs[edit_instr].type & 3], fg, bg);
+        draw_text(8, y, itype_name[ifield_type], fg, bg);
         break;
     case IF_TAPS: {
         unsigned char i;
@@ -506,13 +516,16 @@ static void draw_instr_row(unsigned char r, unsigned char cursor_here)
             draw_hex8(8, y, sd.instrs[edit_instr].table, fg, bg);
         break;
     case IF_WAVE:
-        if (sd.instrs[edit_instr].wave >= 8)
+        v = instr_selector(EMPTY);
+        if (v >= 8)
             draw_text(8, y, "--", fg, bg);
         else
-            draw_hex8(8, y, sd.instrs[edit_instr].wave, fg, bg);
+            draw_hex8(8, y, v, fg, bg);
         break;
     case 1:
         draw_hex8(8, y, sd.instrs[edit_instr].vol, fg, bg);
+        if (ifield_type == IT_KIT)
+            draw_text(9, y, "-", fg, bg);
         break;
     case IF_TSP:
         draw_hex8(8, y, (unsigned char)sd.instrs[edit_instr].tsp, fg, bg);
@@ -521,10 +534,7 @@ static void draw_instr_row(unsigned char r, unsigned char cursor_here)
     case IF_VIB:
     case IF_TRM: {
         struct instr *in = &sd.instrs[edit_instr];
-        if (in->type <= IT_NOISE)
-            draw_hex8(8, y, ((unsigned char *)&in->swp)[r - IF_SWP], fg, bg);
-        else
-            draw_text(8, y, "--", fg, bg);
+        draw_hex8(8, y, ((unsigned char *)&in->swp)[r - IF_SWP], fg, bg);
         break;
     }
     default: {                          /* ATK / HOLD / DCY nibbles */
@@ -957,10 +967,13 @@ static void move_cursor(unsigned char dir)
         }
         break;
     case SCR_INSTR:
-        switch (dir) {
-        case 0: if (i_row) --i_row; else i_row = NIFIELDS - 1; break;
-        case 1: if (i_row < NIFIELDS - 1) ++i_row; else i_row = 0; break;
-        }
+        if (dir < 2)
+            do {
+                if (dir == 0)
+                    i_row = i_row ? i_row - 1 : NIFIELDS - 1;
+                else
+                    i_row = i_row < NIFIELDS - 1 ? i_row + 1 : 0;
+            } while (!ifield_screen_y(i_row));
         break;
     case SCR_TABLE:
         switch (dir) {
@@ -1179,15 +1192,6 @@ static void edit_table_cell(unsigned char dir)
     }
 }
 
-/* clamp table per field: {max, small step, big step} */
-static const unsigned char ifield_lim[5][3] = {
-    {NTYPES - 1, 1, 1},     /* TYPE cycles the shipped types */
-    {0x7F, 1, 16},          /* VOL */
-    {0x7F, 1, 16},          /* ATK */
-    {0x7F, 1, 16},          /* HOLD */
-    {0x7F, 1, 16},          /* DCY */
-};
-
 /* edit a 16-bit field masked to `max`; L/R +-1, U/D +-16, wrapping —
  * sweeping the whole tap/seed space is the point (D11) */
 #pragma code-name (push, "HICODE3")
@@ -1203,22 +1207,17 @@ static unsigned edit_u16(unsigned v, unsigned char dir, unsigned max)
 }
 #pragma code-name (pop)
 
-#pragma code-name (push, "HICODE3")
-static unsigned char *ifield_ptr(unsigned char f)
-{
-    struct instr *in = &sd.instrs[edit_instr];
-    return (f == 0) ? &in->type : &in->vol;
-}
-#pragma code-name (pop)
-
 static void edit_instr_cell(unsigned char dir)
 {
     struct instr *in = &sd.instrs[edit_instr];
     unsigned char *p;
-    unsigned char max, stp, v;
+    unsigned char stp, v;
     unsigned t;
 
     switch (i_row) {
+    case 0:
+        instr_selector(dir);
+        break;
     case IF_INST:
         if (dir == 0 || dir == 3)
             edit_instr = (edit_instr + (dir == 0 ? 16 : 1)) & (NINSTR - 1);
@@ -1235,7 +1234,7 @@ static void edit_instr_cell(unsigned char dir)
     case IF_SWP:
     case IF_VIB:
     case IF_TRM:
-        if (in->type > IT_NOISE)
+        if (in->type > IT_LEGACY_NOISE)
             return;
         p = (unsigned char *)&in->swp + (i_row - IF_SWP);
         if (dir == 0) *p += 16;                 /* speed / coarse signed */
@@ -1261,13 +1260,7 @@ static void edit_instr_cell(unsigned char dir)
             in->table = (v == 0 || v >= NTABLES) ? EMPTY : v - 1;
         return;
     case IF_WAVE:
-        if (in->type <= IT_NOISE)
-            return;
-        v = in->wave;
-        if (dir == 0 || dir == 3)
-            in->wave = (v >= 8) ? 0 : (v < 7 ? v + 1 : v);
-        else
-            in->wave = (v == 0 || v >= 8) ? EMPTY : v - 1;
+        instr_selector(dir);
         break;
     case 2:                             /* ATK / HOLD / DCY: 0-F times */
     case 3:
@@ -1281,20 +1274,14 @@ static void edit_instr_cell(unsigned char dir)
             v = (v >= stp) ? v - stp : 0;
         ifield_nib_set(i_row, v);
         break;
-    default:
-        p = ifield_ptr(i_row);
-        v = *p;
-        max = ifield_lim[i_row][0];
-        stp = (dir < 2) ? ifield_lim[i_row][2] : ifield_lim[i_row][1];
-        if (dir == 0 || dir == 3)
-            v = (v + stp <= max) ? v + stp : max;
-        else
-            v = (v >= stp) ? v - stp : 0;
-        *p = v;
+    case 1:
+        instr_selector(dir);
         break;
     }
     if (!eng_mode)
         engine_audition(last_note, edit_instr);
+    if (i_row == 0)
+        draw_screen();                  /* TYPE changed the visible surface */
 }
 
 static void edit_groove_cell(unsigned char dir)
@@ -1628,21 +1615,8 @@ static void sel_bounds(unsigned char *a, unsigned char *b)
     *b = (sel_anchor < c) ? c : sel_anchor;
 }
 
-/* selected rows get inverted row numbers */
-static void sel_paint(void)
-{
-    unsigned char a, b, r, vr;
-    sel_bounds(&a, &b);
-    for (r = 0; r < 16; ++r) {
-        unsigned char abs_r = (screen == SCR_SONG) ? song_page() + r : r;
-        unsigned char inside = sel_active && abs_r >= a && abs_r <= b;
-        vr = GRID_TOP + r;
-        if (inside)
-            draw_hex8(1, vr, abs_r, PEN_BG, PEN_ACCENT);
-        else
-            draw_hex8(1, vr, abs_r, PEN_DIM, PEN_BG);
-    }
-}
+/* Assembly repaints and highlights the complete selected row bands. */
+void sel_paint(void);
 
 static void blk_copy(void)
 {

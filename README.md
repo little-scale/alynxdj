@@ -12,8 +12,8 @@ Mikey's four audio channels are *identical and symmetric* — there are no
 fixed roles. Each channel is a timer clocking a 12-bit polynomial shift
 register, and every track can be any of:
 
-- **TONE** — square waves and short-loop "poly" timbres from the LFSR taps
-- **NOISE** — long-sequence taps; pitched noise whose bandwidth is the note
+- **LFSR** — the full polynomial oscillator, from square waves and short,
+  metallic cycles through long-sequence pitched noise
 - **WAV** — a hardware triangle (integrate mode + tap-11 feedback)
 - **KIT** — true 8-bit PCM through the channel DAC (sample drums!)
 
@@ -26,7 +26,7 @@ as a multi-drop sync bus.
 
 ## Status
 
-**V0.52 — on-console help, playback headroom, and editor polish** (runs on a real
+**V0.53 — LFSR identity and focused instrument/editor polish** (runs on a real
 Atari Lynx),
 feature-complete against the design brief with an editor/UX pass on top
 (see [CHANGELOG.md](CHANGELOG.md) for what changed, [PLAN.md](PLAN.md) for
@@ -37,19 +37,21 @@ decision log):
   including a nine-page on-console HELP reference above TABLE and a
   selected-track TABLE play indicator; engine tick in the VBlank IRQ
   (tempo is render-independent)
-- All four voice types, with the **12-bit LFSR fully exposed** (raw taps
-  + seed per instrument), per-instrument TSP, TONE/NOISE SWP/free-running
+- All three voice types, with the **12-bit LFSR fully exposed** (raw taps
+  + seed per instrument), per-instrument TSP, LFSR SWP/free-running
   sine-VIB/repeating-decay TRM
   modulation, and 32-byte wavetables; everything verified by
   FFT / cross-correlation in the headless harness
 - **22 sequencer commands** (incl. slow `G` LFSR-tap glide and cumulative
   signed `B` taps automation), selected alphabetically in PHRASE and TABLE;
   in-page instrument selection, row-safe TABLE command deletion, per-instrument
-  TBS table clocks, one global groove, block select/cut/paste,
+  TBS table clocks, one global groove, full-row block select/cut/paste,
   clipboard, mute/solo, LIVE clip-launcher mode
 - **Cart-streamed portable sample bank**: all eight `samples/` kits at full
   quality (808/909/C78/606 + four speech banks), kit-per-instrument. The
   factory bank is one reusable `.bin`, and custom banks carry between releases.
+  KIT VOL provides full, half, quarter, and mute levels using signed PCM
+  shifts outside the audio interrupt.
   KIT and table-WAV playback can target **any of the four tracks**; two
   timer-fed DAC voices may run concurrently, and a third steals the oldest.
   Full screen redraws cooperatively service their cart rings, so navigation
@@ -98,7 +100,10 @@ browser to inspect or edit an ALYNXDJ SRAM / EEPROM song file. The standalone
 tool validates the header, checksum, packed payload, and hierarchy references;
 exposes song rows, chains, phrases, instruments, tables, grooves, and waves;
 then exports a hardware-ready 2,048-byte save-format-v6 file. All processing is
-local and offline.
+local and offline. Its patch editor offers LFSR/WAV/KIT; imported legacy type
+`01` patches are identified as LFSR and preserved unless deliberately changed.
+KIT bank is always `00`–`07` and initializes to `00`; WAV alone can use `--`
+for the hardware triangle.
 
 ## Pico USB-MIDI bridge
 
@@ -163,9 +168,14 @@ scripting, and toolchain gotchas.
 - **B held + d-pad** edit value · **B held + A** cut · **B double-tap** paste,
   mint the next blank/unreferenced object on an empty SONG/CHAIN cell, or
   slim-clone an occupied one
+- Long-hold **B+A** for block SELECT; every field on the selected
+  SONG/CHAIN/PHRASE rows is inverted while ↑/↓ extends the range
 - New PHRASE notes inherit the last instrument explicitly edited in the
   instrument column; command-field double-taps never erase NOTE/INSTR
 - On stopped **INSTR**, tap **B** to audition the current instrument
+- **INSTR** hides and skips fields unused by the selected LFSR/WAV/KIT
+  type; KIT bank defaults to `00`, while KIT VOL shows only its meaningful
+  coarse digit (`0-`–`7-`)
 - **Option 1 + B/A/←→** mute / solo / track select
 
 ## License / credits

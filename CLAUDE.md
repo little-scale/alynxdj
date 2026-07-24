@@ -15,16 +15,23 @@ later hardware). The ROM and project name is **ALYNXDJ**.
 
 **DESIGN.md is the contract** (with a §0 decision log — read it before design
 decisions, don't re-litigate settled ones); **PLAN.md** holds the milestone
-history through M17. Key settled decisions: 4 identical
-tracks each playing TONE/NOISE/WAV/KIT (D1), cc65 C editor + ca65 asm
+history through M33. Key settled decisions: 4 identical
+tracks each playing LFSR/WAV/KIT (D1/D35), cc65 C editor + ca65 asm
 driver/IRQ/render (D2), 59.9 Hz VBlank engine tick with no region split (D3),
 flat RAM song block but **packed/RLE EEPROM save — 2 KB 93C86 is the whole
 persistence budget** (D4/D10), per-channel timer-IRQ PCM capped at 2 voices
 (D5/D6), 4×6 font on a 40×17 grid (D7). KIT and table-WAV are dynamically
-routed to any owning channel A–D; there are no fixed sample buses. TONE/NOISE
-patches persist TSP/SWP/VIB/TRM plus TBS in save-format v6 (D15–D17); VIB is a
+routed to any owning channel A–D; there are no fixed sample buses. LFSR
+patches (including legacy stored type `$01`) persist TSP/SWP/VIB/TRM plus
+TBS in save-format v6 (D15–D17/D35); VIB is a
 centred ~0.47–7.49 Hz sine whose phase free-runs across notes and resets at
-the transport boundary.
+the transport boundary. KIT VOL is D36's static foreground PCM gain:
+high nibble `6`–`7` full, `2`–`5` signed `>>1`, `1` signed `>>2`, and `0`
+mute; its low nibble is ignored and blocked in the UI, while the DAC IRQ
+remains unchanged.
+Block SELECT uses D37's shared full-row field highlight on SONG/CHAIN/PHRASE.
+KIT bank follows D38: it is always `00`–`07`, selecting KIT or viewing an old
+invalid KIT value normalizes it to `00`, and only WAV may display `--`.
 
 ## Build and verify
 
@@ -75,6 +82,11 @@ Python tools require `requirements.txt` (NumPy + Pillow). Use
   `$F600`, and `$F320`; the sample pool starts at block 45. The C stack is
   512 bytes and `$D000-$D3FF` stays two 512-byte rings. Keep `alynxdj.cfg`,
   `Makefile`, `src/main.c`, and `src/pool.c` aligned.
+- `$C8FD` is the HELP page; `$C8FE-$C8FF` are the transient visible
+  block-selection bounds used only while SELECT is active.
+- KIT gain shifts signed 64-byte cart pieces before ring publication, never
+  inside the DAC IRQ. Playback starts after a 256-byte cushion and the
+  caller immediately tops up the remaining ring headroom.
 - Handy is dev-speed, not silicon: its LFSR-timbre and DAC-timing fidelity is
   suspect (DESIGN.md Q4) — hardware passes at M6/M7. **Measured 2026-07-16:
   this core renders every FEEDBACK/tap config identically** (static square

@@ -80,6 +80,14 @@ def main(harness, core, rom, build_dir, help_path):
         fail("page 1 is not the navigation quick reference")
     if not any(row.startswith("COMMANDS A-L:") for row in pages[5]):
         fail("command reference ordering changed unexpectedly")
+    instrument_rows = pages[3]
+    if "TYPE       LFSR / WAV / KIT" not in instrument_rows:
+        fail("instrument HELP does not expose the LFSR/WAV/KIT type set")
+    if ("VOL 6-/7- FULL; 2--5- HALF" not in pages[4]
+            or "VOL 1- QUARTER; 0- MUTE; FINE OFF" not in pages[4]):
+        fail("KIT HELP does not document its blocked coarse PCM gain")
+    if any("TONE / NOISE" in row for row in instrument_rows):
+        fail("instrument HELP still exposes the retired type split")
     if len(data) > 3 * 1024:
         fail("HELP data exceeds its three cart blocks")
 

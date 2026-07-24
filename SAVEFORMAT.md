@@ -76,11 +76,23 @@ times through the engine's `env_rate[]` curve — v2), 3 **TBS<<4 | HOLD**
 11 seed bits 11-8, 12 **SWP** (signed 1/16-semitone per tick; positive falls),
 13 **VIB** (speed/depth nibbles), 14 **TRM** (speed/depth nibbles; repeating
 descending volume saw),
-15 **TSP** (signed semitones). SWP/VIB/TRM are v4 and apply to TONE/NOISE;
+15 **TSP** (signed semitones). SWP/VIB/TRM are v4 and apply to LFSR,
+including the legacy type `$01` alias;
 TSP is v5 and applies to every instrument type before pitch/pad selection.
 TBS is v6: 0 advances one table row per triggered note; 1–15 advance every
 N engine ticks. HOLD-F sustain changes playback semantics only and does not
 change the stored record or format version.
+
+Type IDs remain `$00` LFSR, `$01` legacy LFSR alias (formerly labelled
+NOISE), `$02` WAV, and `$03` KIT. Current editors emit only `$00/$02/$03`;
+readers must preserve and interpret `$01` exactly like `$00`.
+
+For KIT, byte 1 is a static, quantized PCM gain rather than an envelope peak:
+only its high nibble is interpreted. `$6x`–`$7x` is full level,
+`$2x`–`$5x` is an arithmetic signed shift by one, `$1x` is a shift by two,
+and `$0x` is mute. The low nibble is preserved in the save byte but ignored
+by KIT playback; INSTR displays it as `-`. This reuses the existing VOL byte
+and therefore does not change save-format v6.
 
 **v1 → v2 migration** (done automatically at load when the header version
 is 1): the old per-tick ATK/DCY rate bytes fold onto the nearest

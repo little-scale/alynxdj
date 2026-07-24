@@ -66,6 +66,11 @@ fixed channel-C/channel-D sample-bus details recorded in M7/M8.**
 | M26 | ✅ **EDITOR ENTRY + CUMULATIVE TAPS AUTOMATION** — INSTR gains an in-page `00–1F` patch selector; parent-to-child SONG→CHAIN and CHAIN→PHRASE drilling resets the new child cursor to row `00`; and TABLE command deletion is field-safe, clearing CMD+PARAM without touching VOL+TSP. `Bxx` is now a signed track accumulator that survives ordinary notes and structural boundaries, while `B00`, a new G, or transport stop restores/releases it. Resident pressure is absorbed by moving the already-stopped FILES PURGE routine into the HELP/PCM-ring overlay, retaining the 512-byte stack and all song/sample budgets. Scripted editor and register regressions cover every new behavior. | Faster patch comparison, deterministic hierarchy entry, and cheap cumulative LFSR automation |
 | M27 | ✅ **WIDER METER-FREE LAYOUT** — The shared editor-body offset grows from four to eight character columns after a screen-by-screen bounds audit. SONG, CHAIN, PHRASE, INSTR, TABLE, FILES, GROOVE, PROJECT, and OPTIONS move together while their top bars and screen maps remain fixed; the full-width WAVE and HELP views do not move. The widest item, INSTR's nine-bit TAPS strip, ends safely at column 30 on a row where the upper-right map is absent. | Better visual balance without clipping data or reducing the full-width editors |
 | M28 | ✅ **SELECTED-TRACK TABLE PLAYHEAD** — TABLE now accents the current macro row for the explicit top-bar track and hides the marker when that voice is inactive or running another table. A compact assembly reader derives the display from the existing voice cursor, adding no engine-tick work or persistent state; the visual regression enters TABLE during phrase playback and verifies active/inactive row colours. To retain the exact song region, 512-byte stack, dual PCM rings, and sample capacity, rare editor/constants were repacked into existing cold regions, the two-block live helper window now extends through `$C8FC`, and its full reload also resets the adjacent HELP-page byte. | Macro motion is visible without making the UI or audio engine track another clock |
+| M29 | ✅ **LFSR INSTRUMENT UNIFICATION** — The one Mikey polynomial voice is now named LFSR throughout the ROM, HELP, manuals, and SRAM viewer; TYPE cycles only LFSR/WAV/KIT. New/demo patches use ID `$00`, while historical NOISE ID `$01` stays an invisible engine/UI alias so existing TAPS, SEED, modulation, save bytes, and sound remain unchanged. WAV/KIT retain IDs `$02/$03`, keeping save-format v6 stable. Editor regressions prove `$00` and legacy `$01` both step directly to WAV and expose the same compact LFSR field surface; HELP and browser tests pin the new terminology. | The interface names the chip’s unique synthesis model instead of inventing a tone/noise hardware split |
+| M30 | ✅ **STATIC KIT PCM GAIN** — KIT exposes its existing VOL byte as a four-state trigger gain: full, signed `>>1`, signed `>>2`, and mute. Scaling runs on each foreground 64-byte cart read before ring publication, leaving the DAC interrupt cycle-identical and save format at v6. A 256-byte startup cushion lets playback begin before the optional ring headroom is topped up. Exact ring-byte tests cover every level, while the quietest sustained KIT + LFSR G08/SWP workload survives repeated full-screen redraws with every trigger started and zero underruns. | Useful drum balance for a few shifts per cart byte, with no hot-path multiply or envelope machinery |
+| M31 | ✅ **FULL-ROW BLOCK SELECTION FEEDBACK** — SONG, CHAIN, and PHRASE now invert every rendered field on each selected row instead of marking only its index. One shared glyph-level selection rule keeps the three hierarchy renderers consistent, using two transient bytes beside the HELP page rather than song/save state. Captured-image regressions enter and extend block mode on all three screens and verify that every field is highlighted while the next row remains ordinary. | Multi-row edits read as ranges at a glance without changing clipboard semantics |
+| M32 | ✅ **TOTAL KIT BANK SELECTION** — KIT bank now always resolves to `00`–`07`: changing TYPE to KIT initializes an unset selector to `00`, viewing a historical KIT-with-`FF` repairs it, and decrementing `00` clamps rather than exposing `--`. WAV preserves `--` as its hardware-triangle mode. The standalone SRAM viewer mirrors the ROM rule, and editor/browser regressions pin both initialization and the lower bound without changing save-format v6. | Every visible KIT state names a real sample bank |
+| M33 | ✅ **COARSE-ONLY KIT VOLUME UI** — KIT VOL now renders as `0-`–`7-`, blocks Left/Right fine editing, and uses Up/Down for the meaningful high nibble. Playback classifies gain from that nibble alone, making all sixteen hidden low-nibble values exactly equivalent; `0-` is mute, `1-` quarter, `2-`–`5-` half, and `6-`/`7-` full. The SRAM viewer presents the same eight-position selector, while editor and exact ring-byte regressions cover editing plus low-nibble invariance. | The screen exposes only resolution the cheap PCM scaler can actually produce |
 
 Commit at each milestone boundary. Hardware-verify **M6 (LFSR timbres)** and
 **M7 (PCM feed)** early — Handy is a 20-year-old core; its polynomial-counter
@@ -88,9 +93,9 @@ second-opinion core.
   list only after silicon listening.
 - **cc65 editor sluggishness (D2)** — if screen paints lag, move the dirty-
   cell renderer fully to asm before blaming the design.
-- **64 KB code packing** — SONG remains exact; MAIN currently has 3 bytes,
-  HICODE1 has 3 bytes, HICODE3 7, HICODE2 3, HELPCODE 29, and the expanded
-  `$C100` cold/live helper overlay has 5. The C stack remains 512 bytes.
+- **64 KB code packing** — SONG and MAIN remain exact; HICODE1 is exact,
+  HICODE3 has 1 byte, HICODE2 has 3, HELPCODE has 29, and the expanded
+  `$C100` cold/live helper overlay has 1. The C stack remains 512 bytes.
   Growth needs measured placement and must
   respect the MIDI/save-buffer and MIDI/phrase-counter overlay lifetimes.
 - **Scope creep** — echo (`Q`), user instrument bank, ComLynx song exchange
@@ -99,11 +104,12 @@ second-opinion core.
 
 ## Status
 
-**M0–M28 implemented as of 2026-07-24.** The tracker has all eleven screens,
+**M0–M33 implemented as of 2026-07-25.** The tracker has all eleven screens,
 the full command/editor workflow, ComLynx OUT/IN/IN24, packed 93C86 persistence,
 four genuinely symmetric logical/hardware tracks, receive-only USB-MIDI-over-
 ComLynx takeover, persistent TSP on every
-instrument type, and TONE/NOISE SWP/sine-VIB/TRM patch modulation. Two sampled
+instrument type, LFSR SWP/sine-VIB/TRM patch modulation, and static KIT
+PCM gain. Two sampled
 voices are the deliberate CPU cap,
 not fixed channel roles. Remaining 1.0 work is the focused two-stream/LFSR/
 ComLynx-cable silicon pass, control-hint polish, and the upstream Handy/cc65

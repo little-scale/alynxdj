@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Headless regression for TONE instrument modulation and B-tap audition."""
+"""Headless regression for LFSR instrument modulation and B-tap audition."""
 
 import os
 import shutil
@@ -13,7 +13,7 @@ from PIL import Image
 
 
 def fail(message):
-    raise SystemExit("tone modulation test: " + message)
+    raise SystemExit("LFSR modulation test: " + message)
 
 
 def audio(path):
@@ -102,15 +102,17 @@ def run_vib_continuity(harness, core, rom, build):
     return ppm + ".wav"
 
 
-def run_mod(harness, core, rom, build, label, swp=0, vib=0, trm=0, tsp=0):
+def run_mod(harness, core, rom, build, label, swp=0, vib=0, trm=0, tsp=0,
+            instrument_type=0):
     ppm = os.path.join(build, "mod-%s.ppm" % label)
     env = os.environ.copy()
     # sd starts at $D400 and instrs at +$1600 = $EA00.  Sustain instrument
     # 00, set its v4 modulation bytes and v5 TSP byte, then run the stopped
     # audition hook.
     env["RETROSHOT_RAM_POKE"] = (
-        "C02D:A9,EA02:00,EA03:00,EA0C:%02X,EA0D:%02X,EA0E:%02X,EA0F:%02X"
-        % (swp, vib, trm, tsp))
+        "C02D:A9,EA00:%02X,EA02:00,EA03:00,EA0C:%02X,EA0D:%02X,"
+        "EA0E:%02X,EA0F:%02X"
+        % (instrument_type, swp, vib, trm, tsp))
     env["RETROSHOT_RAM_POKE_AT"] = "100"
     subprocess.run([harness, core, rom, ppm, "420"], env=env, check=True)
     return ppm + ".wav"
@@ -177,7 +179,8 @@ def main():
             or np.count_nonzero(gradual_rises) > 1):
         fail("TRM is not a descending ramp with one upward reset: %r" % rms)
 
-    base = pitch_track(run_mod(harness, core, test_rom, build, "tsp-base"))
+    base_path = run_mod(harness, core, test_rom, build, "tsp-base")
+    base = pitch_track(base_path)
     up = pitch_track(run_mod(
         harness, core, test_rom, build, "tsp-up", tsp=12))
     ratio = np.median(up[:6]) / np.median(base[:6])
@@ -185,13 +188,25 @@ def main():
         fail("TSP +12 did not transpose the instrument by an octave: %.3f"
              % ratio)
 
+    # Historical type 01 must remain a byte-compatible alias for LFSR 00:
+    # same patch, engine path, register stream, and therefore exact audio.
+    legacy_path = run_mod(
+        harness, core, test_rom, build, "legacy-type-01",
+        instrument_type=1)
+    _, current_audio = sounding_tail(base_path)
+    _, legacy_audio = sounding_tail(legacy_path)
+    count = min(len(current_audio), len(legacy_audio))
+    if count < 1000 or not np.array_equal(
+            current_audio[:count], legacy_audio[:count]):
+        fail("legacy type 01 no longer sounds exactly like LFSR type 00")
+
     # Navigate SONG -> CHAIN -> PHRASE -> INSTR with physical A+Right,
     # then tap physical B.  Long steps tolerate the C editor's redraw time.
     audition_ppm = os.path.join(build, "instrument-audition.ppm")
     audition_ram = os.path.join(build, "instrument-audition.ram")
     env = os.environ.copy()
     env["RETROSHOT_RAM_OUT"] = audition_ram
-    # Force every instrument type to TONE after boot so whichever demo track
+    # Force every instrument type to LFSR after boot so whichever demo track
     # the navigation reaches must render the unused shared BANK row blank.
     env["RETROSHOT_RAM_POKE"] = ",".join(
         "%04X:00" % (0xEA00 + i * 16) for i in range(32))
@@ -220,18 +235,20 @@ def main():
         fail("INSTR body did not retain its eight-column left margin")
     if np.count_nonzero(np.any(frame[:6, :body_left] != background, axis=2)) < 6:
         fail("the fixed top bar moved with the INSTR body")
-    for row in (1, 2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15, 16):
+    # The stable LFSR layout contains every meaningful oscillator field but
+    # leaves the shared BANK row entirely blank.
+    for row in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15):
         band = frame[row * 6:(row + 1) * 6, :96]
         if np.count_nonzero(np.any(band != background, axis=2)) < 6:
             fail("INSTR field row %d was not fully rendered" % row)
-    bank_band = frame[14 * 6:15 * 6, :96]
+    bank_band = frame[13 * 6:14 * 6, :96]
     if np.count_nonzero(np.any(bank_band != background, axis=2)):
-        fail("TONE instrument rendered the unused BANK row")
+        fail("LFSR instrument rendered the unused BANK row")
     _, audition = sounding_tail(audition_ppm + ".wav")
     if np.max(np.abs(audition)) < 100:
         fail("physical B tap on stopped INSTR did not audition")
 
-    print("tone modulation: PASS — TSP/SWP/nonlinear free-running sine-VIB/"
+    print("LFSR modulation: PASS — TSP/SWP/nonlinear free-running sine-VIB/"
           "decay-saw TRM audible and stopped INSTR physical-B audition works")
 
 

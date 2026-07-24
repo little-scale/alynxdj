@@ -47,11 +47,10 @@
 #define CMD_B    22     /* B xx  cumulative signed taps; 00 resets patch */
 #define NCMDS    23
 
-#define IT_TONE  0
-#define IT_NOISE 1
-#define IT_WAV   2      /* M8: falls back to TONE until then */
-#define IT_KIT   3
-#define NTYPES   4
+#define IT_LFSR         0
+#define IT_LEGACY_NOISE 1   /* save-compatible alias; never created by UI */
+#define IT_WAV          2
+#define IT_KIT          3
 
 struct step {
     unsigned char note;     /* 0 = empty, 1..96 = C-1..B-8 */
@@ -75,7 +74,7 @@ struct chainstep {
  * LFSR lock state and go silent, exactly like the silicon. */
 struct instr {
     unsigned char type;     /* IT_* */
-    unsigned char vol;      /* envelope peak, $00-$7F */
+    unsigned char vol;      /* LFSR/WAV peak; KIT high-nibble PCM gain */
     unsigned char env;      /* ATK<<4 | DCY: 4-bit TIMES, higher = longer
                                (0 = instant attack / sustain-forever decay);
                                mapped through env_rate[] in the engine */
@@ -90,14 +89,14 @@ struct instr {
     unsigned char taps_hi;  /* TAPS bit 8 (tap 11) in bit 0 */
     unsigned char seed_lo;  /* SEED bits 7..0 */
     unsigned char seed_hi;  /* SEED bits 11..8 in bits 3..0 */
-    signed char   swp;       /* TONE/NOISE: signed 1/16-semi pitch/tick */
-    unsigned char vib;       /* TONE/NOISE: speed high nibble, depth low */
-    unsigned char trm;       /* TONE/NOISE: speed high nibble, depth low */
+    signed char   swp;       /* LFSR: signed 1/16-semi pitch/tick */
+    unsigned char vib;       /* LFSR: speed high nibble, depth low */
+    unsigned char trm;       /* LFSR: speed high nibble, depth low */
     signed char   tsp;       /* signed instrument transpose, semitones */
 };
 
 #define TAPS_SQUARE 0x001   /* tap 0 only: the proven square */
-#define TAPS_NOISE  0x1BF   /* taps 0-5 + 10 + 11: long/max-length noise */
+#define TAPS_LONG   0x1BF   /* taps 0-5 + 10 + 11: long/noise-like cycle */
 
 struct tablerow {
     unsigned char vol;      /* 0 = no change, else set envelope level */

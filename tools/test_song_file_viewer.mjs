@@ -40,6 +40,12 @@ const context = {
 vm.runInNewContext(script,context,{filename:"song-file-viewer.html"});
 const api = window.ALXSongFile;
 if (!api) throw new Error("viewer test API not exposed");
+if (!html.includes('const TYPES = [[0,"LFSR"],[2,"WAV"],[3,"KIT"]]'))
+  throw new Error("viewer does not expose only the current LFSR/WAV/KIT types");
+if (!html.includes("LFSR · legacy $01"))
+  throw new Error("viewer does not identify legacy type 01 as LFSR");
+if (!html.includes("KIT: 6-/7- full · 2-–5- half · 1- quarter · 0- mute"))
+  throw new Error("viewer does not document the KIT VOL gain states");
 
 function assert(condition,message) {
   if (!condition) throw new Error(message);
@@ -62,6 +68,20 @@ for (const tab of ["overview","song","chains","phrases","instruments","tables","
   elements.get("tabs").dispatch("click",{target:{closest(){return {dataset:{tab}}}}});
   assert(elements.get("content").innerHTML.length>100,`${tab} view did not render`);
 }
+elements.get("tabs").dispatch("click",{target:{closest(){return {dataset:{tab:"instruments"}}}}});
+const kitTypeEdit=element();
+kitTypeEdit.value="3"; kitTypeEdit.dataset={ifield:"type"};
+elements.get("content").dispatch("change",{target:kitTypeEdit});
+assert(elements.get("content").innerHTML.includes('value="00" data-ifield="bank"'),
+  "changing an instrument to KIT did not initialise/render bank 00");
+assert(elements.get("content").innerHTML.includes('<option value="7" selected>7-</option>'),
+  "KIT volume does not block its fine nibble");
+const kitVolEdit=element();
+kitVolEdit.value="4"; kitVolEdit.dataset={ifield:"vol"};
+elements.get("content").dispatch("change",{target:kitVolEdit});
+elements.get("tabs").dispatch("click",{target:{closest(){return {dataset:{tab:"raw"}}}}});
+assert(elements.get("content").innerHTML.includes("1600  03 40"),
+  "KIT coarse volume edit did not store a zero fine nibble");
 const songEdit=element();
 songEdit.value="1A"; songEdit.dataset={byte:"0",mode:"hex",max:"31",ff:"1"};
 elements.get("content").dispatch("change",{target:songEdit});
@@ -118,6 +138,11 @@ assert(parsed1.data[io+2]===0x23,"v1 attack/decay rates migrated incorrectly");
 assert(parsed1.data[io+3]===15,"v1 hold did not clamp to 15");
 assert(parsed1.data[io+4]===0,"v1 obsolete decay byte was not cleared");
 assert(parsed1.data[api.analyzeConstants.OFF.waves]===136,"legacy factory wave was not restored");
+
+const unsetKit=api.makeBaseSong();
+unsetKit[io]=3; unsetKit[io+4]=255;
+const parsedUnsetKit=api.parseSram(imageFor(api.packRle(unsetKit),6),"unset-kit.eeprom");
+assert(parsedUnsetKit.data[io+4]===0,"imported KIT bank FF was not normalized to 00");
 
 const noisy=Uint8Array.from({length:7680},(_,index)=>(index*73+(index>>3))&255);
 let tooBig=false;

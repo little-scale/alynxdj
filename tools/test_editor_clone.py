@@ -6,6 +6,9 @@ import shutil
 import subprocess
 import sys
 import time
+from collections import Counter
+
+from PIL import Image
 
 
 SD = 0xD400
@@ -177,6 +180,69 @@ def run_phrase_instrument_latch_case(harness, core, rom, build):
         if actual[:2] != (note, 3):
             fail("PHRASE row %d note/instrument is %r, expected (%d, 3)"
                  % (row, actual[:2], note))
+
+
+def run_block_selection_visual_case(harness, core, rom, build, depth):
+    names = ("song", "chain", "phrase")
+    fields = (
+        (1, 4, 7, 10, 13),
+        (1, 4, 8),
+        (1, 4, 9, 12, 13),
+    )
+    label = "%s-block-highlight" % names[depth]
+    test_rom = os.path.join(
+        build, "alynxdj-editor-%s-%d-%d.lnx"
+        % (label, os.getpid(), time.time_ns()))
+    ppm = os.path.join(build, "editor-%s.ppm" % label)
+    shutil.copyfile(rom, test_rom)
+
+    pokes = {SONG: 0}
+    put(pokes, CHAINS, (0, 0))
+    put(pokes, PHRASES, (37, 3, 9, 0x26))
+    env = os.environ.copy()
+    env["RETROSHOT_RAM_POKE"] = ",".join(
+        "%04X:%02X" % item for item in sorted(pokes.items()))
+    env["RETROSHOT_RAM_POKE_AT"] = "250"
+
+    # Drill to the requested hierarchy screen, hold physical B then A long
+    # enough to enter SELECT, and extend the range from row 0 through row 1.
+    drill = "100@10,180@20,100@10,0@40,"
+    select = "1@5,101@30,0@15,20@4,0@80"
+    script = "0@280," + drill * depth + select
+    subprocess.run(
+        [harness, core, test_rom, ppm, "760", script], env=env, check=True)
+
+    frame = Image.open(ppm).convert("RGB")
+    background = Counter(
+        frame.getpixel((x, y))
+        for y in range(frame.height)
+        for x in range(frame.width)
+    ).most_common(1)[0][0]
+    title = [frame.getpixel((x, y)) for y in range(6) for x in range(4, 24)]
+    accent = Counter(pixel for pixel in title if pixel != background).most_common(
+        1)[0][0]
+
+    for row in (0, 1):
+        y0 = (row + 1) * 6
+        for field in fields[depth]:
+            x0 = (field + 8) * 4       # body is shifted eight character cells
+            block = [frame.getpixel((x, y))
+                     for y in range(y0, y0 + 6)
+                     for x in range(x0, x0 + 4)]
+            if block.count(accent) < 8:
+                fail("%s SELECT row %d field %d is not fully highlighted"
+                     % (names[depth].upper(), row, field))
+
+    # The row immediately below the selection must return to ordinary ink.
+    y0 = 3 * 6
+    for field in fields[depth]:
+        x0 = (field + 8) * 4
+        block = [frame.getpixel((x, y))
+                 for y in range(y0, y0 + 6)
+                 for x in range(x0, x0 + 4)]
+        if accent in block:
+            fail("%s SELECT highlight leaked into row 2"
+                 % names[depth].upper())
 
 
 def run_back_tap_case(harness, core, rom, build, depth):
@@ -396,7 +462,7 @@ def run_instr_follow_case(harness, core, rom, build):
 
     # Drill to the selected row's INSTR and change TYPE once. Return to an
     # empty PHRASE row, drill again, and change TYPE once more. Instrument 1B
-    # must advance TONE -> NOISE -> WAV while 00 stays untouched: populated
+    # must advance LFSR -> WAV -> KIT while 00 stays untouched: populated
     # rows follow their instrument and empty rows retain the previous one.
     drill = "100@10,180@20,100@10,0@40,"
     edit = "1@10,81@4,1@10,0@40,"
@@ -411,8 +477,10 @@ def run_instr_follow_case(harness, core, rom, build):
         fail("%s did not return a full RAM dump" % label)
     if ram[0xC003] != 3:
         fail("row-instrument drill did not reach INSTR")
-    if ram[INSTRS] != 0 or ram[INSTRS + target * INSTR_SIZE] != 2:
+    if ram[INSTRS] != 0 or ram[INSTRS + target * INSTR_SIZE] != 3:
         fail("INSTR entry did not follow/retain row instrument %02X" % target)
+    if ram[INSTRS + target * INSTR_SIZE + 4] != 0:
+        fail("changing an instrument to KIT did not initialise bank 00")
 
 
 def run_instr_selector_case(harness, core, rom, build):
@@ -424,7 +492,7 @@ def run_instr_selector_case(harness, core, rom, build):
     ram_path = os.path.join(build, "editor-%s.ram" % label)
     shutil.copyfile(rom, test_rom)
 
-    pokes = {SONG: 0, INSTRS: 0, INSTRS + INSTR_SIZE: 2}
+    pokes = {SONG: 0, INSTRS: 0, INSTRS + INSTR_SIZE: 1}
     put(pokes, CHAINS, (0, 0))
     put(pokes, PHRASES, (37, 0, 0, 0))
     env = os.environ.copy()
@@ -433,14 +501,14 @@ def run_instr_selector_case(harness, core, rom, build):
         "%04X:%02X" % item for item in sorted(pokes.items()))
     env["RETROSHOT_RAM_POKE_AT"] = "250"
 
-    # INSTR opens on TYPE. Up reaches the new selector above it; edit Right
-    # selects instrument 01. Down returns to TYPE, where another edit changes
-    # only instrument 01 from WAV to KIT.
+    # INSTR opens on TYPE. First prove current LFSR 00 steps directly to WAV
+    # 02, never legacy ID 01. Up reaches the selector and chooses instrument
+    # 01; Down returns to TYPE, where legacy ID 01 must likewise step to WAV.
     drill = "100@10,180@20,100@10,0@40,"
     up = "10@6,0@20,"
     down = "20@6,0@20,"
     edit_right = "1@6,81@4,1@6,0@40,"
-    script = ("0@280," + drill * 3 + up + edit_right
+    script = ("0@280," + drill * 3 + edit_right + up + edit_right
               + down + edit_right + "0@80")
     subprocess.run(
         [harness, core, test_rom, ppm, "1000", script],
@@ -449,8 +517,82 @@ def run_instr_selector_case(harness, core, rom, build):
         ram = f.read()
     if len(ram) != 65536 or ram[0xC003] != 3 or ram[0xC001] != 0:
         fail("instrument selector rig did not return to the TYPE field")
-    if ram[INSTRS] != 0 or ram[INSTRS + INSTR_SIZE] != 3:
-        fail("INSTR selector did not switch editing from 00 to 01")
+    if ram[INSTRS] != 2 or ram[INSTRS + INSTR_SIZE] != 2:
+        fail("INSTR selector exposed/created legacy type 01")
+
+
+def run_instr_field_visibility_case(harness, core, rom, build):
+    # Starting at TYPE, these Down counts must land on the next meaningful
+    # field after every type-specific omission.  LFSR's case specifically
+    # crosses SEED -> TABLE in one step instead of visiting hidden BANK.
+    cases = (
+        ("lfsr-type-vol-edit", 0, 1, 1),
+        ("lfsr-seed-table", 0, 11, 12),
+        ("legacy-lfsr-seed-table", 1, 11, 12),
+        ("wav-tsp-wave", 2, 6, 11),
+        ("kit-type-vol", 3, 1, 1),
+        ("kit-vol-bank", 3, 3, 11),
+    )
+    drill = "100@10,180@20,100@10,0@40,"
+    down = "20@5,0@8,"
+
+    for label, instrument_type, steps, expected_row in cases:
+        test_rom = os.path.join(
+            build, "alynxdj-editor-%s-%d-%d.lnx"
+            % (label, os.getpid(), time.time_ns()))
+        ppm = os.path.join(build, "editor-%s.ppm" % label)
+        ram_path = os.path.join(build, "editor-%s.ram" % label)
+        shutil.copyfile(rom, test_rom)
+
+        pokes = {SONG: 0, INSTRS: instrument_type}
+        if label == "lfsr-type-vol-edit":
+            pokes[INSTRS + 1] = 0x3C
+        if instrument_type == 3:
+            pokes[INSTRS + 1] = 0x4D
+        put(pokes, CHAINS, (0, 0))
+        put(pokes, PHRASES, (37, 0, 0, 0))
+        env = os.environ.copy()
+        env["RETROSHOT_RAM_OUT"] = ram_path
+        env["RETROSHOT_RAM_POKE"] = ",".join(
+            "%04X:%02X" % item for item in sorted(pokes.items()))
+        env["RETROSHOT_RAM_POKE_AT"] = "250"
+
+        edit_left = ("1@6,41@4,1@6,0@20,"
+                     if label == "kit-vol-bank" else "")
+        # KIT: Left/Right are inert; Up then Down quantizes 4D back to 40.
+        edit_volume = (
+            "1@6,41@4,1@6,0@10,"
+            "1@6,81@4,1@6,0@10,"
+            "1@6,11@4,1@6,0@10,"
+            "1@6,21@4,1@6,0@20,"
+        ) if label == "kit-type-vol" else ""
+        # LFSR retains ordinary fine + coarse editing: 3C -> 3D -> 4D.
+        edit_full_volume = (
+            "1@6,81@4,1@6,0@10,"
+            "1@6,11@4,1@6,0@20,"
+        ) if label == "lfsr-type-vol-edit" else ""
+        script = ("0@280," + drill * 3 + down * steps
+                  + edit_left + edit_volume + edit_full_volume
+                  + "0@60")
+        subprocess.run(
+            [harness, core, test_rom, ppm, "1000", script],
+            env=env, check=True)
+        with open(ram_path, "rb") as f:
+            ram = f.read()
+        if len(ram) != 65536 or ram[0xC003] != 3:
+            fail("%s did not finish on INSTR" % label)
+        if ram[0xC001] != expected_row:
+            fail("%s landed on field %d, expected %d"
+                 % (label, ram[0xC001], expected_row))
+        if instrument_type == 3 and ram[INSTRS + 4] != 0:
+            fail("%s left KIT bank at %02X instead of clamping to 00"
+                 % (label, ram[INSTRS + 4]))
+        if label == "kit-type-vol" and ram[INSTRS + 1] != 0x40:
+            fail("KIT VOL fine edit was not blocked/coarsened: %02X"
+                 % ram[INSTRS + 1])
+        if label == "lfsr-type-vol-edit" and ram[INSTRS + 1] != 0x4D:
+            fail("LFSR VOL lost fine/coarse editing: %02X"
+                 % ram[INSTRS + 1])
 
 
 def run_drill_row_reset_case(harness, core, rom, build, phrase):
@@ -766,6 +908,8 @@ def main():
 
     run_command_double_tap_safety_case(harness, core, rom, build)
     run_phrase_instrument_latch_case(harness, core, rom, build)
+    for depth in range(3):
+        run_block_selection_visual_case(harness, core, rom, build, depth)
 
     run_back_tap_case(harness, core, rom, build, 1)
     run_back_tap_case(harness, core, rom, build, 2)
@@ -777,6 +921,7 @@ def main():
     run_option1_context_case(harness, core, rom, build)
     run_instr_follow_case(harness, core, rom, build)
     run_instr_selector_case(harness, core, rom, build)
+    run_instr_field_visibility_case(harness, core, rom, build)
     run_drill_row_reset_case(harness, core, rom, build, False)
     run_drill_row_reset_case(harness, core, rom, build, True)
     run_wave_navigation_case(harness, core, rom, build, "up")
@@ -790,9 +935,12 @@ def main():
     print("editor clone: PASS — empty cells mint next blank/unreferenced; "
           "occupied cells slim-clone; command cuts/double-taps preserve note "
           "rows; new PHRASE notes inherit the last explicitly edited instrument; "
+          "block SELECT highlights every row field on SONG/CHAIN/PHRASE; "
           "CHAIN/PHRASE/INSTR/OPTIONS/PROJECT ignore physical-A back taps; "
           "TABLE commands inherit their prior pair and delete field-safely; "
-          "INSTR has an in-page selector; hierarchy drill enters row 00; "
+          "INSTR has an in-page selector and skips fields unused by each "
+          "instrument type; hierarchy drill enters row 00; "
+          "KIT bank defaults/clamps to 00 and VOL blocks its fine nibble; "
           "OPTION 1 starts all "
           "tracks from the selected context; "
           "PHRASE drill follows the selected row's instrument; WAVE number "

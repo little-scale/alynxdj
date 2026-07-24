@@ -13,8 +13,9 @@ BUILD := build
 .DEFAULT_GOAL := all
 ROM   := $(BUILD)/alynxdj.lnx
 CFG   := alynxdj.cfg
-VERSION := v0.52
+VERSION := v0.53
 PYTHON ?= python3
+NODE ?= node
 FACTORY_SAMPLE_BANK := samples/alynxdj-factory-samples.bin
 SAMPLE_BANK ?= $(FACTORY_SAMPLE_BANK)
 SAMPLE_POOL_CAPACITY := 209920
@@ -111,6 +112,9 @@ test-dac: $(ROM) $(RETROSHOT)
 test-save: $(ROM) $(RETROSHOT)
 	$(PYTHON) tools/test_save_roundtrip.py $(RETROSHOT) $(EMUCORE) $(ROM)
 
+test-viewer:
+	$(NODE) tools/test_song_file_viewer.mjs
+
 test-tone: $(ROM) $(RETROSHOT)
 	$(PYTHON) tools/test_tone_modulation.py $(RETROSHOT) $(EMUCORE) $(ROM)
 
@@ -126,7 +130,7 @@ test-hardware: $(ROM) $(RETROSHOT)
 test-midi: $(ROM) $(RETROSHOT)
 	$(PYTHON) tools/test_midi_takeover.py $(RETROSHOT) $(EMUCORE) $(ROM)
 
-test: test-bank test-dac test-save test-tone test-editor test-help test-hardware test-midi
+test: test-bank test-dac test-save test-viewer test-tone test-editor test-help test-hardware test-midi
 
 # Companion USB-MIDI-device firmware. Requires a complete Arm embedded
 # toolchain and PICO_SDK_PATH; it is intentionally not part of the ROM build.

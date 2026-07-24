@@ -46,7 +46,7 @@ def put(pokes, address, values):
 
 
 def rig_pokes(note=37, cmd=0, param=0, hold=0x0F, env=0,
-              table=0xFF, itype=0, bank=0):
+              table=0xFF, itype=0, bank=0, vol=0x7F):
     """One isolated note on track A, safely shorter than its phrase loop."""
     chain = 31
     phrase = 63
@@ -59,7 +59,7 @@ def rig_pokes(note=37, cmd=0, param=0, hold=0x0F, env=0,
     put(pokes, PHRASES + phrase * 64, bytes(64))
     put(pokes, PHRASES + phrase * 64, (note, instr, cmd, param))
     put(pokes, INSTRS + instr * 16,
-        (itype, 0x7F, env, hold, bank, 1, table, 0xFF,
+        (itype, vol, env, hold, bank, 1, table, 0xFF,
          0, 0, 0, 0, 0, 0, 0, 0))
     put(pokes, GROOVES, (6,) + (0,) * 15)
     return pokes
@@ -422,8 +422,30 @@ def main():
         fail("F4 stream underruns: %d/%d" %
              (f4_ram[PCM_UNDERRUN], f4_ram[PCM_UNDERRUN + 1]))
 
+    # KIT VOL is deliberately coarse and cheap: only its high nibble selects
+    # the signed foreground shift, and the low nibble must be inaudible.
+    for vol, shift in ((0x60, 0), (0x6F, 0),
+                       (0x20, 1), (0x2F, 1),
+                       (0x10, 2), (0x1F, 2),
+                       (0x00, 4), (0x0F, 4)):
+        gain_ram, _ = run(
+            harness, core, rom, build, "sample-gain-%02x" % vol,
+            rig_pokes(note=42, itype=3, bank=0, vol=vol))
+        gain_ring = gain_ram[RING0:RING0 + RING_SIZE]
+        for i in range(start, len(f4)):
+            source = f4[i] if f4[i] < 128 else f4[i] - 256
+            expected = 0 if shift == 4 else (source >> shift) & 0xFF
+            pos = i & (RING_SIZE - 1)
+            if gain_ring[pos] != expected:
+                fail("KIT VOL %02X differs at sample %d: $%02X != $%02X" %
+                     (vol, i, gain_ring[pos], expected))
+        if gain_ram[PCM_UNDERRUN] or gain_ram[PCM_UNDERRUN + 1]:
+            fail("KIT VOL %02X stream underruns: %d/%d" %
+                 (vol, gain_ram[PCM_UNDERRUN],
+                  gain_ram[PCM_UNDERRUN + 1]))
+
     # Sustained hardware-listening workload: the longest kit-0 sample is
-    # retriggered every four six-tick rows while a separate TONE voice runs
+    # retriggered every four six-tick rows while a separate LFSR voice runs
     # patch SWP plus row-rate G08. This keeps the 7.8 kHz stream continuously
     # active and is the case that justified removing channel metering.
     p = {}
@@ -443,13 +465,13 @@ def main():
         (0, 0x7F, 0, 0x0F, 0xFF, 1, 0xFF, 0xFF,
          0, 0, 0, 0, 1, 0, 0, 0))
     put(p, INSTRS + 31 * 16,
-        (3, 0x7F, 0, 0x0F, 0, 1, 0xFF, 0xFF,
+        (3, 0x01, 0, 0x0F, 0, 1, 0xFF, 0xFF,
          0, 0, 0, 0, 0, 0, 0, 0))
     put(p, GROOVES, (6,) + (0,) * 15)
     stress_ram, _ = run(harness, core, rom, build, "sample-sustain-stress",
                         p, tail_frames=300)
     if stress_ram[PCM_UNDERRUN] or stress_ram[PCM_UNDERRUN + 1]:
-        fail("sustained KIT + TONE G08/SWP underruns: %d/%d" %
+        fail("sustained KIT + LFSR G08/SWP underruns: %d/%d" %
              (stress_ram[PCM_UNDERRUN],
               stress_ram[PCM_UNDERRUN + 1]))
 
@@ -484,7 +506,7 @@ def main():
           "pre-row phrase H, independent "
           "contiguous SONG groups, signed tick/row G periods with note "
           "continuity, cumulative signed B taps/reset, portable-bank sample "
-          "lengths, exact "
+          "lengths, signed-shift KIT gain, exact "
           "F4 streaming, and uninterrupted sustained/redraw KIT + G08/SWP")
 
 

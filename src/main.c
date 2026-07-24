@@ -83,6 +83,9 @@ void clear_grid(void)
 /* Draw one glyph at char cell (cx, cy); fg/bg are pen numbers. */
 static unsigned char draw_pump_phase;
 unsigned char draw_x_offset;
+extern unsigned char sel_active;
+#define SEL_FIRST_Y (*(volatile unsigned char *)0xC8FE)
+#define SEL_LAST_Y  (*(volatile unsigned char *)0xC8FF)
 
 static void draw_char(unsigned char cx, unsigned char cy, char ch,
                       unsigned char fg, unsigned char bg)
@@ -91,6 +94,10 @@ static void draw_char(unsigned char cx, unsigned char cy, char ch,
     unsigned char *p;
     unsigned char r, bits, l, rr;
 
+    if (sel_active && cy >= SEL_FIRST_Y && cy <= SEL_LAST_Y) {
+        fg = PEN_BG;
+        bg = PEN_ACCENT;
+    }
     if (cy)
         cx += draw_x_offset;
     p = SCREEN + (unsigned int)cy * 6 * LINE_BYTES + cx * 2;
@@ -133,7 +140,7 @@ void draw_hex8(unsigned char cx, unsigned char cy, unsigned char v,
 }
 
 static const struct instr blank_instr = {
-    IT_TONE, 0x7F, 0x05, 5, EMPTY, TAPS_SQUARE, EMPTY, 0xFF,
+    IT_LFSR, 0x7F, 0x05, 5, EMPTY, TAPS_SQUARE, EMPTY, 0xFF,
     0, 0, 0, 0, 0, 0, 0, 0,
 };
 
@@ -176,13 +183,13 @@ void song_demo(void)
     sd.grooves[0][1] = 5;
 
     /* --- instruments --- */
-    sd.instrs[0].type = IT_TONE;                   /* plain square (rigs) */
+    sd.instrs[0].type = IT_LFSR;                   /* plain square (rigs) */
     sd.instrs[0].vol = 0x7F; sd.instrs[0].hold = 2; sd.instrs[0].env = 0x04;
-    sd.instrs[1].type = IT_NOISE;                  /* noise (rigs) */
+    sd.instrs[1].type = IT_LFSR;                   /* long-cycle LFSR (rigs) */
     sd.instrs[1].vol = 0x60; sd.instrs[1].env = 0x05;
-    sd.instrs[1].taps_lo = (unsigned char)TAPS_NOISE;
-    sd.instrs[1].taps_hi = TAPS_NOISE >> 8;
-    sd.instrs[2].type = IT_TONE;                   /* sustained (rigs) */
+    sd.instrs[1].taps_lo = (unsigned char)TAPS_LONG;
+    sd.instrs[1].taps_hi = TAPS_LONG >> 8;
+    sd.instrs[2].type = IT_LFSR;                   /* sustained (rigs) */
     sd.instrs[2].vol = 0x70; sd.instrs[2].hold = 8; sd.instrs[2].env = 0x08;
     sd.instrs[2].pan = 0xF4;
     sd.instrs[3].type = IT_KIT;                    /* kit (rigs) */
@@ -190,12 +197,12 @@ void song_demo(void)
     sd.instrs[4].type = IT_WAV;                    /* triangle (rigs) */
     sd.instrs[4].vol = 10; sd.instrs[4].hold = 8; sd.instrs[4].env = 0x0E;
     sd.instrs[4].pan = 0x4F;
-    sd.instrs[5].type = IT_TONE;                   /* sustain lead (rigs) */
+    sd.instrs[5].type = IT_LFSR;                   /* sustain lead (rigs) */
     sd.instrs[5].vol = 0x7F; sd.instrs[5].hold = 8; sd.instrs[5].env = 0x0E;
 
-    sd.instrs[9].type = IT_TONE;                   /* LEAD */
+    sd.instrs[9].type = IT_LFSR;                   /* LEAD */
     sd.instrs[9].vol = 0x6E; sd.instrs[9].hold = 6; sd.instrs[9].env = 0x0A;
-    sd.instrs[10].type = IT_TONE;                  /* BASS: buzzy taps */
+    sd.instrs[10].type = IT_LFSR;                  /* BASS: buzzy taps */
     sd.instrs[10].vol = 0x74; sd.instrs[10].hold = 3; sd.instrs[10].env = 0x07;
     sd.instrs[10].taps_lo = 0x03; sd.instrs[10].pan = 0xFA;
     sd.instrs[11].type = IT_WAV;                   /* PAD: saw wavetable */
@@ -210,7 +217,7 @@ void song_demo(void)
     sd.instrs[14].type = IT_KIT;                   /* speech bank */
     sd.instrs[14].vol = 0x7F;
     sd.instrs[14].wave = 4;
-    sd.instrs[15].type = IT_TONE;                  /* PLUCK: seed timbre */
+    sd.instrs[15].type = IT_LFSR;                  /* PLUCK: seed timbre */
     sd.instrs[15].vol = 0x78; sd.instrs[15].hold = 2; sd.instrs[15].env = 0x09;
     sd.instrs[15].taps_lo = 0xF1;
 
@@ -347,7 +354,7 @@ void song_demo(void)
      * instr 6 = tap 7 only (control-bit wiring proof), 7/8 = same taps,
      * different seed (disjoint state cycles = different waveforms) */
     for (i = 6; i <= 8; ++i) {
-        sd.instrs[i].type = IT_TONE;
+        sd.instrs[i].type = IT_LFSR;
         sd.instrs[i].vol = 0x7F;
         sd.instrs[i].hold = 8;
         sd.instrs[i].env = 0x0E;
@@ -364,7 +371,7 @@ void song_demo(void)
     sd.instrs[8].seed_hi = 0x05;
 
     /* M9c command rigs (song rows 19-25, chain-loop transport) */
-    sd.instrs[5].type = IT_TONE;                   /* sustain lead */
+    sd.instrs[5].type = IT_LFSR;                   /* sustain lead */
     sd.instrs[5].vol = 0x7F;
     sd.instrs[5].hold = 8;
     sd.instrs[5].env = 0x0E;
@@ -562,7 +569,7 @@ static void test_hook_run(void)
         sd.instrs[12].wave = 0;
         engine_play_song(29);
     } else if (hook == 0xA9)
-        engine_audition(37, 0);          /* stopped TONE modulation rig */
+        engine_audition(37, 0);          /* stopped LFSR modulation rig */
 }
 #pragma code-name (pop)
 

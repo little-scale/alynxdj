@@ -26,7 +26,7 @@ action.** No simultaneous-press timing windows.
 | **B** hold + d-pad | edit the value under the cursor — ←/→ small step, ↑/↓ big step |
 | **B** double-tap | paste the clipboard; with nothing cut: mint the next free chain/phrase on an empty cell, or slim-clone a populated one |
 | **B** held + **A** tap | cut the field under the cursor into the clipboard |
-| **B** held + **A** long-hold | **block SELECT** (SONG/CHAIN/PHRASE): anchors at the cursor; ↑/↓ extend; **B** = copy, **B**-held+**A** = cut, **A** = cancel; paste with B double-tap (rows land at the cursor) |
+| **B** held + **A** long-hold | **block SELECT** (SONG/CHAIN/PHRASE): anchors at the cursor and inverts every field on each selected row; ↑/↓ extend; **B** = copy, **B**-held+**A** = cut, **A** = cancel; paste with B double-tap (rows land at the cursor) |
 | **A** tap | back where applicable on detail/utility screens; deliberately does nothing on CHAIN, PHRASE, INSTR, OPTIONS, or PROJECT |
 | **A** hold + d-pad | move around the screen map (see below); A+↑ from TABLE opens HELP and A+↓ returns |
 | **A** held + **B** | play / stop — contextual: SONG plays from the cursor row, CHAIN loops the chain, PHRASE and INSTR loop the phrase last viewed (audition while editing the instrument) |
@@ -145,23 +145,24 @@ renderer temporarily reuses the now-idle sample-ring RAM.
 | Field | Meaning |
 |---|---|
 | **INSTR** | patch currently viewed/edited, `00`–`1F`; Left/Right ±1, Up/Down ±16, wrapping. This does not rewrite the PHRASE row |
-| TYPE | TONE / NOISE / WAV / KIT |
-| VOL | envelope peak, $00–$7F |
+| TYPE | LFSR / WAV / KIT |
+| VOL | LFSR/WAV envelope peak, `$00`–`$7F`; KIT displays only its coarse nibble: `6-`/`7-` full, `2-`–`5-` half, `1-` quarter, `0-` mute |
 | ATK | attack **time**, 0–F: 0 = instant, F ≈ 2 s (higher = slower) |
 | HOLD | peak hold: `0`–`E` timed ticks; `F` sustains until the next note, a `K` command, transport stop, or live MIDI Note Off |
 | DCY | decay **time**, 0–F: 0 = sustain until the next note, 1 = instant-ish, F ≈ 2 s |
-| **TSP** | signed instrument transpose in semitones; Left/Right ±1, Up/Down ±12. Applies to TONE/NOISE/WAV pitch and KIT pad selection |
-| **SWP** | TONE/NOISE pitch sweep, signed 1/16 semitone per tick with period-style direction: `$01`–`$7F` falls, `$FF`–`$80` rises, `00` = off |
-| **VIB** | TONE/NOISE sine vibrato, packed speed·depth nibbles; speed 0–F ≈ 0.47–7.49 Hz. Depth uses SMSGGDJ's nonlinear response, from 1/16 semitone at `1` through 10/16 at `8` to 60/16 (±3.75 semitones) at `F`. Phase continues across notes and resets with transport |
-| **TRM** | TONE/NOISE repeating decay saw, packed speed·depth nibbles. Each cycle starts at the AHD level, ramps downward, then snaps back to the top like a repeating envelope |
-| **TAPS** | the raw 12-bit-LFSR tap mask — see below |
-| WAVE / KIT | WAV: wavetable 0–7 (`--` = hardware triangle); KIT: sample kit 0–7. This row is blank and inert for TONE/NOISE. |
+| **TSP** | signed instrument transpose in semitones; Left/Right ±1, Up/Down ±12. Applies to LFSR/WAV pitch and KIT pad selection |
+| **SWP** | LFSR pitch sweep, signed 1/16 semitone per tick with period-style direction: `$01`–`$7F` falls, `$FF`–`$80` rises, `00` = off |
+| **VIB** | LFSR sine vibrato, packed speed·depth nibbles; speed 0–F ≈ 0.47–7.49 Hz. Depth uses SMSGGDJ's nonlinear response, from 1/16 semitone at `1` through 10/16 at `8` to 60/16 (±3.75 semitones) at `F`. Phase continues across notes and resets with transport |
+| **TRM** | LFSR repeating decay saw, packed speed·depth nibbles. Each cycle starts at the AHD level, ramps downward, then snaps back to the top like a repeating envelope |
+| **TAPS** | the raw 9-bit tap mask for the 12-bit LFSR — see below |
+| WAVE / KIT | WAV: wavetable 0–7 (`--` = hardware triangle); KIT: sample kit `00`–`07`, default `00` with no `--` state. This row is blank and inert for LFSR. |
 | **SEED** | the shifter start state, $000–$FFF |
 | TABLE | macro table to run on every note (`--` = none) |
 | **TBS** | table speed: `0` advances one row per triggered note; `1` is one row per engine tick; `2`–`F` wait that many ticks per row |
 
 TSP clamps at the playable note limits rather than wrapping. SWP/VIB/TRM
-show `--` for WAV and KIT. With the transport stopped, tap
+show `--` for WAV and KIT. KIT shows VOL but omits the unused AHD, TABLE,
+and TBS fields. With the transport stopped, tap
 physical **B** anywhere on INSTR to trigger the selected instrument at the
 last-entered note. This works even when OPTIONS → PRELIS is off and does not
 start the sequencer; A-held+B retains the separate phrase-loop transport.
@@ -184,7 +185,7 @@ advances only while that note's envelope is active, so retriggering restarts
 the repeating decay. Groove and BPM change how many TRM cycles fit into a
 row, but do not change its real-time rate.
 
-After **NEW**, every instrument starts with TYPE TONE, VOL `7F`, ATK `0`,
+After **NEW**, every instrument starts with TYPE LFSR, VOL `7F`, ATK `0`,
 HOLD `5`, DCY `5`, and TAPS `001`. Empty CHAIN rows display transpose `00`;
 their compact-save sentinel remains internal and changes to a real zero as
 soon as a phrase is inserted.
@@ -210,7 +211,11 @@ that's the real chip, nudge the seed.
 Sweep TAPS/SEED with B-held + ←/→ while a note auditions — exploration is
 the point.
 
-- **TONE vs NOISE** are the same machine with different default taps.
+- **LFSR** is the complete Mikey polynomial oscillator. TAPS and SEED move
+  continuously from square and short-cycle tones through metallic timbres
+  to long-cycle pitched noise; there is no separate noise engine.
+  Older saves may contain the former NOISE type ID `$01`; it is presented
+  and played as LFSR without rewriting the patch.
 - **WAV** ignores TAPS. With WAVE = `--` it is the hardware triangle
   (integrate mode; keep VOL ≤ 10 — the ramp accumulator wraps above
   that). With WAVE = 0–7 it loops that **32-byte wavetable** through a
@@ -223,11 +228,19 @@ the point.
 - **KIT** streams samples from the cart through the channel DAC; the
   note's semitone picks the kit slot (C=1, C#=2, …) and **BANK picks the
   kit** — the cart ships all eight `samples/` folders (808, 909, C78,
-  606, four speech banks) at full quality.
+  606, four speech banks) at full quality. VOL is a deliberately coarse,
+  low-cost trigger gain: high nibble `6`–`7` plays the stored bytes unchanged,
+  `2`–`5` arithmetic-shifts signed PCM right once (half level), `1` shifts
+  twice (quarter level), and `0` mutes. The low nibble is ignored, rendered
+  as `-`, and cannot be edited on KIT; Up/Down selects `0-` through `7-`.
+  Scaling happens
+  while each 64-byte cart piece enters the ring, never in the DAC interrupt;
+  it is latched from the instrument on each note or `R` retrigger rather
+  than acting as a live envelope.
 
 Every track can play KIT or table-WAV on its own physical Mikey DAC. The
 CPU budget allows **two simultaneous timer-fed DAC voices** across those
-types; a third trigger steals the oldest. Hardware TONE/NOISE/integrate-WAV
+types; a third trigger steals the oldest. Hardware LFSR/integrate-WAV
 voices do not consume this two-voice budget.
 
 ## Commands (PHRASE and TABLE command columns)
@@ -235,7 +248,7 @@ voices do not consume this two-voice budget.
 | Cmd | Name | Param |
 |---|---|---|
 | `A xx` | table | run table xx on this note (one-shot) |
-| `B xx` | taps accumulator | nonzero values add signed `xx` to the current TONE/NOISE taps (`01` = +1, `FF` = −1), cumulatively wrapping 0–511; `00` restores the active instrument's TAPS |
+| `B xx` | taps accumulator | nonzero values add signed `xx` to the current LFSR taps (`01` = +1, `FF` = −1), cumulatively wrapping 0–511; `00` restores the active instrument's TAPS |
 | `C xy` | chord | loop +0, +x, +y semitones per tick |
 | `D xx` | delay | trigger after xx ticks |
 | `E xy` | envelope | re-slope live: attack x, decay y (times, like the INSTR fields; current stage and level untouched) |

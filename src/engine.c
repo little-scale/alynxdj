@@ -210,14 +210,11 @@ static unsigned char dac_acquire(unsigned char ch)
 /* --- pitch --- */
 
 /* SMSGGDJ's depth response, expressed here as symmetric 1/16-semitone
- * amplitudes instead of raw PSG-period deltas.  Depth zero never enters the
- * helper, so omitting it lets this table occupy HICODE1's final 15 bytes. */
-#pragma rodata-name (push, "HICODE1")
+ * amplitudes instead of raw PSG-period deltas.  Depth zero never enters. */
 static const unsigned char vib_depth[15] = {
      1,  2,  3,  4,  5,  6,  8, 10,
     13, 17, 22, 28, 36, 46, 60,
 };
-#pragma rodata-name (pop)
 
 /* Sixteen signed samples are sufficient because pitch itself resolves to
  * 1/16 semitone and the 59.9 Hz engine supplies at least eight updates even
@@ -346,7 +343,7 @@ static void exec_cmd(unsigned char ch, unsigned char cmd, unsigned char param)
         reset_instr_taps(v);          /* restart from patch without reseed */
         break;
     case CMD_B:                        /* cumulative signed taps accumulator */
-        if (v->type <= IT_NOISE) {
+        if (v->type <= IT_LEGACY_NOISE) {
             if (param) {
                 v->fb_dirty |= TAP_ACCUM;
                 v->tap_cur = (v->tap_cur + (signed char)param) & 0x1FF;
@@ -497,8 +494,9 @@ static void trigger(unsigned char ch, unsigned char note, unsigned char inum)
         v->type = IT_KIT;
         v->inum = inum;
         v->base_note = note;
+        v->env_peak = 0;
         v->env_phase = 0;
-        v->env_level = 0;
+        v->env_level = in->vol;         /* static PCM gain, reused by R */
         v->kill_in = EMPTY;
         v->rt_rate = v->rt_fade = v->rt_cnt = 0;
         v->sh_pan = in->pan;
@@ -534,10 +532,10 @@ static void trigger(unsigned char ch, unsigned char note, unsigned char inum)
     /* Patch SWP follows the sibling trackers' period-direction convention:
      * positive values fall, negative values rise.  Row/table P keeps its
      * established direct signed-pitch convention and overrides this rate. */
-    v->bend_rate = (in->type <= IT_NOISE) ? -in->swp : 0;
+    v->bend_rate = (in->type <= IT_LEGACY_NOISE) ? -in->swp : 0;
     v->slide_off = 0;
     v->slide_rate = 0;
-    if (in->type <= IT_NOISE) {
+    if (in->type <= IT_LEGACY_NOISE) {
         v->vib_speed = in->vib >> 4;
         v->vib_depth = in->vib & 0x0F;
         v->trm_speed = in->trm >> 4;
@@ -647,12 +645,12 @@ static void envelope(unsigned char ch)
     }
 }
 
-/* TONE/NOISE tremolo is a repeating decay saw inside the AHD envelope:
+/* LFSR tremolo is a repeating decay saw inside the AHD envelope:
  * start at the envelope level, ramp downward, then snap back to the top.
  * The 6-bit ramp and 0-F depth produce up to 118 Lynx volume steps, so
  * depth F reaches near-silence without ever exceeding the envelope peak. */
 #pragma code-name (push, "HICODE2")
-static unsigned char tone_level(struct voice *v)
+static unsigned char lfsr_level(struct voice *v)
 {
     unsigned char level = v->env_level;
 
@@ -693,7 +691,7 @@ static void flush(unsigned char ch)
         h->other = v->sh_shifthi;       /* seed bits 11-8 in bits 7-4 */
         h->count = v->sh_bkup;
         h->reload = v->sh_bkup;
-        h->volume = (eng_mute & track_bit[ch]) ? 0 : tone_level(v);
+        h->volume = (eng_mute & track_bit[ch]) ? 0 : lfsr_level(v);
         (&MIKEY.attena)[ch] = v->sh_pan;
         h->control = v->sh_ctl;
         return;
@@ -706,7 +704,7 @@ static void flush(unsigned char ch)
         h->control = v->sh_ctl;         /* G/B may also cross user tap bit 6 */
     }
     h->reload = v->sh_bkup;
-    h->volume = (eng_mute & track_bit[ch]) ? 0 : tone_level(v);
+    h->volume = (eng_mute & track_bit[ch]) ? 0 : lfsr_level(v);
 }
 
 /* editor mute/solo: apply immediately, even mid-note */
@@ -720,7 +718,7 @@ void __fastcall__ engine_set_mute(unsigned char mask)
     eng_mute = mask;
     for (ch = 0; ch < NCH; ++ch, ++v, volume += 8)
         *volume = ((mask & track_bit[ch]) || v->dac_slot < NDAC)
-                  ? 0 : tone_level(v);
+                  ? 0 : lfsr_level(v);
     owner = dac_owner[0];
     dac_muted[0] = (owner < NCH && (mask & track_bit[owner])) ? 1 : 0;
     owner = dac_owner[1];
@@ -1186,8 +1184,8 @@ void engine_tick(void)
             trigger(ch, v->dly_note, v->dly_instr);
             v->dly_in = EMPTY;
         }
-        /* KIT has no volume envelope, so retrigger must not be gated by
-         * env_phase.  Table-WAV and hardware voices retain the old gate. */
+        /* KIT has static trigger gain but no volume envelope, so retrigger
+         * must not be gated by env_phase. Table-WAV/hardware keep the gate. */
         if (v->rt_rate && (v->env_phase || v->dac_slot < NDAC)
             && ++v->rt_cnt >= v->rt_rate) {
             v->rt_cnt = 0;

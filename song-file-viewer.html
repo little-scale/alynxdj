@@ -232,7 +232,7 @@
     const SIZES = { song:512, chains:1024, phrases:4096, instruments:512, tables:1024, grooves:256, waves:256 };
     const COMMANDS = ["—","A","C","D","G","H","K","O","P","V","W","X","F","L","N","R","S","Z","E","T","I","J","B"];
     const COMMAND_NAMES = ["None","Run table","Chord","Delay","Tap glide","Halt / loop","Kill","Pan","Pitch bend","Vibrato","Row length","Volume","Finetune","Slide","Taps override","Retrigger","Sample rate","Probability","Envelope","Tempo","Iteration","Variation","Taps offset"];
-    const TYPES = ["TONE","NOISE","WAV","KIT"];
+    const TYPES = [[0,"LFSR"],[2,"WAV"],[3,"KIT"]];
     const ENV_RATE = [0,127,64,43,32,26,22,16,12,8,6,5,4,3,2,1];
     const state = { fileName:"", original:null, data:null, sourceVersion:6, sourcePacked:0, decodedLength:0, sourceChecksum:0, dirty:false, migrated:false, config:null, tab:"overview", selection:{chains:0,phrases:0,instruments:0,tables:0,grooves:0,waves:0} };
 
@@ -328,6 +328,10 @@
       }
       if (version<4) for (let i=0;i<32;i++) data.fill(0,OFF.instruments+i*16+12,OFF.instruments+i*16+15);
       if (version<5) for (let i=0;i<32;i++) data[OFF.instruments+i*16+15]=0;
+      for (let i=0;i<32;i++) {
+        const o=OFF.instruments+i*16;
+        if (data[o]===3 && data[o+4]>=8) data[o+4]=0;
+      }
     }
 
     function parseConfig(bytes) {
@@ -405,7 +409,7 @@
       for (let i=0;i<32;i++) {
         const o=OFF.instruments+i*16,type=state.data[o],table=state.data[o+6],bank=state.data[o+4];
         if (type>=4) warnings.push(`Instrument $${hex(i)} has invalid type $${hex(type)}.`);
-        if (state.data[o+1]>127) warnings.push(`Instrument $${hex(i)} has volume $${hex(state.data[o+1])}; the supported peak is $00–$7F.`);
+        if (state.data[o+1]>127) warnings.push(`Instrument $${hex(i)} has volume $${hex(state.data[o+1])}; the supported VOL range is $00–$7F.`);
         if (state.data[o+9]>1) warnings.push(`Instrument $${hex(i)} has unsupported high tap bits $${hex(state.data[o+9])}.`);
         if (state.data[o+11]>15) warnings.push(`Instrument $${hex(i)} has unsupported high seed bits $${hex(state.data[o+11])}.`);
         if (table!==255) { if (table<16) tables.add(table); else warnings.push(`Instrument $${hex(i)} references invalid table $${hex(table)}.`) }
@@ -487,15 +491,18 @@
     function renderInstruments() {
       const i=state.selection.instruments,o=OFF.instruments+i*16,type=state.data[o],env=state.data[o+2],hold=state.data[o+3],pan=state.data[o+7],vib=state.data[o+13],trm=state.data[o+14];
       const taps=state.data[o+5] | (state.data[o+9]&1)<<8,seed=state.data[o+10] | (state.data[o+11]&15)<<8;
-      let typeOptions=TYPES.map((name,n)=>`<option value="${n}" ${type===n?"selected":""}>${name}</option>`).join(""); if(type>=4) typeOptions+=`<option value="${type}" selected>Invalid $${hex(type)}</option>`;
+      const kitVolOptions=Array.from({length:8},(_,n)=>`<option value="${n}" ${n===(state.data[o+1]>>4)?"selected":""}>${hex(n,1)}-</option>`).join("");
+      let typeOptions=TYPES.map(([value,name])=>`<option value="${value}" ${type===value?"selected":""}>${name}</option>`).join("");
+      if(type===1) typeOptions=`<option value="1" selected>LFSR · legacy $01</option>`+typeOptions;
+      else if(type>=4) typeOptions+=`<option value="${type}" selected>Invalid $${hex(type)}</option>`;
       const grid=[
-        field("Type",`<select data-ifield="type">${typeOptions}</select>`,"All four tracks can play every type."),
-        field("Volume",iField("vol",hex(state.data[o+1])),"$00–$7F envelope peak"),
+        field("Type",`<select data-ifield="type">${typeOptions}</select>`,"LFSR, WAV, or KIT on any track."),
+        field("Volume",type===3?`<select data-ifield="vol">${kitVolOptions}</select>`:iField("vol",hex(state.data[o+1])),type===3?"KIT: 6-/7- full · 2-–5- half · 1- quarter · 0- mute":"$00–$7F envelope peak"),
         field("Attack",iField("attack",hex(env>>4,1),"hex",1),"0 instant; higher is slower"),
         field("Decay",iField("decay",hex(env&15,1),"hex",1),"0 sustains; higher is slower"),
         field("Hold",iField("hold",hex(hold&15,1),"hex",1),"0–E timed; F indefinite sustain"),
         field("TBS",iField("tbs",hex(hold>>4,1),"hex",1),"0 per note; 1–F ticks per row"),
-        field(type===2?"Wave":type===3?"Kit bank":"Bank (unused)",iField("bank",hex(state.data[o+4])),type===2?"FF triangle; 00–07 wavetable":type===3?"00–07 sample kit":"Preserved but ignored"),
+        field(type===2?"Wave":type===3?"Kit bank":"Bank (unused)",iField("bank",hex(state.data[o+4])),type===2?"FF triangle; 00–07 wavetable":type===3?"00–07 sample kit; no empty state":"Preserved but ignored"),
         field("Table",iField("table",hex(state.data[o+6])),"FF none; 00–0F table"),
         field("Pan left",iField("panLeft",hex(pan>>4,1),"hex",1),"Lynx II attenuation nibble"),
         field("Pan right",iField("panRight",hex(pan&15,1),"hex",1),"Lynx II attenuation nibble"),
@@ -557,10 +564,10 @@
       const o=OFF.instruments+state.selection.instruments*16,name=input.dataset.ifield;
       const hx=(max,allowFF=false)=>parseHexInput(input,max,allowFF), dec=(min,max)=>{const v=Number(input.value);if(!Number.isInteger(v)||v<min||v>max)fail(`Enter a whole number from ${min} to ${max}.`);return v};
       switch(name){
-        case"type":state.data[o]=dec(0,3);break; case"vol":state.data[o+1]=hx(127);break;
+        case"type":state.data[o]=dec(0,3);if(state.data[o]===3&&state.data[o+4]>7)state.data[o+4]=0;break; case"vol":state.data[o+1]=state.data[o]===3?dec(0,7)<<4:hx(127);break;
         case"attack":state.data[o+2]=hx(15)<<4 | state.data[o+2]&15;break; case"decay":state.data[o+2]=state.data[o+2]&240 | hx(15);break;
         case"hold":state.data[o+3]=state.data[o+3]&240 | hx(15);break; case"tbs":state.data[o+3]=hx(15)<<4 | state.data[o+3]&15;break;
-        case"bank":state.data[o+4]=hx(7,true);break; case"table":state.data[o+6]=hx(15,true);break;
+        case"bank":state.data[o+4]=hx(7,state.data[o]!==3);break; case"table":state.data[o+6]=hx(15,true);break;
         case"panLeft":state.data[o+7]=hx(15)<<4 | state.data[o+7]&15;break; case"panRight":state.data[o+7]=state.data[o+7]&240 | hx(15);break;
         case"fine":state.data[o+8]=u8(dec(-128,127));break; case"tsp":state.data[o+15]=u8(dec(-128,127));break; case"swp":state.data[o+12]=u8(dec(-128,127));break;
         case"taps":{const v=hx(511);state.data[o+5]=v&255;state.data[o+9]=v>>8;break} case"seed":{const v=hx(4095);state.data[o+10]=v&255;state.data[o+11]=v>>8;break}

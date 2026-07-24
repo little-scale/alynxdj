@@ -16,7 +16,7 @@
 #define RING1      ((unsigned char *)0xD200)
 #define RING_SIZE  512u
 #define PUMP_CHUNK 64
-#define PUMP_PASSES 8
+#define PUMP_PASSES 4
 
 extern unsigned char *pcm_ptr[NDAC];    /* ring tails (IRQ-owned) */
 #pragma zpsym("pcm_ptr")
@@ -35,19 +35,28 @@ static unsigned stream_left[NDAC];
  * without cc65's comparatively large 16-bit indexed-array helper. */
 unsigned stream_off[NDAC];
 unsigned char stream_block[NDAC];
-static volatile unsigned char stream_cancel[NDAC];
-static volatile unsigned char trig_kit[NDAC];
-static volatile unsigned char trig_member[NDAC];
+volatile unsigned char stream_cancel[NDAC];
+volatile unsigned char trig_kit[NDAC];
+volatile unsigned char trig_member[NDAC];
 #pragma bss-name (pop)
 
+/* Power-of-two attenuation is applied after each cart read, before the
+ * completed piece is published to the IRQ.  0 is full level, 1-2 are
+ * arithmetic right shifts, and 4 is mute. */
+static unsigned char stream_shift[NDAC];
+
 void __fastcall__ position_cart(unsigned char voice); /* cart.s */
+void __fastcall__ scale_pcm(unsigned char *dst, unsigned char n,
+                            unsigned char shift);       /* editor_alloc.s */
 
 #pragma code-name (push, "HICODE1")
 
+#pragma code-name (push, "CODE")
 static unsigned char *ring_base(unsigned char voice)
 {
     return voice ? RING1 : RING0;
 }
+#pragma code-name (pop)
 
 void pool_init(void)
 {
@@ -108,6 +117,8 @@ static void pump_voice(unsigned char voice)
          * directory reads invalidate ownership and take the re-seek path. */
         position_cart(voice);
         cart_read(head, n);
+        if (stream_shift[voice])
+            scale_pcm(head, n, stream_shift[voice]);
         stream_left[voice] -= n;
         stream_off[voice] += n;
         while (stream_off[voice] >= 1024u) {
@@ -144,6 +155,8 @@ static void do_trigger(unsigned char voice, unsigned char kit,
     }
     __asm__("cli");
 
+    stream_shift[voice] = kit >> 3;
+    kit &= 7;
     if (kit >= pool_nkits)
         kit = 0;
     if (!pool_nkits) {
@@ -170,7 +183,11 @@ static void do_trigger(unsigned char voice, unsigned char kit,
     pcm_done[voice] = 0;
     pcm_ptr[voice] = base;
     pcm_head[voice] = base;
-    pump_voice(voice);                   /* full 511-byte startup cushion */
+    /* Prepare 256 bytes before starting (~33 ms at the KIT rate).  The
+     * caller immediately pumps again after the timer starts, restoring the
+     * full cushion without delaying the audible trigger behind all 511
+     * bytes of optional headroom. */
+    pump_voice(voice);
 
     /* Cart reads are deliberately interruptible.  Recheck atomically: a
      * trigger that landed during prefill stays pending for the next frame,
@@ -206,30 +223,6 @@ void pool_pump(void)
         if (kit != EMPTY)
             do_trigger(voice, kit, member);
         pump_voice(voice);
-    }
-}
-
-/* IRQ-context trigger: latch only; slow cart work stays in the main loop. */
-void __fastcall__ pool_trigger(unsigned char voice, unsigned char kit,
-                               unsigned char member)
-{
-    if (voice >= NDAC)
-        return;
-    stream_cancel[voice] = 0;
-    pcm_done[voice] = 0;
-    dac_mode[voice] = DAC_SAMPLE;       /* reserve until cart pump starts */
-    ++(*(volatile unsigned char *)(0xC02B + voice));
-    trig_member[voice] = member;
-    trig_kit[voice] = kit;              /* publish last */
-}
-
-/* Stop future cart work for a stolen/released slot.  The timer itself is
- * stopped synchronously by dac_stop(); this flag is pump-side cleanup. */
-void __fastcall__ pool_cancel(unsigned char voice)
-{
-    if (voice < NDAC) {
-        trig_kit[voice] = EMPTY;
-        stream_cancel[voice] = 1;
     }
 }
 

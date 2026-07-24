@@ -15,21 +15,27 @@ later hardware). The ROM and project name is **ALYNXDJ**.
 
 **DESIGN.md is the contract** (with a §0 decision log — read it before design
 decisions, don't re-litigate settled ones); **PLAN.md** holds the milestone
-history through M26. Key settled decisions: 4 identical
-tracks each playing TONE/NOISE/WAV/KIT (D1), cc65 C editor + ca65 asm
+history through M33. Key settled decisions: 4 identical
+tracks each playing LFSR/WAV/KIT (D1/D35), cc65 C editor + ca65 asm
 driver/IRQ/render (D2), 59.9 Hz VBlank engine tick with no region split (D3),
 flat RAM song block but **packed/RLE EEPROM save — 2 KB 93C86 is the whole
 persistence budget** (D4/D10), per-channel timer-IRQ PCM capped at 2 voices
 (D5/D6), 4×6 font on a 40×17 grid (D7). KIT and table-WAV dynamically
-target the owning channel A–D; there are no fixed sample buses. TONE/NOISE
-patches persist TSP/SWP/VIB/TRM plus TBS in save-format v6 (D15–D17); VIB is a
+target the owning channel A–D; there are no fixed sample buses. LFSR patches
+(including legacy stored type `$01`) persist TSP/SWP/VIB/TRM plus TBS in
+save-format v6 (D15–D17/D35); VIB is a
 centred ~0.47–7.49 Hz sine whose phase free-runs across notes and resets at
-the transport boundary. D19/D20 add receive-only ComLynx MIDI takeover and
+the transport boundary. KIT VOL is D36's static foreground PCM gain:
+high nibble `6`–`7` full, `2`–`5` signed `>>1`, `1` signed `>>2`, and `0`
+mute; its low nibble is ignored and blocked in the UI, while the DAC IRQ
+remains unchanged. D19/D20 add receive-only ComLynx MIDI takeover and
 clock sync: full-status MIDI channels 1–4 route to tracks A–D/instruments
 01–04, while the Pico divides USB MIDI's 24 PPQN into one `IN24` pulse per
 tracker row. `IN` and `IN24` arm locally at the cued row as `WAIT`; their
 first row pulse starts that row and changes the transport to `PLAY`. There is
 no heartbeat.
+KIT bank follows D38: it is always `00`–`07`, selecting KIT or viewing an old
+invalid KIT value normalizes it to `00`, and only WAV may display `--`.
 Command values retain their historical/save-format IDs, but PHRASE and TABLE
 selection steps through the implemented letters alphabetically in both
 directions (D21). A clean Option-1 tap starts all four tracks from the
@@ -109,8 +115,10 @@ using a virtual environment.
   it has a separate 64-byte IRQ ring over the phrase clipboard at
   `$C088-$C0C7` with state at
   `$C0F9-$C0FB`; `$C0FC-$C0FF` holds the four per-track G countdowns.
-  `$C8FD` is the HELP page and `$C8FE-$C8FF` remains spare. Reloading the
-  full two-block helper window also resets the HELP page byte to zero.
+  `$C8FD` is the HELP page; `$C8FE-$C8FF` hold the transient first/last
+  visible block-selection rows. Reloading the full two-block helper window
+  resets all three bytes; the selection bounds are ignored while SELECT is
+  inactive.
   Fixed live bytes occupy
   `$C004-$C016`. Preserve the post-pack
   reloads and these mutual-exclusion rules.
@@ -124,6 +132,9 @@ using a virtual environment.
   wrap in the same pump, and top up after playhead redraws. Full screen paints
   must yield every four glyphs, and `clear_grid()` must stay split into sixteen
   six-pixel bands; otherwise rendering can starve a pending trigger or ring.
+  KIT gain shifts each signed 64-byte piece before its atomic publication;
+  never move this work into the DAC IRQ. A trigger starts after a 256-byte
+  cushion and the caller's next pump tops up the remaining ring headroom.
   Same-track KIT retriggers leave the old stream live until `do_trigger()` has
   prepared the replacement. A single long chunk or a one-sided ring refill
   causes the IRQ to hold the last DAC value.

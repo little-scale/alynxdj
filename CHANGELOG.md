@@ -2,6 +2,33 @@
 
 ## Unreleased
 
+## v0.53 — 2026-07-25
+
+- Block KIT VOL's inaudible fine nibble on INSTR. It now displays `0-`–`7-`,
+  ignores Left/Right, and uses Up/Down for coarse selection. Playback also
+  ignores the stored low nibble completely: `0-` mute, `1-` quarter,
+  `2-`–`5-` half, and `6-`/`7-` full. The SRAM viewer uses the same
+  eight-position control.
+- Make KIT bank a total `00`–`07` selector. Changing TYPE to KIT now
+  initializes an unset shared WAVE/KIT byte to `00`; old KIT patches carrying
+  `--` are normalized on view, and decrementing bank `00` stays at `00`.
+  WAV retains `--` as its hardware-triangle setting. The standalone SRAM
+  viewer applies the same rule.
+- Block SELECT now inverts every rendered field across each selected
+  SONG/CHAIN/PHRASE row instead of marking only the row index. A captured-image
+  regression checks the complete range on all three hierarchy screens.
+- Rename the single Mikey polynomial instrument to **LFSR** and remove the
+  artificial TONE/NOISE split from TYPE selection. Existing type-`01` patches
+  remain an invisible LFSR compatibility alias, preserving old songs and
+  save-format v6 while new editing cycles only LFSR/WAV/KIT.
+- Make INSTR type-aware: hide and skip parameters unused by WAV/KIT and
+  remove LFSR's invisible BANK cursor stop.
+- Add coarse KIT instrument volume without adding DAC-interrupt work. VOL
+  selects full, half, quarter, or mute; signed PCM bytes are shifted while
+  64-byte cart pieces enter the ring. A 256-byte pre-start cushion keeps the
+  quieter paths redraw-safe, and the sustained/redraw regression finishes
+  with every trigger started and both underrun counters at zero.
+
 ## v0.52 — 2026-07-24
 
 - Added a TABLE play indicator. The active macro row number is accented while
