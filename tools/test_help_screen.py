@@ -84,7 +84,7 @@ def main(harness, core, rom, build_dir, help_path):
     if "TYPE       LFSR / WAV / KIT" not in instrument_rows:
         fail("instrument HELP does not expose the LFSR/WAV/KIT type set")
     if ("VOL 6-/7- FULL; 2--5- HALF" not in pages[4]
-            or "VOL 1- QUARTER; 0- MUTE; FINE OFF" not in pages[4]):
+            or "VOL 1- QUARTER; 0- MUTE; FINE LOCKED" not in pages[4]):
         fail("KIT HELP does not document its blocked coarse PCM gain")
     if any("TONE / NOISE" in row for row in instrument_rows):
         fail("instrument HELP still exposes the retired type split")

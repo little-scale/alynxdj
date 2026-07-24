@@ -56,7 +56,7 @@ make          # cl65 -t lynx → build/alynxdj.lnx
 make factory-samples # rebuild samples/alynxdj-factory-samples.bin from WAVs
 make SAMPLE_BANK=/path/custom.bin # validate + inject one portable sample bank
 make shot     # headless Handy run → build/shot.png + build/shot.ppm.wav (audio!)
-make test     # DAC/sample + modulation/TBS/taps + editor + EEPROM + MIDI UART
+make test     # ROM/sample + sound/editor/HELP + EEPROM/viewer + MIDI/sync
 make pico     # Pico USB-MIDI bridge UF2 (PICO_SDK_PATH + full Arm toolchain)
               # FRAMES=n and BTN=maskHex or BTN=mask@frames,mask@frames,... for input
 make clean

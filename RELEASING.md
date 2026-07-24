@@ -1,84 +1,97 @@
 # Releasing ALYNXDJ
 
 House etiquette for cutting a release. The guiding rule: **the git tag must
-point at the exact commit the shipped binary was built from.** Everything
-below exists to keep that true.
+point at the exact commit from which the shipped ROM was built.**
 
 ## Golden rules
 
-1. **Freeze first, tag last.** Land *every* change for the release on `main`
-   before you create the tag. Don't tag mid-stream — if one more tweak comes
-   in after tagging, the tag no longer matches the binary and you're forced
-   into a tag move (a force-push).
-2. **Build the release ROM from the final commit.** The boot splash carries
-   the git build stamp (`build/buildid.h`). Commit, *then* `make clean &&
-   make dist`, so the stamp is the clean release hash with no trailing `+`
-   (the `+` means the tree was dirty at build time — never ship that).
-3. **One version, three places.** Bump `VERSION` in the `Makefile`, add the
-   dated section to `CHANGELOG.md`, and update the Status line in
-   `README.md`. `VERSION` flows into `build/buildid.h` and the splash.
-4. **Tag the build commit; don't push the tag early.** Push `main`, verify,
-   then tag and push the tag as the last step before `gh release create`.
-5. **Moving a pushed tag is a force-push.** It rewrites the remote ref — only
-   do it with explicit sign-off, and only when the tag is fresh with no
-   release or consumers yet.
+1. **Freeze first, tag last.** Land every release change before creating the
+   tag. Moving a published tag rewrites history and requires explicit sign-off.
+2. **Build from a clean release commit.** The boot splash includes the git
+   hash from `build/buildid.h`. A trailing `+` means the tracked tree was dirty
+   when the ROM was built and that ROM must not ship.
+3. **Keep the version aligned.** Update `VERSION` in `Makefile`, add the dated
+   `CHANGELOG.md` section, and update the README Status line.
+4. **Run the complete suite twice where it matters.** Test the proposed source,
+   then build and test the exact clean commit that will receive the tag.
+5. **Ship the complete five-file bundle.** The ROM, portable factory samples,
+   both standalone browser tools, and Pico 1 bridge firmware are the supported
+   release set.
 
 ## Steps
 
-1. **Land all changes** on `main` and confirm `git status` is clean.
-2. **Bump the version:**
+1. **Prepare the release metadata:**
    - `Makefile`: `VERSION := vX.Y`
-   - `CHANGELOG.md`: turn the `## Unreleased` section into `## vX.Y — YYYY-MM-DD`
-     with a one-line summary; keep the bullets tight and user-facing.
-   - `README.md`: update the **Status** line.
-3. **Commit** the version bump (e.g. `Release vX.Y: changelog, version, README`)
-   and `git push`.
-4. **Build the assets from the just-pushed commit:**
+   - `CHANGELOG.md`: keep `## Unreleased`, then add
+     `## vX.Y — YYYY-MM-DD` and concise user-facing bullets.
+   - `README.md`: update the **Status** line and download description.
+2. **Validate the proposed source:**
    ```sh
-   make clean && make dist          # -> build/alynxdj_vX_Y.lnx (clean stamp)
+   make clean
+   make test
+   git diff --check
    ```
-   Confirm `build/buildid.h` shows the release hash with **no** `+`.
-5. **Render the demo WAV** and trim the boot/splash lead-in:
+   Use `PYTHON=/path/to/python` and `NODE=/path/to/node` when the default
+   runtimes do not provide the required packages.
+3. **Commit and push the release source.** Stage tracked files explicitly so
+   unrelated working files are not swept into the release.
+4. **Build from the clean release commit:**
    ```sh
-   rm -f build/*.eeprom             # so the demo plays, not a stale save
-   tools/emu/retroshot tools/emu/handy_libretro.dylib build/alynxdj_vX_Y.lnx \
-       build/demo.ppm 0 "0@280,100@3,101@3,100@2,0@760"
-   # then trim leading silence to ~0.2 s -> build/alynxdj-vX.Y-demo.wav
+   make clean
+   make dist
+   make test
    ```
-   (Playback starts with the post-A/B-swap transport gesture: physical A held,
-   then B — mask `100@n,101@n,100@n`. The song audio is identical across
-   doc-only commits, so it doesn't need re-rendering for a re-tag.)
-6. **Stage the release assets** (naming convention):
-   - `alynxdj_vX_Y.lnx` — the ROM (`make dist` output)
-   - `handy_libretro-macos-arm64-alynxdj.dylib` — the patched verification core
-     (`cp tools/emu/handy_libretro.dylib build/handy_libretro-macos-arm64-alynxdj.dylib`)
-   - `alynxdj-vX.Y-demo.wav` — the trimmed demo render
-7. **Tag the build commit and push the tag:**
+   Confirm `build/buildid.h` contains the release commit hash with no `+`.
+   `make dist` writes `build/alynxdj_vX_Y.lnx`.
+5. **Prepare the five assets:**
+   - `build/alynxdj_vX_Y.lnx`
+   - `samples/alynxdj-factory-samples.bin`
+   - `sample-patch-browser.html`
+   - `song-file-viewer.html`
+   - `build/alynxdj_midi_comlynx.uf2`
+
+   Build the Pico 1 UF2 with `make pico` when its source changed. If the Pico
+   source is byte-for-byte unchanged and the SDK/toolchain is unavailable,
+   the previous published UF2 may be reused only after confirming the source
+   diff is empty and its SHA-256 matches the published asset.
+6. **Record SHA-256 digests** for all five local assets.
+7. **Create and push the annotated tag:**
    ```sh
    git tag -a vX.Y -m "ALYNXDJ vX.Y — <one-line theme>"
+   git push origin main
    git push origin vX.Y
    ```
-8. **Cut the GitHub release:**
+8. **Publish the GitHub release:**
    ```sh
    gh release create vX.Y \
        build/alynxdj_vX_Y.lnx \
-       build/handy_libretro-macos-arm64-alynxdj.dylib \
-       build/alynxdj-vX.Y-demo.wav \
-       --title "ALYNXDJ vX.Y — <theme>" --notes-file <notes.md>
+       samples/alynxdj-factory-samples.bin \
+       sample-patch-browser.html \
+       song-file-viewer.html \
+       build/alynxdj_midi_comlynx.uf2 \
+       --verify-tag \
+       --title "ALYNXDJ vX.Y — <theme>" \
+       --notes-file build/release-vX.Y.md
    ```
-   Notes should lead with the theme, list highlights, and carry the **emulator
-   caveat** where relevant (this Handy build doesn't emulate the LFSR feedback,
-   so TAPS/`N`/`G` are register-level + hardware verified only).
-9. **Verify:** `gh release view vX.Y` shows the three assets and the tag points
-   at the build commit. Update the project memory with the release status.
+   Release notes should lead with the theme, summarize the main behavior
+   changes, list all five downloads, state the save-format version, and retain
+   the 2 KB 93C86 persistence caveat.
+9. **Verify the public release:** confirm it is neither draft nor prerelease,
+   contains all five assets, every remote digest matches the local digest, and
+   the tag resolves to the release commit.
 
-## Notes
+## Optional diagnostic assets
 
-- `build/` is gitignored — assets are attached to the release, not committed.
-- The core `.dylib` is the repo-built patched libretro-Handy (see CLAUDE.md);
-  ship the macOS-arm64 build until other platforms are built.
-- Seb has no non-macOS build pipeline yet, and no cross-platform cores — the
-  release ships the ROM (portable) plus the macOS core as a convenience.
-- If a change *must* go in after the tag is pushed: land it, then move the tag
-  to the new commit (`git tag -d`, re-tag, `git push --force origin vX.Y`) —
-  with sign-off — and rebuild the assets from that commit before releasing.
+The patched macOS-arm64 Handy core and a rendered demo WAV may be attached
+when useful for a timing or emulator-focused release, but they are not part of
+the required portable bundle. Handy does not emulate Mikey's LFSR feedback, so
+TAPS, `N`, and `G` claims must remain register-level plus real-hardware
+verified.
+
+## Recovery
+
+- `build/` is gitignored; release assets are uploaded, not committed.
+- If a fix is needed after a tag is pushed but before a release exists, land
+  the fix and request explicit approval before moving the tag.
+- If a public release already exists, prefer a new incremented version. Do not
+  silently replace its tag or binaries.

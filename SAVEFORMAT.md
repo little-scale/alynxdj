@@ -1,7 +1,7 @@
 # ALYNXDJ save format (EEPROM / emulator `.eeprom` images)
 
 Keep in sync with `src/tracker.h` (`struct songdata`) and `src/save.c` —
-the standing sibling rule. Version: **6** (verified 2026-07-17).
+the standing sibling rule. Version: **6** (verified 2026-07-25).
 
 `song-file-viewer.html` is the standalone reference inspector/editor for this
 format. It accepts the same 2,048-byte image under `.eeprom`, `.e2p`, `.eep`,
@@ -71,7 +71,9 @@ Instrument record bytes: 0 type, 1 vol, 2 **env** (ATK<<4 | DCY, 4-bit
 times through the engine's `env_rate[]` curve — v2), 3 **TBS<<4 | HOLD**
 (v6 table speed in the high nibble; envelope hold in the low nibble, where
 `0`–`E` are timed and `F` is indefinite sustain),
-4 wave ($FF = hardware triangle, 0-7 = wavetable; v3), 5 taps bits 7-0,
+4 shared WAV/KIT selector (WAV: $FF = hardware triangle, 0–7 = wavetable;
+KIT: total bank 0–7, with invalid/legacy $FF normalized to 0 by current
+editors; v3), 5 taps bits 7-0,
 6 table, 7 pan, 8 fine, 9 taps bit 8, 10 seed bits 7-0,
 11 seed bits 11-8, 12 **SWP** (signed 1/16-semitone per tick; positive falls),
 13 **VIB** (speed/depth nibbles), 14 **TRM** (speed/depth nibbles; repeating

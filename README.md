@@ -76,10 +76,10 @@ and upstream PRs (libretro-handy EEPROM fix, cc65 `_UART_TIMER`).
 ## Download
 
 Grab the latest [release](https://github.com/little-scale/alynxdj/releases):
-the `.lnx` ROM, the patched macOS-arm64 libretro-Handy core used for
-verification, and a demo-song WAV rendered by the headless harness. The ROM
+the production `.lnx` ROM, portable factory sample-bank `.bin`, both standalone
+browser tools, and the Raspberry Pi Pico 1 USB-MIDI/ComLynx bridge UF2. The ROM
 has booted and run on a real Lynx; deterministic software/audio regressions
-still use the patched Handy core. Run the ROM in RetroArch or build below.
+use the repo's patched Handy core. Run the ROM in RetroArch or build below.
 
 ## Sample patcher
 
@@ -135,7 +135,7 @@ make          # → build/alynxdj.lnx
 make factory-samples # rebuild the tracked factory .bin from samples/**/*.wav
 make SAMPLE_BANK=/path/to/custom-samples.bin # inject one portable bank
 make shot     # headless run → build/shot.png + audio WAV capture
-make test     # sound/editor/EEPROM plus IRQ-backed ComLynx MIDI takeover
+make test     # ROM, sound, editor, HELP, save/viewer, samples, and MIDI/sync
 make pico     # companion RP2040 UF2; requires PICO_SDK_PATH + Arm toolchain
 ```
 

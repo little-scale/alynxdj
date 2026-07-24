@@ -1,7 +1,8 @@
 # ALYNXDJ manual
 
 A pocket groovebox for the Atari Lynx in the LSDJ tradition. If you know
-LSDJ or SMSGGDJ, you already know most of this.
+LSDJ or SMSGGDJ, you already know most of this. This manual describes
+ALYNXDJ v0.53.
 
 ## The idea
 
@@ -146,7 +147,7 @@ renderer temporarily reuses the now-idle sample-ring RAM.
 |---|---|
 | **INSTR** | patch currently viewed/edited, `00`–`1F`; Left/Right ±1, Up/Down ±16, wrapping. This does not rewrite the PHRASE row |
 | TYPE | LFSR / WAV / KIT |
-| VOL | LFSR/WAV envelope peak, `$00`–`$7F`; KIT displays only its coarse nibble: `6-`/`7-` full, `2-`–`5-` half, `1-` quarter, `0-` mute |
+| VOL | LFSR/WAV envelope peak, `$00`–`$7F`; KIT displays only its coarse nibble: `6-`/`7-` full, `2-`–`5-` half, `1-` quarter, `0-` mute. On KIT, Up/Down changes the coarse digit and Left/Right does nothing |
 | ATK | attack **time**, 0–F: 0 = instant, F ≈ 2 s (higher = slower) |
 | HOLD | peak hold: `0`–`E` timed ticks; `F` sustains until the next note, a `K` command, transport stop, or live MIDI Note Off |
 | DCY | decay **time**, 0–F: 0 = sustain until the next note, 1 = instant-ish, F ≈ 2 s |
@@ -155,14 +156,23 @@ renderer temporarily reuses the now-idle sample-ring RAM.
 | **VIB** | LFSR sine vibrato, packed speed·depth nibbles; speed 0–F ≈ 0.47–7.49 Hz. Depth uses SMSGGDJ's nonlinear response, from 1/16 semitone at `1` through 10/16 at `8` to 60/16 (±3.75 semitones) at `F`. Phase continues across notes and resets with transport |
 | **TRM** | LFSR repeating decay saw, packed speed·depth nibbles. Each cycle starts at the AHD level, ramps downward, then snaps back to the top like a repeating envelope |
 | **TAPS** | the raw 9-bit tap mask for the 12-bit LFSR — see below |
-| WAVE / KIT | WAV: wavetable 0–7 (`--` = hardware triangle); KIT: sample kit `00`–`07`, default `00` with no `--` state. This row is blank and inert for LFSR. |
+| WAVE / KIT | The shared BANK row is labelled by type. WAV selects wavetable 0–7 (`--` = hardware triangle); KIT selects sample bank `00`–`07`, defaults to `00`, and cannot show `--`. This row is blank and skipped for LFSR |
 | **SEED** | the shifter start state, $000–$FFF |
 | TABLE | macro table to run on every note (`--` = none) |
 | **TBS** | table speed: `0` advances one row per triggered note; `1` is one row per engine tick; `2`–`F` wait that many ticks per row |
 
-TSP clamps at the playable note limits rather than wrapping. SWP/VIB/TRM
-show `--` for WAV and KIT. KIT shows VOL but omits the unused AHD, TABLE,
-and TBS fields. With the transport stopped, tap
+The cursor visits only parameters used by the current type:
+
+| Type | Visible editable fields |
+|---|---|
+| **LFSR** | INSTR, TYPE, VOL, ATK, HOLD, DCY, TSP, SWP, VIB, TRM, TAPS, SEED, TABLE, TBS |
+| **WAV** | INSTR, TYPE, VOL, ATK, HOLD, DCY, TSP, WAVE, TABLE, TBS |
+| **KIT** | INSTR, TYPE, VOL, TSP, KIT |
+
+Omitted rows are blank and skipped completely; there are no invisible cursor
+stops. TSP clamps at the playable note limits rather than wrapping.
+Switching TYPE to KIT normalizes an unset BANK to `00`, and moving down/left
+from KIT `00` remains at `00`. With the transport stopped, tap
 physical **B** anywhere on INSTR to trigger the selected instrument at the
 last-entered note. This works even when OPTIONS → PRELIS is off and does not
 start the sequencer; A-held+B retains the separate phrase-loop transport.
@@ -226,7 +236,7 @@ the point.
   progressively coarser waveform resolution. Extreme top-octave notes can
   exceed that target after the 8-entry step is exhausted.
 - **KIT** streams samples from the cart through the channel DAC; the
-  note's semitone picks the kit slot (C=1, C#=2, …) and **BANK picks the
+  note's semitone picks the kit slot (C=1, C#=2, …) and **KIT picks the
   kit** — the cart ships all eight `samples/` folders (808, 909, C78,
   606, four speech banks) at full quality. VOL is a deliberately coarse,
   low-cost trigger gain: high nibble `6`–`7` plays the stored bytes unchanged,
