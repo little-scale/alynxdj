@@ -24,7 +24,7 @@ import numpy as np
 
 PCM_RATE = 7812.5
 SLOT_CAP = 65535            # u16 directory length; ~8.39 s at PCM_RATE
-POOL_CAPACITY = (254 - 45) * 1024
+POOL_CAPACITY = (250 - 45) * 1024
 TRIM_DB = -48.0
 
 

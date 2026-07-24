@@ -26,30 +26,34 @@ as a multi-drop sync bus.
 
 ## Status
 
-**V0.51 — hardware timing, MIDI, and portable sample banks** (runs on a real
+**V0.52 — on-console help, playback headroom, and editor polish** (runs on a real
 Atari Lynx),
 feature-complete against the design brief with an editor/UX pass on top
 (see [CHANGELOG.md](CHANGELOG.md) for what changed, [PLAN.md](PLAN.md) for
 the milestone table, [DESIGN.md](DESIGN.md) for the design contract and
 decision log):
 
-- Full SONG → CHAIN → PHRASE hierarchy, **all ten screens** + map
-  indicator + channel meters; engine tick in the VBlank IRQ (tempo is
-  render-independent)
+- Full SONG → CHAIN → PHRASE hierarchy, **all eleven screens** + map,
+  including a nine-page on-console HELP reference above TABLE and a
+  selected-track TABLE play indicator; engine tick in the VBlank IRQ
+  (tempo is render-independent)
 - All four voice types, with the **12-bit LFSR fully exposed** (raw taps
   + seed per instrument), per-instrument TSP, TONE/NOISE SWP/free-running
   sine-VIB/repeating-decay TRM
   modulation, and 32-byte wavetables; everything verified by
   FFT / cross-correlation in the headless harness
-- **22 sequencer commands** (incl. slow `G` LFSR-tap glide and signed `B`
-  taps offset), selected alphabetically in PHRASE and TABLE; per-instrument
+- **22 sequencer commands** (incl. slow `G` LFSR-tap glide and cumulative
+  signed `B` taps automation), selected alphabetically in PHRASE and TABLE;
+  in-page instrument selection, row-safe TABLE command deletion, per-instrument
   TBS table clocks, one global groove, block select/cut/paste,
   clipboard, mute/solo, LIVE clip-launcher mode
 - **Cart-streamed portable sample bank**: all eight `samples/` kits at full
   quality (808/909/C78/606 + four speech banks), kit-per-instrument. The
   factory bank is one reusable `.bin`, and custom banks carry between releases.
   KIT and table-WAV playback can target **any of the four tracks**; two
-  timer-fed DAC voices may run concurrently, and a third steals the oldest
+  timer-fed DAC voices may run concurrently, and a third steals the oldest.
+  Full screen redraws cooperatively service their cart rings, so navigation
+  cannot hold sample starts or refills behind a complete framebuffer paint
 - Packed save + machine config in the cart's 93C86 EEPROM with valid-save
   autoload, a clean no-save boot, and an explicit FILES demo loader
   ([SAVEFORMAT.md](SAVEFORMAT.md)); **two-unit ComLynx sync** verified in
@@ -85,7 +89,7 @@ drag non-destructive IN/OUT points over each waveform to trim it,
 import/export a complete portable sample-bank `.bin`, and save a new `.lnx`
 image. Processing affects browser audition, bank export, and the patched
 7.8125 kHz signed 8-bit PCM; no files are uploaded. Each slot can be up to
-65,535 bytes (~8.39 seconds), while the complete bank has 214,016 bytes.
+65,535 bytes (~8.39 seconds), while the complete bank has 209,920 bytes.
 
 ## Song file viewer
 
@@ -125,18 +129,16 @@ python3 -m pip install -r requirements.txt
 make          # → build/alynxdj.lnx
 make factory-samples # rebuild the tracked factory .bin from samples/**/*.wav
 make SAMPLE_BANK=/path/to/custom-samples.bin # inject one portable bank
-make meter-test # hardware A/B ROM → build/alynxdj-no-meters.lnx
-make sample-timing-test # no meter redraw or DAC peak tracking → ...no-meters-no-peaks.lnx
 make shot     # headless run → build/shot.png + audio WAV capture
 make test     # sound/editor/EEPROM plus IRQ-backed ComLynx MIDI takeover
 make pico     # companion RP2040 UF2; requires PICO_SDK_PATH + Arm toolchain
 ```
 
-The standard image remains 256 KB: it already provides about 209 KB for
-sample-bank data after moving the MIDI helper to the final two cart blocks.
+The standard image remains 256 KB: it provides 209,920 bytes for sample-bank
+data, followed by the protected HELP and MIDI blocks.
 Although Lynx carts can be 512 KB, that size uses 2 KB cart blocks instead of
 the current 1 KB layout, so it is an addressing migration rather than a simple
-size flag. It is deferred until real banks outgrow the current 214,016-byte cap.
+size flag. It is deferred until real banks outgrow the current 209,920-byte cap.
 
 Regression captures are isolated under `build/tests/<suite>/` and each suite
 replaces its previous run, so the top-level `build/` directory remains limited
@@ -155,6 +157,9 @@ scripting, and toolchain gotchas.
 
 - **D-pad** move cursor · **B** edit/insert
 - **A held + d-pad** screen map · **A held + B** play/stop
+- **A held + Up from TABLE** HELP · plain d-pad turns pages · **A+Down** returns
+- **Option 1 tap** restart all four tracks from the selected
+  SONG/CHAIN/PHRASE context
 - **B held + d-pad** edit value · **B held + A** cut · **B double-tap** paste,
   mint the next blank/unreferenced object on an empty SONG/CHAIN cell, or
   slim-clone an occupied one

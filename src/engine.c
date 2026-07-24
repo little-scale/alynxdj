@@ -23,6 +23,8 @@
 #define AUD_ENABLE_RELOAD 0x08
 #define AUD_INTEGRATE     0x20
 #define AUD_TAP7          0x80          /* control bit 7 enables LFSR tap 7 */
+#define TAP_DIRTY         0x01
+#define TAP_ACCUM         0x80          /* nonzero B owns live taps across notes */
 
 /* the flat song block lives in HIRAM ($C900, SONG segment) — MAIN is full */
 #pragma bss-name (push, "SONG")
@@ -63,7 +65,7 @@ struct voice {
     unsigned char sh_shiftlo, sh_shifthi;   /* LFSR seed (OTHER hi nibble) */
     unsigned char dac_slot;     /* 0/1 for KIT or table-WAV, $FF otherwise */
     unsigned char dirty, retime;
-    unsigned char fb_dirty;     /* G: feedback changed live (no reseed) */
+    unsigned char fb_dirty;     /* bit0 publish FEEDBACK; bit7 B accumulator */
 };
 
 void __fastcall__ reset_instr_taps(struct voice *v);
@@ -77,12 +79,9 @@ struct voice voices[NCH];              /* assembly G clock shares this array */
 #pragma bss-name (push, "MIRRORRAM")
 static unsigned char play_cnt[NPHRASES];
 #pragma bss-name (pop)
-/* The 16-byte EEPROM-buffer tail is also free (the payload ends at $C8EF). */
-#pragma bss-name (push, "TAILRAM")
 static unsigned char dac_owner[NDAC];      /* slot -> logical/physical track */
 static unsigned dac_stamp[NDAC];           /* oldest-voice stealing (D6) */
 static unsigned dac_clock;
-#pragma bss-name (pop)
 
 /* ATK/DCY nibble -> per-tick level step. Time-semantic: higher nibble =
  * longer stage (~ticks: -,1,2,3,4,5,6,8,11,16,21,26,32,43,64,127 =
@@ -91,7 +90,6 @@ const unsigned char env_rate[16] = {
     0, 127, 64, 43, 32, 26, 22, 16, 12, 8, 6, 5, 4, 3, 2, 1,
 };
 
-unsigned char eng_level[NCH];   /* live per-track levels (meters) */
 unsigned char live_q[NCH];      /* LIVE: queued chain, $FF none, $FE stop */
 static unsigned char live_bar;  /* global 16-row bar counter (LIVE grid) */
 #define eng_playing (eng_mode)
@@ -112,16 +110,16 @@ static unsigned char row_ticks;         /* this row's length (W overrides) */
 static unsigned char tap_wait[NCH];      /* independent signed G countdowns */
 #pragma bss-name (pop)
 
+#pragma rodata-name (push, "HICODE2")
 static volatile struct _mikey_audio *const CHAN[NCH] = {
     &MIKEY.channel_a, &MIKEY.channel_b, &MIKEY.channel_c, &MIKEY.channel_d,
 };
+#pragma rodata-name (pop)
 #pragma rodata-name (push, "HICODE1")
 static const unsigned char track_bit[NCH] = { 1, 2, 4, 8 };
 #pragma rodata-name (pop)
 
 /* --- symmetric DAC ownership (D1/D5/D6) --- */
-
-#pragma code-name (push, "HICODE2")
 
 static void dac_release(unsigned char ch)
 {
@@ -140,9 +138,10 @@ static void dac_release(unsigned char ch)
 }
 
 /* Reuse this track's slot, take a free one, or steal the oldest. */
+#pragma code-name (push, "HICODE2")
 static unsigned char dac_acquire(unsigned char ch)
 {
-    unsigned char slot, old;
+    unsigned char slot, old, keep_streaming;
 
     /* A completed one-shot no longer consumes the two-voice budget.  A
      * deferred trigger reserves its slot by setting DAC_SAMPLE, so it is
@@ -165,14 +164,21 @@ static unsigned char dac_acquire(unsigned char ch)
         slot = (dac_stamp[0] <= dac_stamp[1]) ? 0 : 1;
 
     old = dac_owner[slot];
+    keep_streaming = (old == ch && dac_mode[slot] == DAC_SAMPLE);
     if (old < NCH && old != ch) {
         voices[old].dac_slot = EMPTY;
         voices[old].env_phase = 0;
         voices[old].env_level = 0;
         voices[old].dirty = 0;
     }
-    dac_stop(slot);
-    pool_cancel(slot);
+    /* A same-track KIT retrigger is prepared by the foreground cart pump.
+     * Keep the old one-shot sounding until its replacement has been read;
+     * otherwise any long screen paint turns the trigger into audible
+     * silence even though the VBlank sequencer itself stayed on time. */
+    if (!keep_streaming) {
+        dac_stop(slot);
+        pool_cancel(slot);
+    }
     dac_owner[slot] = ch;
     voices[ch].dac_slot = slot;
     if (++dac_clock == 0) {
@@ -297,7 +303,7 @@ void __fastcall__ live_taps(struct voice *v)
         v->sh_ctl |= AUD_TAP7;
     else
         v->sh_ctl &= ~AUD_TAP7;
-    v->fb_dirty = 1;
+    v->fb_dirty |= TAP_DIRTY;
     v->dirty = 1;
 }
 
@@ -325,6 +331,7 @@ static void exec_cmd(unsigned char ch, unsigned char cmd, unsigned char param)
         break;
     case CMD_G:                   /* signed tick/row period for one tap step */
         v->tap_rate = (signed char)param;
+        v->fb_dirty &= TAP_DIRTY;       /* G replaces accumulated B state */
         /* Magnitudes 1..7 are tick periods.  Magnitude 8 starts the row
          * range at one row, so store its normalized signed countdown here:
          * +8 -> +1 and -8 -> -1.  The raw byte remains in tap_rate for mode
@@ -338,10 +345,16 @@ static void exec_cmd(unsigned char ch, unsigned char cmd, unsigned char param)
             tap_wait[ch] = param;
         reset_instr_taps(v);          /* restart from patch without reseed */
         break;
-    case CMD_B:                     /* signed static offset from live taps */
-        if (v->type <= IT_NOISE && v->env_phase) {
-            v->tap_cur = (v->tap_cur + (signed char)param) & 0x1FF;
-            live_taps(v);
+    case CMD_B:                        /* cumulative signed taps accumulator */
+        if (v->type <= IT_NOISE) {
+            if (param) {
+                v->fb_dirty |= TAP_ACCUM;
+                v->tap_cur = (v->tap_cur + (signed char)param) & 0x1FF;
+                live_taps(v);
+            } else {
+                v->fb_dirty &= TAP_DIRTY;
+                reset_instr_taps(v);   /* B00 = patch TAPS, accumulator off */
+            }
         }
         break;
     case CMD_K:
@@ -406,7 +419,7 @@ static void exec_cmd(unsigned char ch, unsigned char cmd, unsigned char param)
                 sd.grooves[eng_groove][i] = 0;
         }
         break;
-    /* CMD_H (table loop / phrase end), CMD_D and CMD_Z live in the peek */
+    /* CMD_H (table loop / phrase pre-hop), CMD_D and CMD_Z live in the peek */
     }
 }
 
@@ -577,7 +590,8 @@ static void trigger(unsigned char ch, unsigned char note, unsigned char inum)
         if (!lo && !(in->taps_hi & 1))
             lo = TAPS_SQUARE;
         v->sh_ctl = 0;
-        if (!v->tap_rate)               /* active G owns the track's taps */
+        if (!v->tap_rate && !(v->fb_dirty & TAP_ACCUM))
+            /* active G or accumulated B owns the track's live taps */
             v->tap_cur = lo | ((in->taps_hi & 0x01) << 8);
         live_taps(v);
         v->retime = 1;
@@ -671,7 +685,7 @@ static void flush(unsigned char ch)
     }
     if (v->retime) {
         v->retime = 0;
-        v->fb_dirty = 0;                /* full reprogram writes feedback */
+        v->fb_dirty &= TAP_ACCUM;       /* full reprogram writes feedback */
         h->control = 0;                 /* full reprogram (trigger/clock) */
         h->feedback = v->sh_feedback;
         h->dac = 0;
@@ -686,8 +700,8 @@ static void flush(unsigned char ch)
     }
     /* running update: never restart the phase. G sweep writes FEEDBACK
      * live (taps change without touching the shift register = no reseed) */
-    if (v->fb_dirty) {
-        v->fb_dirty = 0;
+    if (v->fb_dirty & TAP_DIRTY) {
+        v->fb_dirty &= TAP_ACCUM;
         h->feedback = v->sh_feedback;
         h->control = v->sh_ctl;         /* G/B may also cross user tap bit 6 */
     }
@@ -714,33 +728,34 @@ void __fastcall__ engine_set_mute(unsigned char mask)
 }
 #pragma code-name (pop)
 
-/* --- walkers (M5, unchanged) --- */
+/* --- walkers --- */
+
+static void walk_chain_pos(struct walk *w, unsigned char pos)
+{
+    struct chainstep *s = &sd.chains[w->chain][pos];
+
+    w->cpos = pos;
+    w->phrase = s->phrase;
+    w->tsp = s->tsp;
+}
 
 static void walk_load_song(unsigned char ch, unsigned char row)
 {
     struct walk *w = &eng_walk[ch];
-    unsigned char tries = 0;
+    unsigned char cn;
 
     w->active = 0;
-    while (tries++ < 2) {
-        for (; row < SONG_ROWS; ++row) {
-            unsigned char cn = sd.song[row][ch];
-            if (cn != EMPTY && cn < NCHAINS
-                && sd.chains[cn][0].phrase != EMPTY) {
-                w->song_row = row;
-                w->chain = cn;
-                w->cpos = 0;
-                w->phrase = sd.chains[cn][0].phrase;
-                w->tsp = sd.chains[cn][0].tsp;
-                w->prow = 0;
-                w->active = 1;
-                return;
-            }
-            if (cn == EMPTY)
-                break;
-        }
-        row = 0;
-    }
+    if (row >= SONG_ROWS)
+        return;
+    cn = sd.song[row][ch];
+    if (cn == EMPTY || cn >= NCHAINS
+        || sd.chains[cn][0].phrase == EMPTY)
+        return;
+    w->song_row = row;
+    w->chain = cn;
+    walk_chain_pos(w, 0);
+    w->prow = 0;
+    w->active = 1;
 }
 
 static void walk_advance(unsigned char ch)
@@ -765,33 +780,43 @@ static void walk_advance(unsigned char ch)
             return;
         }
         w->chain = q;
-        w->cpos = 0;
-        w->phrase = sd.chains[q][0].phrase;
-        w->tsp = sd.chains[q][0].tsp;
+        walk_chain_pos(w, 0);
         return;
     }
     ++w->cpos;
     if (w->cpos < PHRASE_ROWS && sd.chains[w->chain][w->cpos].phrase != EMPTY) {
-        w->phrase = sd.chains[w->chain][w->cpos].phrase;
-        w->tsp = sd.chains[w->chain][w->cpos].tsp;
+        walk_chain_pos(w, w->cpos);
         return;
     }
     if (eng_mode == MODE_CHAIN || eng_mode == MODE_LIVE) {
-        w->cpos = 0;
-        w->phrase = sd.chains[w->chain][0].phrase;
-        w->tsp = sd.chains[w->chain][0].tsp;
+        walk_chain_pos(w, 0);
         return;
     }
-    walk_load_song(ch, w->song_row + 1);
-}
+    {
+        unsigned char top = w->song_row;
+        unsigned char next = top + 1;
 
+        /* Arrangement groups are delimited by an empty SONG cell.  Advance
+         * only inside this track's current contiguous group; at its bottom,
+         * rewind to that group's own top rather than the first song group. */
+        if (next < SONG_ROWS && sd.song[next][ch] != EMPTY) {
+            walk_load_song(ch, next);
+            return;
+        }
+        while (top && sd.song[top - 1][ch] != EMPTY)
+            --top;
+        walk_load_song(ch, top);
+    }
+}
 /* 16-bit Galois LFSR, taps $B400 (the sibling's Z roll) */
 static unsigned prng;
+#pragma code-name (push, "HICODE1")
 static unsigned char rand8(void)
 {
     prng = (prng >> 1) ^ ((prng & 1) ? 0xB400 : 0);
     return (unsigned char)prng;
 }
+#pragma code-name (pop)
 
 /* row start for one track: peek (D delay, Z roll, L capture, phrase H),
  * trigger, phrase command */
@@ -806,6 +831,14 @@ static void row_start(unsigned char ch)
     if (!w->active)
         return;
     s = &sd.phrases[w->phrase][w->prow];
+    if (s->cmd == CMD_H) {
+        /* H is a pre-row branch: never trigger the marker row itself. */
+        ++play_cnt[w->phrase];
+        w->prow = s->param & 0x0F;
+        s = &sd.phrases[w->phrase][w->prow];
+    }
+    if (s->cmd == CMD_H)                 /* chained/cyclic H stays silent */
+        return;
     if (w->prow == PHRASE_ROWS - 1)             /* last row: this pass is
                                                    done — count it (I/J) */
         ++play_cnt[w->phrase];
@@ -844,10 +877,8 @@ static void row_start(unsigned char ch)
         /* glide in from wherever the voice just was */
         v->slide_off = prev_pitch - (int)v->base_note * 16;
         v->slide_rate = s->param ? s->param : 1;
-    } else if (s->cmd == CMD_H) {
-        w->prow = PHRASE_ROWS - 1;              /* phrase ends after this row */
-    } else if (s->cmd && s->cmd != CMD_D && s->cmd != CMD_Z
-               && s->cmd != CMD_I && s->cmd != CMD_J)
+    } else if (s->cmd && s->cmd != CMD_D && s->cmd != CMD_H
+               && s->cmd != CMD_Z && s->cmd != CMD_I && s->cmd != CMD_J)
         exec_cmd(ch, s->cmd, s->param);
 }
 
@@ -870,7 +901,7 @@ static void stop_nolock(void)
         voices[ch].env_phase = 0;
         voices[ch].env_level = 0;
         voices[ch].dac_slot = EMPTY;
-        voices[ch].dirty = 0;
+        voices[ch].dirty = voices[ch].fb_dirty = 0;
         voices[ch].dly_in = EMPTY;
         voices[ch].vib_phase = 0;       /* deterministic transport-start LFO */
         eng_walk[ch].active = 0;
@@ -893,6 +924,7 @@ static void play_common(void)
     MIRROR_DAC_S_SLOT = EMPTY;
     MIRROR_DAC_S_RATE = 0;
     MIRROR_TRIG0 = MIRROR_TRIG1 = 0;
+    dac_started[0] = dac_started[1] = 0;
     prng ^= frames;                     /* Z roll: seed from play-start time */
     prng |= 1;                          /* never the LFSR zero state */
 }
@@ -907,17 +939,36 @@ void engine_stop(void)
     __asm__("cli");
 }
 
-void engine_play_song(unsigned char row)
+void engine_play_context(unsigned char row, unsigned char cpos,
+                         unsigned char prow)
 {
     unsigned char ch;
+
     __asm__("sei");
     stop_nolock();
-    for (ch = 0; ch < NCH; ++ch)
-        walk_load_song(ch, row);
     play_common();
+    for (ch = 0; ch < NCH; ++ch) {
+        struct walk *w = &eng_walk[ch];
+        unsigned char pos;
+
+        walk_load_song(ch, row);
+        if (!w->active)
+            continue;
+        pos = cpos;
+        if (pos >= PHRASE_ROWS
+            || sd.chains[w->chain][pos].phrase == EMPTY)
+            pos = 0;
+        walk_chain_pos(w, pos);
+        w->prow = prow & 0x0F;
+    }
     eng_mode = MODE_SONG;
     sync_tx(SYNC_OP_START);
     __asm__("cli");
+}
+
+void engine_play_song(unsigned char row)
+{
+    engine_play_context(row, 0, 0);
 }
 #pragma code-name (pop)
 
@@ -1079,12 +1130,6 @@ void engine_init(void)
 void engine_tick(void)
 {
     unsigned char ch;
-#ifndef ALYNXDJ_NO_DAC_PEAKS
-    /* snapshot + clear the IRQ DAC peaks for KIT/WAV meters (this frame) */
-    unsigned char dac_lvl0 = dac_peak[0], dac_lvl1 = dac_peak[1];
-    dac_peak[0] = 0;
-    dac_peak[1] = 0;
-#endif
 
     /* Sync slaves arm at the selected row.  The first external pulse starts
      * that row; later pulses advance before starting the next one. */
@@ -1215,20 +1260,6 @@ void engine_tick(void)
             dac_release(ch);
         }
         flush(ch);
-#ifndef ALYNXDJ_NO_DAC_PEAKS
-        /* meter source: TONE/NOISE use the envelope (it scales VOLUME);
-         * KIT/WAV play the DAC full-amplitude, so use the real DAC peak */
-        {
-            unsigned char lvl;
-            if (v->dac_slot == 0)
-                lvl = dac_lvl0;
-            else if (v->dac_slot == 1)
-                lvl = dac_lvl1;
-            else
-                lvl = tone_level(v);
-            eng_level[ch] = (eng_mute & track_bit[ch]) ? 0 : lvl;
-        }
-#endif
     }
 
     if (!eng_playing)

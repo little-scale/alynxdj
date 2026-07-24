@@ -12,6 +12,7 @@
 
 #include "tracker.h"
 #include "../build/notes.h"
+#include "../build/help.h"
 
 /* debug mirrors for the headless harness */
 #define MIRROR_ROW    (*(volatile unsigned char *)0xC001)
@@ -29,6 +30,7 @@
 #define SCR_WAVE   7
 #define SCR_PROJ   8
 #define SCR_OPTS   9
+#define SCR_HELP  10
 
 /* command letters, indexed by CMD_* id */
 static const char cmd_chars[NCMDS] = {
@@ -63,6 +65,7 @@ static unsigned char cmd_prev(unsigned char c)
 #pragma code-name (pop)
 
 #define GRID_TOP 1
+#define BODY_X_OFFSET 8
 
 static unsigned char screen;
 static unsigned char cur_track;         /* set by the SONG cursor column */
@@ -144,23 +147,19 @@ static unsigned char tap_was_empty;
 static unsigned char last_note = 37;    /* C-4 */
 static unsigned char last_chain = 0;
 static unsigned char last_phrase = 0;
-/* TAILRAM is not zeroed by crt0.  editor_init() initializes this latch. */
-#pragma bss-name (push, "TAILRAM")
 static unsigned char last_instr;        /* last explicitly edited PHRASE instr */
-#pragma bss-name (pop)
-
-/* channel activity meters (right column): cached bar heights */
-static unsigned char meter_h[NCH] = {0xFF, 0xFF, 0xFF, 0xFF};
+static unsigned char live_q_row[NCH];   /* SONG row that armed each LIVE queue */
 
 /* playhead bookkeeping: what's currently accented, per screen */
 static unsigned char ph_song[NCH];      /* drawn song row per track, $FF none */
-static unsigned char ph_row = 0xFF;     /* CHAIN/PHRASE drawn row */
+static unsigned char ph_row = 0xFF;     /* CHAIN/PHRASE/TABLE drawn row */
 
 /* key repeat */
 #define DAS_DELAY 12
 #define DAS_RATE   2
 static unsigned char rep_dir, rep_timer;
 static unsigned char a_used, b_used;
+static unsigned char o1_used;
 
 /* ---------------- drawing ---------------- */
 
@@ -234,22 +233,19 @@ static void transport_label(void)
 #pragma code-name (pop)
 
 /* Screen-map indicator (right column, ported from SMSGGDJ): the middle row
- * is the shipped SONG-CHAIN-PHRASE-INSTR-TABLE strip (current = inverted);
- * the rows above/below are the planned screens, drawn dim until they
- * exist — OPTIONS/PROJECT above SONG/CHAIN, WAVE above INSTR (SMSGGDJ
- * layout), GROOVE below. Column positions follow the 2D map (DESIGN.md
- * §4) so vertical B-nav can land here later. */
+ * is SONG-CHAIN-PHRASE-INSTR-TABLE (current = inverted), with
+ * OPTIONS/PROJECT/WAVE/HELP above and FILES/GROOVE below. HELP hides the map
+ * after entry so its body can use all 38 text columns. */
 #define MAP_X 30
 #define MAP_Y (GRID_TOP + 1)
-#define METER_H     16              /* channel meter height in cells */
-#define METER_BOT   (MAP_Y + 14)    /* baseline row 16 (bars grow upward) */
-#define METER_X(t)  (40 - NCH + (t))        /* 4 bars against the right edge */
 static void draw_map(void)
 {
-    static const char rows[3][6] = { "OP W ", "SCPIT", "FG   " };
+    static const char rows[3][6] = { "OP WH", "SCPIT", "FG   " };
     unsigned char r, c;
+    unsigned char old_offset = draw_x_offset;
     char b[2];
 
+    draw_x_offset = 0;                  /* fixed chrome; only bodies move */
     b[1] = 0;
     for (r = 0; r < 3; ++r)
         for (c = 0; c < 5; ++c) {
@@ -259,13 +255,15 @@ static void draw_map(void)
                 || (r == 0 && c == 3 && screen == SCR_WAVE)
                 || (r == 0 && c == 0 && screen == SCR_OPTS)
                 || (r == 0 && c == 1 && screen == SCR_PROJ);
-            unsigned char shipped = (r == 1) || (r == 2 && c <= 1)
-                || (r == 0 && c <= 1) || (r == 0 && c == 3);
             b[0] = rows[r][c];
-            draw_text(MAP_X + c, MAP_Y + r, b,
-                      cur ? PEN_BG : (shipped ? PEN_TEXT : PEN_DIM),
-                      cur ? PEN_ACCENT : PEN_BG);
+            {
+                unsigned char shipped = b[0] != ' ';
+                draw_text(MAP_X + c, MAP_Y + r, b,
+                          cur ? PEN_BG : (shipped ? PEN_TEXT : PEN_DIM),
+                          cur ? PEN_ACCENT : PEN_BG);
+            }
         }
+    draw_x_offset = old_offset;
 }
 
 /* --- SONG screen: 16-row page of the 128-row song, 4 track columns --- */
@@ -293,16 +291,21 @@ static void draw_song_row(unsigned char vr, unsigned char cursor_here)
         unsigned char inv = cursor_here && c == s_col;
         unsigned char fg = inv ? PEN_BG : PEN_TEXT;
         unsigned char bg = inv ? PEN_TEXT : PEN_BG;
+        unsigned char queued = live_mode && live_q[c] != EMPTY
+                               && live_q_row[c] == row;
         cn = sd.song[row][c];
         if (ph_song[c] == row && !inv) {
             fg = PEN_ACCENT;
         }
-        if (live_mode && eng_mode == MODE_LIVE && live_q[c] != EMPTY
-            && sd.song[row][c] == live_q[c] && !inv) {
+        if (queued) {
             fg = PEN_BG;                /* queued clip: inverted accent */
             bg = PEN_ACCENT;
         }
-        if (cn == EMPTY)
+        if (queued && live_q[c] == 0xFE)
+            draw_text(SONG_COLX(c), y, "ST", fg, bg);
+        else if (queued)
+            draw_hex8(SONG_COLX(c), y, live_q[c], fg, bg);
+        else if (cn == EMPTY)
             draw_text(SONG_COLX(c), y, "--", inv ? fg : PEN_DIM, bg);
         else
             draw_hex8(SONG_COLX(c), y, cn, fg, bg);
@@ -392,7 +395,7 @@ static void draw_phrase_screen(void)
 
 /* --- INSTR screen: field rows --- */
 
-#define NIFIELDS 14
+#define NIFIELDS 15
 #define IF_TSP   5
 #define IF_SWP   6
 #define IF_VIB   7
@@ -402,16 +405,22 @@ static void draw_phrase_screen(void)
 #define IF_WAVE  11
 #define IF_TABLE 12
 #define IF_TBS   13
+#define IF_INST  14
 static const char *const ifield_name[NIFIELDS] = {
     "TYPE", "VOL", "ATK", "HOLD", "DCY", "TSP", "SWP", "VIB",
-    "TRM", "TAPS", "SEED", "BANK", "TABLE", "TBS",
+    "TRM", "TAPS", "SEED", "BANK", "TABLE", "TBS", "INSTR",
 };
-/* display grid row per field (absolute): blank rows group TYPE / envelope /
- * modulation / routing, and one blank below the title */
+/* INSTR is field 14 to preserve the established field IDs, but draws above
+ * TYPE.  Up from TYPE and Down from INSTR therefore form the visual wrap. */
 static const unsigned char ifield_y[NIFIELDS] = {
-    2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+    2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 1,
 };
-static const char *const itype_name[4] = { "TONE", "NOISE", "WAV", "KIT" };
+#pragma rodata-name (push, "HICODE1")
+static const char itype_wav[] = "WAV";
+#pragma rodata-name (pop)
+static const char *const itype_name[4] = {
+    "TONE", "NOISE", itype_wav, "KIT"
+};
 
 #pragma code-name (push, "HICODE3")
 static unsigned char ifield_nib(unsigned char f)
@@ -463,6 +472,9 @@ static void draw_instr_row(unsigned char r, unsigned char cursor_here)
     } else
         draw_text(1, y, ifield_name[r], PEN_DIM, PEN_BG);
     switch (r) {
+    case IF_INST:
+        draw_hex8(8, y, edit_instr, fg, bg);
+        break;
     case 0:
         draw_text(8, y, "     ", PEN_BG, PEN_BG);
         draw_text(8, y, itype_name[sd.instrs[edit_instr].type & 3], fg, bg);
@@ -473,7 +485,7 @@ static void draw_instr_row(unsigned char r, unsigned char cursor_here)
         v = instr_taps(edit_instr);
         draw_hex8(8, y, (unsigned char)(v >> 8), fg, bg);
         draw_hex8(10, y, (unsigned char)v, fg, bg);
-        /* Nine meter-style blocks, in user tap order: 0-5, 7, 10, 11. */
+        /* Nine solid blocks, in user tap order: 0-5, 7, 10, 11. */
         b[1] = 0;
         for (i = 0; i < 9; ++i) {
             b[0] = '`';
@@ -542,7 +554,7 @@ static void draw_table_row(unsigned char r, unsigned char cursor_here)
     unsigned char i;
     char b[2];
 
-    draw_hex8(1, y, r, PEN_DIM, PEN_BG);
+    draw_hex8(1, y, r, r == ph_row ? PEN_ACCENT : PEN_DIM, PEN_BG);
     for (i = 0; i < 4; ++i) {
         unsigned char inv = cursor_here && t_col == i;
         unsigned char fg = inv ? PEN_BG : PEN_TEXT;
@@ -605,6 +617,7 @@ static void draw_files_status(void)
 
 /* PURGE: drop chains no song row references, then phrases no remaining
  * chain references (rig rows included in the scan, so they survive) */
+#pragma code-name (push, "HELPCODE")
 static void purge(void)
 {
     unsigned char used[NPHRASES];
@@ -633,6 +646,7 @@ static void purge(void)
             memset(sd.phrases[c], 0, sizeof(sd.phrases[0]));
     __asm__("cli");
 }
+#pragma code-name (pop)
 
 static void draw_files_row(unsigned char r, unsigned char cursor_here)
 {
@@ -651,7 +665,6 @@ static void draw_files_row(unsigned char r, unsigned char cursor_here)
         draw_text(1, y, label[r], fg, bg);
 }
 
-#pragma code-name (push, "HICODE1")
 static void draw_files_screen(void)
 {
     unsigned char r;
@@ -660,7 +673,6 @@ static void draw_files_screen(void)
         draw_files_row(r, r == f_row);
     draw_files_status();
 }
-#pragma code-name (pop)
 
 /* --- GROOVE screen: 16 tick-count rows (0 = end marker) --- */
 
@@ -698,7 +710,7 @@ static void draw_wave_col(unsigned char c, unsigned char cursor_here)
     b[1] = 0;
     for (r = 0; r < 16; ++r) {
         unsigned char filled = (15 - r) < h || ((15 - r) == 0 && h == 0);
-        b[0] = filled ? '`' : ' ';       /* solid block (same as meters) */
+        b[0] = filled ? '`' : ' ';       /* solid block glyph */
         draw_text(1 + c, GRID_TOP + r, b,      /* edited col brightest, rest mid */
                   cursor_here ? PEN_ACCENT : PEN_DIM, PEN_BG);
     }
@@ -747,6 +759,7 @@ static unsigned char count_free_chains(void)
                 break;
         if (s == PHRASE_ROWS)
             ++n;
+        pool_pump();
     }
     return n;
 }
@@ -760,6 +773,7 @@ static unsigned char count_free_phrases(void)
                 break;
         if (s == PHRASE_ROWS)
             ++n;
+        pool_pump();
     }
     return n;
 }
@@ -786,7 +800,7 @@ static void draw_proj_row(unsigned char r, unsigned char cursor_here)
     }
 }
 
-#pragma code-name (push, "HICODE1")
+#pragma code-name (push, "MIDICODE")
 static void draw_proj_screen(void)
 {
     draw_proj_row(0, pj_row == 0);
@@ -852,19 +866,11 @@ static void draw_row(unsigned char r, unsigned char cursor_here)
 
 static void draw_screen(void)
 {
+    /* HELP owns its full-width renderer; WAVE is the only full-width screen
+     * dispatched here.  All other editor bodies use the meter-free space. */
+    draw_x_offset = (screen == SCR_WAVE) ? 0 : BODY_X_OFFSET;
     clear_grid();
     top_bar();
-#ifdef ALYNXDJ_NO_METERS
-#ifdef ALYNXDJ_NO_DAC_PEAKS
-    /* IRQ/engine peak-free sample-timing diagnostic.  The following byte is
-     * a live total of held-sample IRQs, so hardware starvation is visible. */
-    draw_text(14, 0, "NP", PEN_ACCENT, PEN_BG);
-    draw_hex8(16, 0, dac_underrun[0] + dac_underrun[1], PEN_ACCENT, PEN_BG);
-#else
-    /* Redraw-only hardware A/B diagnostic. */
-    draw_text(14, 0, "NM", PEN_ACCENT, PEN_BG);
-#endif
-#endif
     transport_label();
     switch (screen) {
     case SCR_SONG:   draw_song_screen(); break;
@@ -879,7 +885,6 @@ static void draw_screen(void)
     case SCR_OPTS:   draw_opts_screen(); break;
     }
     draw_map();
-    meter_h[0] = meter_h[1] = meter_h[2] = meter_h[3] = 0xFF;
     MIRROR_SCREEN = screen;
 }
 
@@ -1112,6 +1117,23 @@ audition_row:
     }
 }
 
+#pragma code-name (push, "MIDICODE")
+static unsigned char table_previous_cmd(unsigned char row,
+                                        unsigned char *param)
+{
+    unsigned char r = row;
+
+    do {
+        r = r ? r - 1 : PHRASE_ROWS - 1;
+        if (sd.tables[edit_table][r].cmd) {
+            *param = sd.tables[edit_table][r].param;
+            return sd.tables[edit_table][r].cmd;
+        }
+    } while (r != row);
+    return CMD_NONE;
+}
+#pragma code-name (pop)
+
 static void edit_table_cell(unsigned char dir)
 {
     struct tablerow *tr = &sd.tables[edit_table][t_row];
@@ -1134,6 +1156,11 @@ static void edit_table_cell(unsigned char dir)
         }
         break;
     case 2:
+        if (!tr->cmd) {
+            tr->cmd = table_previous_cmd(t_row, &tr->param);
+            if (tr->cmd)
+                break;                  /* first edit repeats cmd + value */
+        }
         switch (dir) {
         case 0: case 3: tr->cmd = cmd_next(tr->cmd); break;
         case 1: case 2: tr->cmd = cmd_prev(tr->cmd); break;
@@ -1192,6 +1219,13 @@ static void edit_instr_cell(unsigned char dir)
     unsigned t;
 
     switch (i_row) {
+    case IF_INST:
+        if (dir == 0 || dir == 3)
+            edit_instr = (edit_instr + (dir == 0 ? 16 : 1)) & (NINSTR - 1);
+        else
+            edit_instr = (edit_instr - (dir == 1 ? 16 : 1)) & (NINSTR - 1);
+        draw_screen();                  /* every displayed value just changed */
+        break;
     case IF_TSP:
         if (dir == 0) in->tsp += 12;
         else if (dir == 1) in->tsp -= 12;
@@ -1398,6 +1432,7 @@ static void insert_cell(void)
             f_status = ST_OK;
             break;
         case 4:
+            help_overlay_load();       /* PURGE shares stopped HELP overlay */
             purge();
             f_status = ST_OK;
             break;
@@ -1437,11 +1472,13 @@ static void nav(unsigned char to_right)
             cur_track = s_col;
             if (cn != EMPTY)
                 edit_chain = cn;
+            c_row = 0;
             screen = SCR_CHAIN;
         } else if (screen == SCR_CHAIN) {
             unsigned char pn = sd.chains[edit_chain][c_row].phrase;
             if (pn != EMPTY)
                 edit_phrase = pn;
+            p_row = 0;
             screen = SCR_PHRASE;
         } else if (screen == SCR_PHRASE) {
             struct step *s = &sd.phrases[edit_phrase][p_row];
@@ -1513,6 +1550,15 @@ static void nav_v(unsigned char down)
         screen = SCR_WAVE;
     } else if (down && screen == SCR_WAVE)
         screen = SCR_INSTR;
+    else if (!down && screen == SCR_TABLE) {
+        help_overlay_load();
+        help_page = 0;
+        screen = SCR_HELP;
+        MIRROR_SCREEN = SCR_HELP;
+        help_draw();
+        return;
+    } else if (down && screen == SCR_HELP)
+        screen = SCR_TABLE;
     else
         return;
     ph_row = 0xFF;
@@ -1550,6 +1596,12 @@ static void cut_field(void)
         }
         break;
     }
+    case SCR_TABLE:
+        if (t_col != 2)
+            return;
+        sd.tables[edit_table][t_row].cmd = 0;
+        sd.tables[edit_table][t_row].param = 0;
+        break;
     default:
         return;
     }
@@ -1761,12 +1813,15 @@ static void playhead_update(void)
     unsigned char c, r;
 
     if (screen == SCR_SONG) {
-        static unsigned char had_q;
-        unsigned char q_now = (live_q[0] != EMPTY) || (live_q[1] != EMPTY)
-                            || (live_q[2] != EMPTY) || (live_q[3] != EMPTY);
-        if (had_q && !q_now)
-            draw_song_screen();          /* a queued clip launched */
-        had_q = q_now;
+        static unsigned char old_q_mask;
+        unsigned char q_mask = 0;
+
+        for (c = 0; c < NCH; ++c)
+            if (live_q[c] != EMPTY)
+                q_mask |= 1 << c;
+        if (q_mask != old_q_mask)
+            draw_song_screen();          /* queued clips launched/stopped */
+        old_q_mask = q_mask;
         for (c = 0; c < NCH; ++c) {
             unsigned char pr = (eng_mode == MODE_SONG && eng_walk[c].active)
                                ? eng_walk[c].song_row : 0xFF;
@@ -1796,10 +1851,12 @@ static void playhead_update(void)
         }
         return;
     }
-    if (screen >= SCR_INSTR)
-        return;
     r = 0xFF;
-    if (screen == SCR_CHAIN) {
+    if (screen == SCR_TABLE) {
+        r = engine_table_cursor(((unsigned)edit_table << 8) | cur_track);
+    } else if (screen >= SCR_INSTR) {
+        return;
+    } else if (screen == SCR_CHAIN) {
         if (eng_mode && eng_walk[cur_track].active
             && eng_walk[cur_track].chain == edit_chain)
             r = eng_walk[cur_track].cpos;
@@ -1818,6 +1875,7 @@ static void playhead_update(void)
     }
 }
 
+#pragma code-name (push, "MIDICODE")
 static unsigned char dir_of(unsigned char pressed)
 {
     if (pressed & JOYPAD_UP) return 0;
@@ -1826,6 +1884,25 @@ static unsigned char dir_of(unsigned char pressed)
     if (pressed & JOYPAD_RIGHT) return 3;
     return 0xFF;
 }
+#pragma code-name (pop)
+
+#pragma code-name (push, "MIDICODE")
+static void context_play(void)
+{
+    unsigned char cpos = 0;
+    unsigned char prow = 0;
+
+    if (sync_mode == SYNC_MIDI || screen == SCR_FILES
+        || screen == SCR_GROOVE || screen >= SCR_PROJ)
+        return;
+    if (screen >= SCR_CHAIN)
+        cpos = c_row;
+    if (screen >= SCR_PHRASE)
+        prow = p_row;
+    engine_play_context(s_row, cpos, prow);
+    transport_label();
+}
+#pragma code-name (pop)
 
 /* ---------------- public ---------------- */
 
@@ -1833,67 +1910,40 @@ void editor_init(void)
 {
     unsigned char c;
     last_instr = 0;
-    for (c = 0; c < NCH; ++c)
+    for (c = 0; c < NCH; ++c) {
         ph_song[c] = 0xFF;
+        live_q_row[c] = EMPTY;
+    }
     MIRROR_TRANSPORT = 0xFF;
     screen = SCR_SONG;
     draw_screen();
     mirror_cursor();
 }
 
-#ifndef ALYNXDJ_NO_METERS
-static void meters_update(void)
-{
-    unsigned char t, h, i;
-    char b[2];
-
-    b[1] = 0;
-    for (t = 0; t < NCH; ++t) {
-        /* 0-127 level -> 0-METER_H (16) cells (rounded so full VOL fills) */
-        h = (unsigned char)((eng_level[t] + 4) >> 3);
-        if (h > METER_H)
-            h = METER_H;
-        if (h == meter_h[t])
-            continue;
-        meter_h[t] = h;
-        for (i = 0; i < METER_H; ++i) {
-            b[0] = '`';               /* solid block; lit above, dim track below */
-            draw_text(METER_X(t), METER_BOT - i, b,
-                      (i < h) ? PEN_ACCENT : PEN_DIM, PEN_BG);
-        }
-    }
-}
-#endif
-
 void editor_frame(unsigned char joy, unsigned char prev)
 {
     unsigned char pressed = joy & ~prev;
     unsigned char dir = 0xFF;
-#ifdef ALYNXDJ_NO_DAC_PEAKS
-    static unsigned char old_underruns = 0xFF;
-    unsigned char underruns = dac_underrun[0] + dac_underrun[1];
-#endif
 
     playhead_update();
     /* Row redraws can take several hardware frames.  Refill immediately
      * afterward instead of waiting for the outer main-loop pass; a 512-byte
      * KIT ring otherwise reaches its tail while the display is catching up. */
     pool_pump();
-#ifdef ALYNXDJ_NO_DAC_PEAKS
-    if (underruns != old_underruns) {
-        old_underruns = underruns;
-        draw_hex8(16, 0, underruns, PEN_ACCENT, PEN_BG);
-    }
-#endif
-#ifndef ALYNXDJ_NO_METERS
-    meters_update();
-#endif
     transport_label();
     if (a_release_age != 0xFF)
         ++a_release_age;
 
-    /* Option 1 layer: track select / mute / solo (DESIGN.md §3) */
+    /* A clean Option 1 tap is all-track contextual play.  Using its existing
+     * held layer suppresses that release action. */
+    if (pressed & BUTTON_OPTION1)
+        o1_used = (joy & (JOYPAD_UP | JOYPAD_DOWN | JOYPAD_LEFT
+                          | JOYPAD_RIGHT | JOY_BTN_A_MASK
+                          | JOY_BTN_B_MASK)) ? 1 : 0;
     if (joy & BUTTON_OPTION1) {
+        if (pressed & (JOYPAD_UP | JOYPAD_DOWN
+                       | JOYPAD_LEFT | JOYPAD_RIGHT))
+            o1_used = 1;
         if ((pressed & JOYPAD_LEFT) && cur_track) {
             --cur_track;
             top_bar();
@@ -1903,16 +1953,23 @@ void editor_frame(unsigned char joy, unsigned char prev)
             top_bar();
         }
         if (pressed & JOY_BTN_A_MASK) {          /* mute toggle */
+            o1_used = 1;
             engine_set_mute(eng_mute ^ (1 << cur_track));
             a_used = 1;
             top_bar();
         }
         if (pressed & JOY_BTN_B_MASK) {          /* solo / unsolo */
             unsigned char solo = (unsigned char)(~(1 << cur_track) & 0x0F);
+            o1_used = 1;
             engine_set_mute(eng_mute == solo ? 0 : solo);
             b_used = 1;
             top_bar();
         }
+        return;
+    }
+    if ((prev & BUTTON_OPTION1) && !(joy & BUTTON_OPTION1)) {
+        if (!o1_used)
+            context_play();
         return;
     }
 
@@ -1997,6 +2054,7 @@ void editor_frame(unsigned char joy, unsigned char prev)
         }
         if (live_mode && screen == SCR_SONG) {
             unsigned char cn = sd.song[s_row][s_col];
+            live_q_row[s_col] = s_row;
             engine_live_queue(s_col, cn == EMPTY ? 0xFE : cn);
             transport_label();
             draw_song_screen();
@@ -2033,9 +2091,8 @@ void editor_frame(unsigned char joy, unsigned char prev)
     if (dir != 0xFF) {
         if (joy & JOY_BTN_B_MASK) {          /* nav chord (physical A) */
             b_used = 1;
-            if (screen == SCR_TABLE && dir <= 1) {       /* +up/down: table # */
-                edit_table = (dir == 0 ? edit_table + 1
-                                       : edit_table + NTABLES - 1) % NTABLES;
+            if (screen == SCR_TABLE && dir == 1) {       /* +down: prior table */
+                edit_table = edit_table ? edit_table - 1 : NTABLES - 1;
                 draw_screen();
                 mirror_cursor();
             } else if (screen == SCR_WAVE && dir >= 2) {  /* +left/right: wave # */
@@ -2054,7 +2111,9 @@ void editor_frame(unsigned char joy, unsigned char prev)
         } else if (joy & JOY_BTN_A_MASK) {   /* edit chord (physical B) */
             a_used = 1;
             edit_cell(dir);
-        } else
+        } else if (screen == SCR_HELP)
+            help_turn(dir);
+        else
             move_cursor(dir);
     }
 
@@ -2067,9 +2126,9 @@ void editor_frame(unsigned char joy, unsigned char prev)
         }
     }
     if (pressed & JOY_BTN_B_MASK)
-        /* Physical A is the map/transport modifier.  OPTIONS and PROJECT
-         * consume only its clean-tap action; held chords remain live. */
-        b_used = screen >= SCR_PROJ;
+        /* Physical A is the map/transport modifier. INSTR, OPTIONS and
+         * PROJECT consume only its clean-tap action; held chords remain live. */
+        b_used = (screen == SCR_INSTR || screen >= SCR_PROJ);
     if ((prev & JOY_BTN_A_MASK) && !(joy & JOY_BTN_A_MASK)) {
         if (!a_used) {
             insert_cell();                   /* clean A tap */

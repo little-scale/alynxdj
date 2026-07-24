@@ -44,7 +44,7 @@
                                  passes whose bit (count mod 8) is set */
 #define CMD_J    21     /* J xy  variation: transpose x (signed nibble) on
                                  passes whose bit (count mod 4) is set in y */
-#define CMD_B    22     /* B xx  add signed xx to the current LFSR taps */
+#define CMD_B    22     /* B xx  cumulative signed taps; 00 resets patch */
 #define NCMDS    23
 
 #define IT_TONE  0
@@ -128,6 +128,9 @@ struct walk {
     unsigned char prow;
 };
 extern struct walk eng_walk[NCH];
+/* Packed argument: high byte = table, low byte = track. Returns the
+ * engine's current table cursor, or $FF when that track/table is inactive. */
+unsigned char __fastcall__ engine_table_cursor(unsigned table_track);
 
 #define MODE_STOP   0
 #define MODE_SONG   1
@@ -141,7 +144,6 @@ void __fastcall__ engine_live_queue(unsigned char track, unsigned char chain);
 #define eng_mute (*(volatile unsigned char *)0xC012)
 #define eng_gpos   (*(volatile unsigned char *)0xC014)
 #define eng_groove (*(volatile unsigned char *)0xC015)
-extern unsigned char eng_level[NCH];
 void __fastcall__ engine_set_mute(unsigned char mask);
 
 extern const unsigned char env_rate[16];
@@ -149,6 +151,8 @@ void engine_init(void);
 void engine_tick(void);
 void engine_stop(void);
 void engine_play_song(unsigned char row);
+void engine_play_context(unsigned char row, unsigned char cpos,
+                         unsigned char prow);
 void engine_play_chain(unsigned char track, unsigned char chain);
 void engine_play_phrase(unsigned char track, unsigned char phrase);
 void engine_audition(unsigned char note, unsigned char inum);
@@ -170,8 +174,8 @@ extern volatile unsigned char dac_mode[NDAC];
 extern volatile unsigned char dac_off[NDAC]; /* channel * 8, for AUD0+x */
 extern volatile unsigned char dac_muted[NDAC];
 extern volatile unsigned char dac_rate[NDAC];
-extern volatile unsigned char dac_peak[NDAC];
 #define dac_underrun ((volatile unsigned char *)0xC027)
+#define dac_started  ((volatile unsigned char *)0xC02E)
 void pcm_stop(void);                      /* stop both slots */
 void __fastcall__ dac_stop(unsigned char slot);
 void __fastcall__ dac_rate_set(unsigned char slot, unsigned char rate);
@@ -207,6 +211,10 @@ void __fastcall__ sync_tx(unsigned char b);
 void sync_poll(void);
 void __fastcall__ sync_test_byte(unsigned char b);
 void midi_overlay_load(void);
+void help_overlay_load(void);
+#define help_page (*(volatile unsigned char *)0xC8FD)
+void help_draw(void);
+void __fastcall__ help_turn(unsigned char dir);
 
 /* Wavetable feed uses either DAC slot and therefore any owning channel. */
 void __fastcall__ wave_start(unsigned char slot, unsigned char w);
@@ -241,6 +249,7 @@ void draw_text(unsigned char cx, unsigned char cy, const char *s,
                unsigned char fg, unsigned char bg);
 void draw_hex8(unsigned char cx, unsigned char cy, unsigned char v,
                unsigned char fg, unsigned char bg);
+extern unsigned char draw_x_offset;
 void clear_grid(void);
 
 #define PEN_BG      0

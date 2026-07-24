@@ -27,7 +27,7 @@ void vbl_install(void);
 /* 12-bit palettes, {green, blue<<4|red} x {bg, text, dim, accent}.
  * The eight schemes port SMSGGDJ's COLR presets (WHT/WB/AMBR/CYAN/PINK/
  * NEON/KIDD/MINT): its bg/fg anchor bg/text here, with a muted dim and a
- * brighter accent (cursor/playhead/meters) synthesized per scheme. */
+ * brighter accent (cursor/playheads) synthesized per scheme. */
 #define NPALETTES 8
 static const unsigned char palettes[NPALETTES][4][2] = {
     { {0x0,0x00}, {0xD,0xDD}, {0x6,0x66}, {0xF,0xFF} },  /* 0 WHT  mono   */
@@ -68,18 +68,32 @@ static void screen_clear(void)
 /* clear the 16 grid rows (char rows 1..16 = pixel rows 6..101) */
 void clear_grid(void)
 {
-    memset(SCREEN + 6 * LINE_BYTES, PEN_BG | (PEN_BG << 4),
-           (unsigned int)LINE_BYTES * 96);
+    unsigned char row;
+
+    /* A single 7.5 KB cc65 memset can span enough real-hardware time to
+     * starve a cart-streamed sample.  Clear one six-pixel text row at a
+     * time and give the streamer the same priority as the renderer. */
+    for (row = 0; row < 16; ++row) {
+        memset(SCREEN + (unsigned int)(row + 1) * 6 * LINE_BYTES,
+               PEN_BG | (PEN_BG << 4), (unsigned int)LINE_BYTES * 6);
+        pool_pump();
+    }
 }
 
 /* Draw one glyph at char cell (cx, cy); fg/bg are pen numbers. */
+static unsigned char draw_pump_phase;
+unsigned char draw_x_offset;
+
 static void draw_char(unsigned char cx, unsigned char cy, char ch,
                       unsigned char fg, unsigned char bg)
 {
     const unsigned char *g;
-    unsigned char *p = SCREEN + (unsigned int)cy * 6 * LINE_BYTES + cx * 2;
+    unsigned char *p;
     unsigned char r, bits, l, rr;
 
+    if (cy)
+        cx += draw_x_offset;
+    p = SCREEN + (unsigned int)cy * 6 * LINE_BYTES + cx * 2;
     if (ch >= 'a' && ch <= 'z')
         ch -= 'a' - 'A';           /* all-caps UI, sibling style */
     if (ch < FONT_FIRST || ch > FONT_LAST)
@@ -94,6 +108,12 @@ static void draw_char(unsigned char cx, unsigned char cy, char ch,
         rr = (bits & 0x01) ? fg : bg;
         p[1] = (l << 4) | rr;
         p += LINE_BYTES;
+    }
+    /* draw_hex8() bypasses draw_text(), and WAVE draws one-character
+     * strings, so yield here at a bounded four-glyph granularity. */
+    if (++draw_pump_phase >= 4) {
+        draw_pump_phase = 0;
+        pool_pump();
     }
 }
 
@@ -379,9 +399,9 @@ void song_demo(void)
         sd.phrases[14][i].cmd = CMD_Z;
         sd.phrases[14][i].param = 0x80;
     }
-    /* ph15 H: note at row 0, phrase ends at row 4 -> 5-row loop */
+    /* ph15 H: marker at row 5 pre-hops to row 0 -> rows 0-4 loop */
     sd.phrases[15][0].note = N(4,0);
-    sd.phrases[15][4].cmd = CMD_H;
+    sd.phrases[15][5].cmd = CMD_H;
 
     /* T/I/J rigs (song rows 26-28) */
     for (i = 16; i <= 18; ++i) {
@@ -495,9 +515,25 @@ static void overlay_load(unsigned char block, unsigned char *dst,
 void midi_overlay_load(void)
 {
     unsigned char *dst = (unsigned char *)0xC100;
-    unsigned char chunks = 48;          /* MIDICODE: $0600 bytes */
+    unsigned char chunks = 64;          /* whole $C100-$C8FF overlay window */
 
     cart_seek(254, 0);                  /* final two blocks, after sample bank */
+    do {
+        cart_read(dst, 32);
+        dst += 32;
+    } while (--chunks);
+}
+
+void help_overlay_load(void)
+{
+    unsigned char *dst = (unsigned char *)0xD000;
+    unsigned char chunks = 32;          /* marker + HELPCODE: one cart block */
+
+    /* HELPCODE occupies the two PCM ring buffers. Stop and retire any pending
+     * stream before copying it; later DAC triggers refill the rings. */
+    engine_stop();
+    pool_pump();
+    cart_seek(250, 0);
     do {
         cart_read(dst, 32);
         dst += 32;

@@ -1,4 +1,4 @@
-# ALYNXDJ manual (V0.4)
+# ALYNXDJ manual
 
 A pocket groovebox for the Atari Lynx in the LSDJ tradition. If you know
 LSDJ or SMSGGDJ, you already know most of this.
@@ -21,15 +21,16 @@ action.** No simultaneous-press timing windows.
 
 | Input | Action |
 |---|---|
-| D-pad | move the cursor (hold to repeat) |
+| D-pad | move the cursor (hold to repeat); on HELP, turn pages |
 | **B** tap | insert on an empty cell (repeats the last value); a new PHRASE note also inherits the last instrument explicitly edited in the instrument column; on INSTR while stopped, audition the current instrument |
 | **B** hold + d-pad | edit the value under the cursor — ←/→ small step, ↑/↓ big step |
 | **B** double-tap | paste the clipboard; with nothing cut: mint the next free chain/phrase on an empty cell, or slim-clone a populated one |
 | **B** held + **A** tap | cut the field under the cursor into the clipboard |
 | **B** held + **A** long-hold | **block SELECT** (SONG/CHAIN/PHRASE): anchors at the cursor; ↑/↓ extend; **B** = copy, **B**-held+**A** = cut, **A** = cancel; paste with B double-tap (rows land at the cursor) |
-| **A** tap | back where applicable on detail/utility screens; deliberately does nothing on CHAIN, PHRASE, OPTIONS, or PROJECT |
-| **A** hold + d-pad | move around the screen map (see below) |
+| **A** tap | back where applicable on detail/utility screens; deliberately does nothing on CHAIN, PHRASE, INSTR, OPTIONS, or PROJECT |
+| **A** hold + d-pad | move around the screen map (see below); A+↑ from TABLE opens HELP and A+↓ returns |
 | **A** held + **B** | play / stop — contextual: SONG plays from the cursor row, CHAIN loops the chain, PHRASE and INSTR loop the phrase last viewed (audition while editing the instrument) |
+| **Option 1** tap | restart arrangement playback on **all four tracks** from the current context: SONG row, plus CHAIN position and PHRASE row where those are visible |
 | **Option 1** + ←/→ | select the current track |
 | **Option 1** + **B** | mute the current track (top-bar `1234` flags) |
 | **Option 1** + **A** | solo the current track / un-solo |
@@ -39,6 +40,8 @@ never overwrite NOTE or INSTR. A previously cut command pair is pasted there;
 without a matching command clipboard, the double-tap clears only `CMD+PARAM`.
 Field cut on the command-letter column likewise treats `CMD+PARAM` as one
 unit and preserves NOTE+INSTR.
+On TABLE's command-letter column, the same B-held+A gesture deletes only
+`CMD+PARAM`; that row's VOL and TSP remain untouched.
 
 PHRASE note entry remembers instruments separately from notes. Whenever you
 edit a number in the instrument column, that number becomes the insertion
@@ -57,21 +60,27 @@ not-yet-edited chain or phrase will not be reused accidentally.
 
 ## The screen map
 
-The indicator in the top-right corner shows where you are (dim letters =
-planned screens):
+The indicator in the top-right corner shows where you are; the current screen
+is inverted and the other screen letters remain dim:
 
 ```
-O P   W        OPTIONS  PROJECT  WAVE
+O P   W H      OPTIONS  PROJECT  WAVE  HELP
 S C P I T   =  SONG > CHAIN > PHRASE > INSTR > TABLE
 F G            FILES (below SONG)   GROOVE (below CHAIN)
 ```
 
-All ten screens are live. A-held + → descends and *drills in* (opens the
+All eleven screens are live. A-held + → descends and *drills in* (opens the
 chain/phrase/instrument under the cursor). PHRASE → INSTR opens the valid
 instrument assigned to the selected row; an empty row keeps the previously
-viewed instrument. A-held + ← goes back;
+viewed instrument. SONG → CHAIN and CHAIN → PHRASE always place the new
+child cursor on row `00`. A-held + ← goes back;
 A-held + ↑/↓ moves vertically (OPTIONS above SONG, PROJECT above CHAIN,
-WAVE above INSTR, FILES and GROOVE below).
+WAVE above INSTR, HELP above TABLE, FILES and GROOVE below).
+
+The top bar and map stay fixed. The main body of every screen except WAVE and
+HELP is shifted eight character columns to the right, using more of the meter-free
+space beside the map; WAVE keeps its full 32-column plot and HELP uses the
+full text width.
 
 **PROJECT:** TMPO — the live BPM readout derived from the groove
 (tempo *is* the groove); editing it steps every groove entry together, so
@@ -115,11 +124,6 @@ Pico build, wiring, and flashing instructions are in
 ComLynx DATA, sleeve = GND**; do not substitute a normal stereo-audio wiring
 assumption.
 
-Four full-height **channel meters** run down the right-hand border, one
-per track. TONE/NOISE show the envelope level (which scales their
-output); KIT and WAV show a peak of the actual DAC output, so sample and
-wavetable voices register too.
-
 The map rows also navigate horizontally: A-held+←/→ moves FILES↔GROOVE
 and OPTIONS↔PROJECT↔WAVE.
 
@@ -128,10 +132,19 @@ columns; unmodified ↑/↓ does not change the wave. Hold A + ←/→ to select
 wave number. B-held + d-pad draws (↑/↓ coarse, ←/→ fine). Waves 0–3 ship as
 triangle, saw, square, 25% pulse.
 
+**HELP screen:** a read-only nine-page quick reference. From TABLE, hold A and
+tap ↑. Any plain D-pad direction turns a page (↑/← previous, ↓/→ next, with
+wraparound); hold A and tap ↓ to return to TABLE. The pages run from navigation
+and editing through structure, instruments/sample playback, the complete
+command list, sync, FILES, and system limits. HELP takes the full display width
+and hides the map while open. Entering it stops transport because its cold
+renderer temporarily reuses the now-idle sample-ring RAM.
+
 ## Instruments (INSTR screen)
 
 | Field | Meaning |
 |---|---|
+| **INSTR** | patch currently viewed/edited, `00`–`1F`; Left/Right ±1, Up/Down ±16, wrapping. This does not rewrite the PHRASE row |
 | TYPE | TONE / NOISE / WAV / KIT |
 | VOL | envelope peak, $00–$7F |
 | ATK | attack **time**, 0–F: 0 = instant, F ≈ 2 s (higher = slower) |
@@ -140,7 +153,7 @@ triangle, saw, square, 25% pulse.
 | **TSP** | signed instrument transpose in semitones; Left/Right ±1, Up/Down ±12. Applies to TONE/NOISE/WAV pitch and KIT pad selection |
 | **SWP** | TONE/NOISE pitch sweep, signed 1/16 semitone per tick with period-style direction: `$01`–`$7F` falls, `$FF`–`$80` rises, `00` = off |
 | **VIB** | TONE/NOISE sine vibrato, packed speed·depth nibbles; speed 0–F ≈ 0.47–7.49 Hz. Depth uses SMSGGDJ's nonlinear response, from 1/16 semitone at `1` through 10/16 at `8` to 60/16 (±3.75 semitones) at `F`. Phase continues across notes and resets with transport |
-| **TRM** | TONE/NOISE repeating decay saw, packed speed·depth nibbles; speed 0–F ≈ 0.94–14.98 Hz. Each cycle starts at the AHD level, ramps downward, then snaps back to the top like a repeating envelope |
+| **TRM** | TONE/NOISE repeating decay saw, packed speed·depth nibbles. Each cycle starts at the AHD level, ramps downward, then snaps back to the top like a repeating envelope |
 | **TAPS** | the raw 12-bit-LFSR tap mask — see below |
 | WAVE / KIT | WAV: wavetable 0–7 (`--` = hardware triangle); KIT: sample kit 0–7. This row is blank and inert for TONE/NOISE. |
 | **SEED** | the shifter start state, $000–$FFF |
@@ -156,6 +169,21 @@ Instrument VIB and the phrase/table `V` command share the same free-running
 per-track phase. A zero depth is completely off; it does not alter tuning or
 advance the phase.
 
+TRM's high nibble is directly tick-derived, not row- or tempo-derived. For
+speed `x`, the 6-bit saw phase advances by `x+1` once per ~59.9 Hz engine
+tick, giving an average frequency of `59.9 × (x+1) / 64` Hz:
+
+| Speed | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Hz | 0.94 | 1.87 | 2.81 | 3.74 | 4.68 | 5.62 | 6.55 | 7.49 |
+| Speed | 8 | 9 | A | B | C | D | E | F |
+| Hz | 8.42 | 9.36 | 10.30 | 11.23 | 12.17 | 13.10 | 14.04 | 14.98 |
+
+The low nibble is depth. TRM phase resets to the top on every new note and
+advances only while that note's envelope is active, so retriggering restarts
+the repeating decay. Groove and BPM change how many TRM cycles fit into a
+row, but do not change its real-time rate.
+
 After **NEW**, every instrument starts with TYPE TONE, VOL `7F`, ATK `0`,
 HOLD `5`, DCY `5`, and TAPS `001`. Empty CHAIN rows display transpose `00`;
 their compact-save sentinel remains internal and changes to a real zero as
@@ -165,7 +193,7 @@ soon as a phrase is inserted.
 
 Each channel is a 12-bit shift register; on every timer tick it shifts in
 the *inverted parity* of the tapped bits. **Which taps are on is the
-timbre.** Beside the exact hexadecimal TAPS value, nine meter-style blocks
+timbre.** Beside the exact hexadecimal TAPS value, nine solid blocks
 show the bitmap in tap order `0 1 2 3 4 5 7 A B` (A/B are taps 10/11):
 
 - `$001` (tap 0) — a pure square. The default.
@@ -207,13 +235,13 @@ voices do not consume this two-voice budget.
 | Cmd | Name | Param |
 |---|---|---|
 | `A xx` | table | run table xx on this note (one-shot) |
-| `B xx` | taps offset | add signed `xx` once to the current TONE/NOISE taps value (`01` = +1, `FF` = −1), wrapping 0–511 without reseeding |
+| `B xx` | taps accumulator | nonzero values add signed `xx` to the current TONE/NOISE taps (`01` = +1, `FF` = −1), cumulatively wrapping 0–511; `00` restores the active instrument's TAPS |
 | `C xy` | chord | loop +0, +x, +y semitones per tick |
 | `D xx` | delay | trigger after xx ticks |
 | `E xy` | envelope | re-slope live: attack x, decay y (times, like the INSTR fields; current stage and level untouched) |
 | `F xx` | finetune | signed offset in 1/16 semitones (one-shot) |
 | `G xx` | glide | reset to the active instrument's stored TAPS, then use signed `xx`: magnitudes 1–7 are ticks per step; magnitude 8+ is magnitude−7 rows per step (`01` = +1/tick, `07` = +1/7 ticks, `08` = +1/row, `0B` = +1/4 rows; negative values reverse direction; `00` = reset and stop; wraps 0–511 without reseeding) |
-| `H xx` | hop | phrase: end this phrase after this row; table: loop to row x |
+| `H xx` | hop | phrase: before this marker row would play, jump to row x (the H row itself is not heard); table: loop to row x |
 | `I xx` | iterate | play this note only on phrase passes whose bit (pass count mod 8) is set — `I55` = even passes, `IFF` = always |
 | `J xy` | vary | transpose by x (signed nibble) on passes whose bit (count mod 4) is set in y — `J71` = +7 once every 4 passes |
 | `K xx` | kill | cut the note after xx ticks (00 = instant) |
@@ -245,6 +273,18 @@ slower. Tick modes restart at row 0 on a new note. All modes stick at the
 last row unless `H` loops. Attach via the instrument's TABLE field or a
 phrase `A` command. Table volume may reshape attack/hold, but once decay
 starts the envelope owns the level and always reaches its normal end.
+When an empty TABLE command field is edited, it first repeats the nearest
+previous command letter **and value** found in that table. If the table has no
+command to inherit, normal alphabetical entry begins.
+On the TABLE command-letter column, B-held+A deletes only the command and
+parameter; volume and transpose on that row are preserved.
+During playback, the current macro row number is accented when the viewed
+table belongs to the track selected in the top bar (`T1`–`T4`). Selecting an
+inactive track or viewing another table hides the indicator.
+
+Hold A + ↓ to select the previous table number, wrapping from `00` to `0F`.
+Hold A + ↑ to open HELP; all 16 tables remain reachable by the wrapping
+downward selection.
 
 `G` treats its parameter as an 8-bit signed direction and split period.
 Values `01`–`7F` move upward; `FF`–`80` mean -1 through -128 and move
@@ -273,12 +313,33 @@ like continuous track automation across a melody and across phrase/chain
 boundaries. `G00` explicitly resets and stops. Live writes do not reseed the
 LFSR.
 
+Nonzero `B` commands use the same live track value as an accumulator. A
+`B01`, later ordinary notes, then another `B01` produce +2 rather than
+restarting from the patch at each note. Signed negative values subtract and
+the 9-bit value wraps. `B00` restores the currently active instrument's TAPS
+and releases the accumulator; transport stop and a newly encountered `G`
+also release it. B's live feedback changes do not reseed the LFSR.
+
 This also applies when a phrase loops: `G7F` on row 0 of a 16-row looping
 phrase is encountered again after only 16 rows, so it continually restarts
 and can never reach its first tap change. A note on that same row is still a
 new note on every pass; it retriggers the envelope and reseeds the oscillator,
 which can produce an audible loop-boundary event even though TAPS did not
 change.
+
+## SONG playback groups
+
+Each track treats an empty SONG cell as a hard separator. Starting transport
+inside a vertical run of chains loops only that contiguous run: for example,
+chains on rows 2–3 loop 2→3→2 even if another group exists at row 0. Because
+the delimiter is per track, the four tracks may have different group shapes.
+
+A clean **Option 1** tap provides the all-track cue action. On SONG it starts
+all tracks at the selected song row. On CHAIN it also starts at the selected
+chain position; on PHRASE, INSTR, TABLE, and WAVE it additionally uses the
+selected phrase row last in context. If a parallel track's chain is shorter
+than the chosen chain position, that track starts at its first phrase. With
+`IN` or `IN24`, this cue arms as **WAIT** until the first external row pulse.
 
 ## Groove (GROOVE screen)
 
@@ -291,9 +352,10 @@ every entry of it together. `T xx` flattens it to a plain hex BPM.
 ## LIVE mode (Option 2 on SONG)
 
 The SONG screen becomes a clip launcher: **A-held + B on a cell queues
-that chain on that track**, launching at the next 16-row bar (queued
-cells show inverted-accent until they fire). Queue an **empty** cell to
-stop the track at the bar. Every track loops its chain independently —
+that chain on that track**, launching at the next 16-row bar (queued starts
+show the chain number in inverted accent until they fire). Queue an **empty**
+cell to stop the track at the bar; it displays inverted **ST** so a pending
+stop cannot be mistaken for a start. Every track loops its chain independently —
 the first launch starts the engine and defines the bar grid. Option 2
 again returns to arrangement SONG mode.
 

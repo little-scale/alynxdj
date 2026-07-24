@@ -213,7 +213,14 @@ def main():
     frame = np.asarray(Image.open(audition_ppm).convert("RGB"))
     colors, counts = np.unique(frame.reshape(-1, 3), axis=0, return_counts=True)
     background = colors[np.argmax(counts)]
-    for row in (2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15, 16):
+    # Non-WAVE/HELP bodies begin at original column 1 plus the shared
+    # eight-column offset.  Chrome remains fixed in row 0.
+    body_left = 9 * 4
+    if np.count_nonzero(np.any(frame[6:, :body_left] != background, axis=2)):
+        fail("INSTR body did not retain its eight-column left margin")
+    if np.count_nonzero(np.any(frame[:6, :body_left] != background, axis=2)) < 6:
+        fail("the fixed top bar moved with the INSTR body")
+    for row in (1, 2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15, 16):
         band = frame[row * 6:(row + 1) * 6, :96]
         if np.count_nonzero(np.any(band != background, axis=2)) < 6:
             fail("INSTR field row %d was not fully rendered" % row)

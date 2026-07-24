@@ -2,6 +2,62 @@
 
 ## Unreleased
 
+## v0.52 — 2026-07-24
+
+- Added a TABLE play indicator. The active macro row number is accented while
+  the viewed table is running on the selected top-bar track (`T1`–`T4`); it
+  disappears for an inactive track or a different table.
+- Updated the portable factory sample bank with the revised kit 00 created in
+  the standalone patcher. The production build now validates and injects the
+  120,544-byte bank directly, preserving it across future ROM versions.
+- Added an `INSTR 00–1F` selector directly to the instrument form, made
+  SONG→CHAIN and CHAIN→PHRASE entry reliably land on child row `00`, and made
+  TABLE command deletion clear only CMD+PARAM while preserving VOL+TSP.
+- Changed `Bxx` into cumulative signed TAPS automation across ordinary notes
+  and structural boundaries. `B00` restores the active instrument's TAPS and
+  releases the accumulator; a new G or transport stop also releases it.
+- Documented TRM's exact tick-derived speed model: its high nibble advances a
+  6-bit descending-saw phase by 1–16 per 59.9 Hz tick, yielding approximately
+  0.94–14.98 Hz independently of groove/BPM.
+- Added a read-only, nine-page HELP screen above TABLE. Its ordered
+  navigation/editing, structure, instrument/sample, command, sync, FILES, and
+  limits reference comes from validated `help.txt` data rather than hard-coded
+  UI prose. Plain D-pad turns pages with wraparound; physical-A-held + Up from
+  TABLE enters, and A-held + Down returns. HELP stops transport and cold-loads
+  over the idle PCM rings. The sample patcher recognizes and protects its cart
+  blocks; sample-bank capacity is now 209,920 bytes at blocks 45–249.
+- Added a clean Option-1 tap as contextual all-track transport. It restarts
+  arrangement playback from the selected SONG row, CHAIN position, and PHRASE
+  row where those levels are in context; the existing held track-select,
+  mute, and solo layer is unchanged, and `IN`/`IN24` still arm as `WAIT`.
+- LIVE queues now show explicit pending intent: a queued start displays its
+  chain number in inverted accent, while an empty-cell stop displays inverted
+  `ST` on the row from which it was armed.
+- Changed phrase `Hxx` into a pre-row branch: the H marker row is never
+  triggered, so `H00` on row 5 hands directly from row 4 to row 0. Table H
+  keeps its table-loop behavior. SONG playback now treats empty cells as
+  per-track group delimiters and loops only the current contiguous run rather
+  than wrapping into an earlier disconnected group.
+- Shifted every editor body except the full-width WAVE and HELP views eight
+  character columns right while keeping the top bar and screen map fixed.
+  Physical A no longer backs out of INSTR on release, and editing an empty
+  TABLE command repeats the nearest prior command letter and value from that
+  table.
+- Made full screen changes cooperative with sample playback. Rendering now
+  services pending KIT starts and PCM refills every four glyphs, and clears the
+  large framebuffer grid in sixteen audio-safe bands instead of one blocking
+  pass. Refills remain efficient 64-byte cart transactions, while same-track
+  KIT retriggers keep the outgoing sample live until the replacement buffer is
+  ready. The hardware regression repeatedly redraws the expensive WAVE screen
+  during sustained KIT + TONE G08/SWP playback and requires every trigger to
+  start with zero slot underruns.
+- Removed channel activity metering from the ROM to return its entire cost to
+  audio and interaction. The normal build no longer performs KIT/WAV peak
+  calculations in the timer-IRQ feeders, exports per-track meter levels, or
+  redraws right-edge bars. The former `meter-test` and `sample-timing-test`
+  variants are therefore retired; internal slot-underrun counters remain and
+  now saturate so `00/00` unambiguously means a clean run.
+
 ## v0.51 — 2026-07-24
 
 - Added non-destructive waveform trimming to the standalone sample browser.

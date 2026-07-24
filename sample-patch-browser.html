@@ -192,7 +192,9 @@
     const ROM_BYTES = 262208;                 // 64-byte .lnx header + 256 KB cart
     const POOL_OFFSET = 64 + 45 * 1024;       // cart block 45
     const LEGACY_POOL_END = 64 + 200 * 1024;   // earlier MIDI-helper location
-    const POOL_END = 64 + 254 * 1024;          // MIDI helper starts at block 254
+    const POOL_END = 64 + 250 * 1024;          // HELP runtime starts at block 250
+    const PRE_HELP_POOL_END = 64 + 254 * 1024; // v0.51 layout, before HELP
+    const HELP_DATA_OFFSET = 64 + 251 * 1024;
     const POOL_CAPACITY = POOL_END - POOL_OFFSET;
     const PCM_RATE = 7812.5;
     const SLOT_CAP = 65535;                    // u16 sample length, about 8.39 s
@@ -213,6 +215,9 @@
     function hasData(bytes,start,end) {
       for (let offset=start;offset<Math.min(end,bytes.length);offset++) if (bytes[offset]) return true;
       return false;
+    }
+    function hasMagic(bytes,offset,text) {
+      return [...text].every((char,index)=>bytes[offset+index]===char.charCodeAt(0));
     }
 
     function parsePool(bytes,poolOffset,capacity,sourceName) {
@@ -249,11 +254,12 @@
       if (bytes.length !== ROM_BYTES) fail(`Expected a ${formatBytes(ROM_BYTES)} ALYNXDJ ROM, got ${formatBytes(bytes.length)}.`);
       if (bytes[0] !== 76 || bytes[1] !== 89 || bytes[2] !== 78 || bytes[3] !== 88)
         fail("This file is not a valid .lnx cartridge image (missing LYNX header).");
-      const currentMidi=hasData(bytes,POOL_END,POOL_END+0x600);
+      const helpLayout=hasMagic(bytes,HELP_DATA_OFFSET,"AHD1");
+      const currentMidi=hasData(bytes,PRE_HELP_POOL_END,PRE_HELP_POOL_END+0x600);
       const legacyMidi=!currentMidi&&hasData(bytes,LEGACY_POOL_END,LEGACY_POOL_END+0x600);
-      const poolEnd=legacyMidi?LEGACY_POOL_END:POOL_END;
+      const poolEnd=helpLayout?POOL_END:(legacyMidi?LEGACY_POOL_END:PRE_HELP_POOL_END);
       const poolCapacity=poolEnd-POOL_OFFSET;
-      return {bytes,poolEnd,poolCapacity,legacyLayout:legacyMidi,
+      return {bytes,poolEnd,poolCapacity,legacyLayout:legacyMidi,helpLayout,
               ...parsePool(bytes,POOL_OFFSET,poolCapacity,"the ROM at cart block 45")};
     }
 
@@ -369,7 +375,7 @@
     function bankOutputName(name) { return `${name.replace(/\.(?:lnx|bin)$/i,"")||"alynxdj"}-samples.bin` }
 
     globalThis.ALynxSamplePatcherCore = {
-      ROM_BYTES,POOL_OFFSET,LEGACY_POOL_END,POOL_END,POOL_CAPACITY,PCM_RATE,SLOT_CAP,GAIN_MIN,GAIN_MAX,
+      ROM_BYTES,POOL_OFFSET,LEGACY_POOL_END,POOL_END,PRE_HELP_POOL_END,POOL_CAPACITY,PCM_RATE,SLOT_CAP,GAIN_MIN,GAIN_MAX,
       parseRom,parseBank,buildPool,patchRom,convertChannels,processSample,prepareSample
     };
     if (typeof document === "undefined") return;

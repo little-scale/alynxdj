@@ -15,7 +15,7 @@ later hardware). The ROM and project name is **ALYNXDJ**.
 
 **DESIGN.md is the contract** (with a §0 decision log — read it before design
 decisions, don't re-litigate settled ones); **PLAN.md** holds the milestone
-history through M21. Key settled decisions: 4 identical
+history through M26. Key settled decisions: 4 identical
 tracks each playing TONE/NOISE/WAV/KIT (D1), cc65 C editor + ca65 asm
 driver/IRQ/render (D2), 59.9 Hz VBlank engine tick with no region split (D3),
 flat RAM song block but **packed/RLE EEPROM save — 2 KB 93C86 is the whole
@@ -32,7 +32,16 @@ first row pulse starts that row and changes the transport to `PLAY`. There is
 no heartbeat.
 Command values retain their historical/save-format IDs, but PHRASE and TABLE
 selection steps through the implemented letters alphabetically in both
-directions (D21).
+directions (D21). A clean Option-1 tap starts all four tracks from the
+selected SONG/CHAIN/PHRASE context while its held mute/solo layer remains
+unchanged (D28). Phrase `H` is a pre-row branch and each track loops only its
+current contiguous vertical SONG group (D29). D31 adds a nine-page,
+build-validated HELP screen above TABLE; it stops transport and cold-loads over
+the idle PCM rings. D32 adds deterministic row-00 hierarchy entry, an in-page
+INSTR selector, and field-safe TABLE command deletion. D18's B command is a
+cumulative signed taps accumulator; B00 restores the active patch. D33 gives
+TABLE a playhead for the explicitly selected top-bar track without adding
+engine-tick work.
 
 ## Build and verify
 
@@ -40,7 +49,6 @@ directions (D21).
 make          # cl65 -t lynx → build/alynxdj.lnx
 make factory-samples # rebuild samples/alynxdj-factory-samples.bin from WAVs
 make SAMPLE_BANK=/path/custom.bin # validate + inject one portable sample bank
-make sample-timing-test # diagnostic ROM: no meter redraw or DAC peak tracking
 make shot     # headless Handy run → build/shot.png + build/shot.ppm.wav (audio!)
 make test     # DAC/sample + modulation/TBS/taps + editor + EEPROM + MIDI UART
 make pico     # Pico USB-MIDI bridge UF2 (PICO_SDK_PATH + full Arm toolchain)
@@ -85,17 +93,26 @@ using a virtual environment.
   and replaces only its own directory before running. Keep the top level of
   `build/` for canonical build products and compiler-generated inputs.
 - RAM pressure is explicit: cart blocks 40/42/44 cold-load code to `$C900`,
-  `$F600`, and `$F320`; the sample bank occupies blocks 45–253. The C stack is
-  512 bytes and `$D000-$D3FF` stays two 512-byte rings. Keep `alynxdj.cfg`,
-  `Makefile`, `src/main.c`, and `src/pool.c` aligned.
-- MIDI/sync and tap-glide cold code is packed into cart block 254 and loaded at
-  `$C100-$C6FF`, overlaying the EEPROM pack buffer between SAVE/LOAD calls.
+  `$F600`, and `$F320`; the sample bank occupies blocks 45–249. HELP code is
+  cart block 250 and its `AHD1` text is blocks 251–253; MIDI remains 254–255.
+  The C stack is 512 bytes and `$D000-$D3FF` is normally two 512-byte rings.
+  Entering HELP stops transport and cold-loads its renderer at `$D004` over
+  those idle rings; FILES PURGE shares that stopped-only code overlay, and
+  its scratch buffers are `$D3B0-$D3FF`. Keep
+  `alynxdj.cfg`, `Makefile`, `src/main.c`, `src/pool.c`, and
+  `sample-patch-browser.html` aligned.
+- MIDI/sync, contextual-play, and editor cold code is packed into cart blocks
+  254–255 and linked at `$C100-$C8FC`, overlaying the EEPROM pack buffer
+  between SAVE/LOAD calls.
   The MIDI RX ring overlays phrase pass counters at `$C048-$C087`, valid only
   because takeover stops the sequencer. `IN24` must retain those counters, so
   it has a separate 64-byte IRQ ring over the phrase clipboard at
   `$C088-$C0C7` with state at
-  `$C0F9-$C0FB`; `$C0FC-$C0FF` holds the four per-track G countdowns. Fixed
-  live bytes occupy `$C004-$C016`. Preserve the post-pack
+  `$C0F9-$C0FB`; `$C0FC-$C0FF` holds the four per-track G countdowns.
+  `$C8FD` is the HELP page and `$C8FE-$C8FF` remains spare. Reloading the
+  full two-block helper window also resets the HELP page byte to zero.
+  Fixed live bytes occupy
+  `$C004-$C016`. Preserve the post-pack
   reloads and these mutual-exclusion rules.
 - Cart sample seeks use a software 16-bit bytes-remaining counter. Its low
   byte must be tested before decrement so `$0400` borrows to `$03FF`; getting
@@ -104,10 +121,15 @@ using a virtual environment.
 - Sample refills retain the physical cart cursor while one voice owns it;
   directory reads invalidate `$C029`, and alternating voices re-seek. Refill
   in 64-byte pieces, publish every piece atomically, continue across the ring
-  wrap in the same pump, and top up after playhead redraws. A single long
-  chunk or a one-sided ring refill causes the IRQ to hold the last DAC value.
-  `$C027/$C028` are wrapping slot-underrun counters; isolated kit-00 F4 must
-  complete at `00/00` in `test_hardware_fixes.py`.
+  wrap in the same pump, and top up after playhead redraws. Full screen paints
+  must yield every four glyphs, and `clear_grid()` must stay split into sixteen
+  six-pixel bands; otherwise rendering can starve a pending trigger or ring.
+  Same-track KIT retriggers leave the old stream live until `do_trigger()` has
+  prepared the replacement. A single long chunk or a one-sided ring refill
+  causes the IRQ to hold the last DAC value.
+  `$C027/$C028` are saturating slot-underrun counters; isolated and sustained
+  sample/redraw rigs must complete at `00/00` in `test_hardware_fixes.py`;
+  `$C02E/$C02F` count successfully started streams.
 - `pico-midi-comlynx/` is the companion RP2040 USB-device firmware. Its PIO
   output is open-drain (output-low/input only), 62.5 kbaud, start + 8 data +
   fixed-Space ninth + stop. It forwards channel 1–4 messages, divides every
@@ -167,7 +189,7 @@ stale flashes, and per-region timing tables where applicable.
   - `alynxdj-factory-samples.bin` is the portable, build-ready 64-slot factory
     bank. `tools/alynxdj_pool.py` rebuilds/validates it; the browser imports and
     exports the same `PL` format. Slots are u16-sized (65,535 bytes maximum),
-    and the 256 KB ROM reserves 214,016 bytes for the complete bank.
+    and the 256 KB ROM reserves 209,920 bytes for the complete bank.
 - `artwork/` — empty; destined for logo/splash art (siblings use an `art/` dir with
   a makelogo.py-style pipeline).
 - `task.txt` — the original project brief.

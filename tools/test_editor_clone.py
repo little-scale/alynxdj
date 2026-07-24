@@ -14,6 +14,8 @@ CHAINS = SD + 0x0200
 PHRASES = SD + 0x0600
 INSTRS = SD + 0x1600
 TABLES = SD + 0x1800
+GROOVES = SD + 0x1C00
+WALKS = SD + 0x1E00
 CHAIN_SIZE = 32
 PHRASE_SIZE = 64
 INSTR_SIZE = 16
@@ -178,7 +180,8 @@ def run_phrase_instrument_latch_case(harness, core, rom, build):
 
 
 def run_back_tap_case(harness, core, rom, build, depth):
-    label = "chain-a-tap" if depth == 1 else "phrase-a-tap"
+    names = {1: "chain", 2: "phrase", 3: "instrument"}
+    label = "%s-a-tap" % names[depth]
     test_rom = os.path.join(
         build, "alynxdj-editor-%s-%d-%d.lnx"
         % (label, os.getpid(), time.time_ns()))
@@ -196,7 +199,7 @@ def run_back_tap_case(harness, core, rom, build, depth):
     env["RETROSHOT_RAM_POKE_AT"] = "250"
 
     drill = "100@10,180@20,100@10,0@40,"
-    script = "0@280," + drill * depth + "100@4,0@60"
+    script = "0@280," + drill * depth + "100@20,0@60"
     subprocess.run(
         [harness, core, test_rom, ppm, "600", script], env=env, check=True)
     with open(ram_path, "rb") as f:
@@ -205,7 +208,131 @@ def run_back_tap_case(harness, core, rom, build, depth):
         fail("%s did not return a full RAM dump" % label)
     if ram[0xC003] != depth:
         fail("physical A tap left %s for screen %d"
-             % ("CHAIN" if depth == 1 else "PHRASE", ram[0xC003]))
+             % (names[depth].upper(), ram[0xC003]))
+
+
+def run_table_command_latch_case(harness, core, rom, build):
+    label = "table-command-latch"
+    test_rom = os.path.join(
+        build, "alynxdj-editor-%s-%d-%d.lnx"
+        % (label, os.getpid(), time.time_ns()))
+    ppm = os.path.join(build, "editor-%s.ppm" % label)
+    ram_path = os.path.join(build, "editor-%s.ram" % label)
+    shutil.copyfile(rom, test_rom)
+
+    pokes = {SONG: 0, INSTRS + 6: 0}
+    put(pokes, CHAINS, (0, 0))
+    put(pokes, PHRASES, (37, 0, 0, 0))
+    put(pokes, TABLES, (0, 0, 9, 0x26, 0, 0, 0, 0))
+    env = os.environ.copy()
+    env["RETROSHOT_RAM_OUT"] = ram_path
+    env["RETROSHOT_RAM_POKE"] = ",".join(
+        "%04X:%02X" % item for item in sorted(pokes.items()))
+    env["RETROSHOT_RAM_POKE_AT"] = "250"
+
+    # Drill SONG -> CHAIN -> PHRASE -> INSTR -> TABLE, select row 1's empty
+    # CMD field, then begin editing it.  The table's prior V26 pair should be
+    # inserted as a unit rather than beginning again at A00.
+    drill = "100@10,180@20,100@10,0@40,"
+    right = "80@6,0@10,"
+    down = "20@6,0@10,"
+    edit_right = "1@6,81@4,1@6,0@20"
+    script = "0@280," + drill * 4 + right * 2 + down + edit_right
+    subprocess.run(
+        [harness, core, test_rom, ppm, "900", script], env=env, check=True)
+    with open(ram_path, "rb") as f:
+        ram = f.read()
+    if len(ram) != 65536 or ram[0xC003] != 4 or ram[0xC002] != 2:
+        fail("table command latch rig missed row 1's command field")
+    if tuple(ram[TABLES + 4:TABLES + 8]) != (0, 0, 9, 0x26):
+        fail("empty TABLE command did not inherit V26: %r"
+             % (tuple(ram[TABLES + 4:TABLES + 8]),))
+
+
+def run_table_command_delete_case(harness, core, rom, build):
+    label = "table-command-delete"
+    test_rom = os.path.join(
+        build, "alynxdj-editor-%s-%d-%d.lnx"
+        % (label, os.getpid(), time.time_ns()))
+    ppm = os.path.join(build, "editor-%s.ppm" % label)
+    ram_path = os.path.join(build, "editor-%s.ram" % label)
+    shutil.copyfile(rom, test_rom)
+
+    pokes = {SONG: 0, INSTRS + 6: 0}
+    put(pokes, CHAINS, (0, 0))
+    put(pokes, PHRASES, (37, 0, 0, 0))
+    put(pokes, TABLES, (0x34, 0xF4, 9, 0x26))
+    env = os.environ.copy()
+    env["RETROSHOT_RAM_OUT"] = ram_path
+    env["RETROSHOT_RAM_POKE"] = ",".join(
+        "%04X:%02X" % item for item in sorted(pokes.items()))
+    env["RETROSHOT_RAM_POKE_AT"] = "250"
+
+    # Drill to TABLE CMD, then use the same physical-B-held+A gesture as a
+    # PHRASE command cut.  Only CMD+PARAM may be cleared.
+    drill = "100@10,180@20,100@10,0@40,"
+    right = "80@6,0@10,"
+    delete = "1@4,101@4,1@4,0@60"
+    script = "0@280," + drill * 4 + right * 2 + delete
+    subprocess.run(
+        [harness, core, test_rom, ppm, "900", script], env=env, check=True)
+    with open(ram_path, "rb") as f:
+        ram = f.read()
+    if len(ram) != 65536 or ram[0xC003] != 4 or ram[0xC002] != 2:
+        fail("TABLE command delete rig missed the command field")
+    if tuple(ram[TABLES:TABLES + 4]) != (0x34, 0xF4, 0, 0):
+        fail("TABLE command delete changed VOL/TSP or retained CMD/PARAM: %r"
+             % (tuple(ram[TABLES:TABLES + 4]),))
+
+
+def run_option1_context_case(harness, core, rom, build):
+    label = "option1-context"
+    test_rom = os.path.join(
+        build, "alynxdj-editor-%s-%d-%d.lnx"
+        % (label, os.getpid(), time.time_ns()))
+    ppm = os.path.join(build, "editor-%s.ppm" % label)
+    ram_path = os.path.join(build, "editor-%s.ram" % label)
+    shutil.copyfile(rom, test_rom)
+
+    pokes = {0xC00F: 2}                 # SYNC IN holds the exact start row
+    put(pokes, SONG, (0, 1, 2, 3))
+    for chain in range(4):
+        put(pokes, CHAINS + chain * CHAIN_SIZE, bytes([0xFF] * CHAIN_SIZE))
+        for pos in range(3):
+            put(pokes, CHAINS + chain * CHAIN_SIZE + pos * 2,
+                (chain * 3 + pos, 0))
+    put(pokes, GROOVES, (6,) + (0,) * 15)
+    env = os.environ.copy()
+    env["RETROSHOT_RAM_OUT"] = ram_path
+    env["RETROSHOT_RAM_POKE"] = ",".join(
+        "%04X:%02X" % item for item in sorted(pokes.items()))
+    env["RETROSHOT_RAM_POKE_AT"] = "250"
+
+    # First prove OPTION 1's held physical-B mute still works and suppresses
+    # the clean-tap action. Select chain position 2 and phrase row 3, then
+    # clean-tap OPTION 1.
+    # Unlike physical A+B's selected-track preview, this starts all four
+    # tracks from the same arrangement/chain/phrase context.
+    drill = "100@10,180@20,100@10,0@40,"
+    down = "20@6,0@10,"
+    held_mute = "400@6,401@4,400@6,0@20,"
+    option1 = "400@6,0@80"
+    script = ("0@280," + held_mute + drill + down * 2 + drill
+              + down * 3 + option1)
+    subprocess.run(
+        [harness, core, test_rom, ppm, "900", script], env=env, check=True)
+    with open(ram_path, "rb") as f:
+        ram = f.read()
+    if len(ram) != 65536 or ram[0xC011] != 1 or ram[0xC016] != 1:
+        fail("OPTION 1 did not arm contextual all-track SONG playback")
+    if ram[0xC012] != 1:
+        fail("OPTION 1 held mute layer was lost or triggered a clean tap")
+    for track in range(4):
+        walk = tuple(ram[WALKS + track * 7:WALKS + track * 7 + 7])
+        expected = (1, 0, track, 2, track * 3 + 2, 0, 3)
+        if walk != expected:
+            fail("OPTION 1 track %d context is %r, expected %r"
+                 % (track, walk, expected))
 
 
 def run_map_back_tap_case(harness, core, rom, build, project):
@@ -286,6 +413,79 @@ def run_instr_follow_case(harness, core, rom, build):
         fail("row-instrument drill did not reach INSTR")
     if ram[INSTRS] != 0 or ram[INSTRS + target * INSTR_SIZE] != 2:
         fail("INSTR entry did not follow/retain row instrument %02X" % target)
+
+
+def run_instr_selector_case(harness, core, rom, build):
+    label = "instrument-selector"
+    test_rom = os.path.join(
+        build, "alynxdj-editor-%s-%d-%d.lnx"
+        % (label, os.getpid(), time.time_ns()))
+    ppm = os.path.join(build, "editor-%s.ppm" % label)
+    ram_path = os.path.join(build, "editor-%s.ram" % label)
+    shutil.copyfile(rom, test_rom)
+
+    pokes = {SONG: 0, INSTRS: 0, INSTRS + INSTR_SIZE: 2}
+    put(pokes, CHAINS, (0, 0))
+    put(pokes, PHRASES, (37, 0, 0, 0))
+    env = os.environ.copy()
+    env["RETROSHOT_RAM_OUT"] = ram_path
+    env["RETROSHOT_RAM_POKE"] = ",".join(
+        "%04X:%02X" % item for item in sorted(pokes.items()))
+    env["RETROSHOT_RAM_POKE_AT"] = "250"
+
+    # INSTR opens on TYPE. Up reaches the new selector above it; edit Right
+    # selects instrument 01. Down returns to TYPE, where another edit changes
+    # only instrument 01 from WAV to KIT.
+    drill = "100@10,180@20,100@10,0@40,"
+    up = "10@6,0@20,"
+    down = "20@6,0@20,"
+    edit_right = "1@6,81@4,1@6,0@40,"
+    script = ("0@280," + drill * 3 + up + edit_right
+              + down + edit_right + "0@80")
+    subprocess.run(
+        [harness, core, test_rom, ppm, "1000", script],
+        env=env, check=True)
+    with open(ram_path, "rb") as f:
+        ram = f.read()
+    if len(ram) != 65536 or ram[0xC003] != 3 or ram[0xC001] != 0:
+        fail("instrument selector rig did not return to the TYPE field")
+    if ram[INSTRS] != 0 or ram[INSTRS + INSTR_SIZE] != 3:
+        fail("INSTR selector did not switch editing from 00 to 01")
+
+
+def run_drill_row_reset_case(harness, core, rom, build, phrase):
+    label = "phrase-entry-row-reset" if phrase else "chain-entry-row-reset"
+    test_rom = os.path.join(
+        build, "alynxdj-editor-%s-%d-%d.lnx"
+        % (label, os.getpid(), time.time_ns()))
+    ppm = os.path.join(build, "editor-%s.ppm" % label)
+    ram_path = os.path.join(build, "editor-%s.ram" % label)
+    shutil.copyfile(rom, test_rom)
+
+    pokes = {SONG: 0}
+    put(pokes, CHAINS, (0, 0))
+    env = os.environ.copy()
+    env["RETROSHOT_RAM_OUT"] = ram_path
+    env["RETROSHOT_RAM_POKE"] = ",".join(
+        "%04X:%02X" % item for item in sorted(pokes.items()))
+    env["RETROSHOT_RAM_POKE_AT"] = "250"
+
+    drill = "100@10,180@20,100@10,0@40,"
+    down = "20@5,0@8,"
+    back = "100@10,140@20,100@10,0@40,"
+    script = ("0@280," + drill * (2 if phrase else 1)
+              + down * 10 + back + drill + "0@80")
+    subprocess.run(
+        [harness, core, test_rom, ppm, "1100", script],
+        env=env, check=True)
+    with open(ram_path, "rb") as f:
+        ram = f.read()
+    expected_screen = 2 if phrase else 1
+    if len(ram) != 65536 or ram[0xC003] != expected_screen:
+        fail("%s did not return to its child screen" % label)
+    if ram[0xC001] != 0:
+        fail("%s retained row %02X instead of entering at 00"
+             % (label, ram[0xC001]))
 
 
 def run_wave_navigation_case(harness, core, rom, build, direction):
@@ -385,6 +585,45 @@ def run_demo_case(harness, core, rom, build):
     if tuple(ram[CHAINS + 20 * CHAIN_SIZE:
                  CHAINS + 20 * CHAIN_SIZE + 4]) != (20, 0, 20, 0):
         fail("FILES DEMO did not restore the factory chain data")
+
+
+def run_purge_overlay_case(harness, core, rom, build):
+    label = "files-purge-overlay"
+    test_rom = os.path.join(
+        build, "alynxdj-editor-%s-%d-%d.lnx"
+        % (label, os.getpid(), time.time_ns()))
+    ppm = os.path.join(build, "editor-%s.ppm" % label)
+    ram_path = os.path.join(build, "editor-%s.ram" % label)
+    shutil.copyfile(rom, test_rom)
+
+    pokes = {SONG: 0}
+    put(pokes, CHAINS, (0, 0))
+    put(pokes, CHAINS + CHAIN_SIZE, (1, 0))
+    put(pokes, PHRASES, (37, 0, 0, 0))
+    put(pokes, PHRASES + PHRASE_SIZE, (38, 1, 0, 0))
+    env = os.environ.copy()
+    env["RETROSHOT_RAM_OUT"] = ram_path
+    env["RETROSHOT_RAM_POKE"] = ",".join(
+        "%04X:%02X" % item for item in sorted(pokes.items()))
+    env["RETROSHOT_RAM_POKE_AT"] = "250"
+
+    to_files = "100@10,120@20,100@10,0@40,"
+    up_to_purge = "10@6,0@20,"
+    confirm = "1@4,0@24,1@4,0@80"
+    script = "0@280," + to_files + up_to_purge + confirm
+    subprocess.run(
+        [harness, core, test_rom, ppm, "750", script], env=env, check=True)
+    with open(ram_path, "rb") as f:
+        ram = f.read()
+    if len(ram) != 65536 or ram[0xC003] != 5:
+        fail("PURGE overlay action did not remain on FILES")
+    if tuple(ram[CHAINS:CHAINS + 2]) != (0, 0) or ram[PHRASES] != 37:
+        fail("PURGE overlay removed referenced chain/phrase data")
+    if any(value != 0xFF for value in
+           ram[CHAINS + CHAIN_SIZE:CHAINS + CHAIN_SIZE * 2]):
+        fail("PURGE overlay retained the unreferenced chain")
+    if any(ram[PHRASES + PHRASE_SIZE:PHRASES + PHRASE_SIZE * 2]):
+        fail("PURGE overlay retained the unreferenced phrase")
 
 
 def run_command_order_case(harness, core, rom, build, backwards):
@@ -530,23 +769,35 @@ def main():
 
     run_back_tap_case(harness, core, rom, build, 1)
     run_back_tap_case(harness, core, rom, build, 2)
+    run_back_tap_case(harness, core, rom, build, 3)
     run_map_back_tap_case(harness, core, rom, build, False)
     run_map_back_tap_case(harness, core, rom, build, True)
+    run_table_command_latch_case(harness, core, rom, build)
+    run_table_command_delete_case(harness, core, rom, build)
+    run_option1_context_case(harness, core, rom, build)
     run_instr_follow_case(harness, core, rom, build)
+    run_instr_selector_case(harness, core, rom, build)
+    run_drill_row_reset_case(harness, core, rom, build, False)
+    run_drill_row_reset_case(harness, core, rom, build, True)
     run_wave_navigation_case(harness, core, rom, build, "up")
     run_wave_navigation_case(harness, core, rom, build, "down")
     run_new_defaults_case(harness, core, rom, build)
     run_demo_case(harness, core, rom, build)
+    run_purge_overlay_case(harness, core, rom, build)
     run_command_order_case(harness, core, rom, build, False)
     run_command_order_case(harness, core, rom, build, True)
 
     print("editor clone: PASS — empty cells mint next blank/unreferenced; "
           "occupied cells slim-clone; command cuts/double-taps preserve note "
           "rows; new PHRASE notes inherit the last explicitly edited instrument; "
-          "CHAIN/PHRASE/OPTIONS/PROJECT ignore physical-A back taps; "
+          "CHAIN/PHRASE/INSTR/OPTIONS/PROJECT ignore physical-A back taps; "
+          "TABLE commands inherit their prior pair and delete field-safely; "
+          "INSTR has an in-page selector; hierarchy drill enters row 00; "
+          "OPTION 1 starts all "
+          "tracks from the selected context; "
           "PHRASE drill follows the selected row's instrument; WAVE number "
           "requires physical A; NEW patch defaults are canonical; "
-          "empty boots stay clean and FILES DEMO restores the factory song; "
+          "empty boots stay clean; FILES DEMO and overlaid PURGE work; "
           "PHRASE/TABLE commands step alphabetically in both directions")
 
 

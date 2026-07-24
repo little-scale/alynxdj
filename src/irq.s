@@ -21,7 +21,6 @@
         .export         _dac_off
         .export         _dac_muted
         .export         _dac_rate
-        .export         _dac_peak
         .import         _sd
         .import         _engine_tick
         .import         popa
@@ -48,7 +47,7 @@ CLOCK_RX_HEAD := $C0F9
 CLOCK_RX_TAIL := $C0FA
 CLOCK_RX_OVERRUN := $C0FB
 CLOCK_RX := $C088
-PCM_UNDERRUN := $C027             ; two wrapping diagnostic counters
+PCM_UNDERRUN := $C027             ; two saturating diagnostic counters
 
 PCM_CTLA = $98                  ; int enable | count | reload | 1us
 WAVES_OFF = 7424                ; offsetof(struct songdata, waves)
@@ -67,7 +66,6 @@ _dac_mode: .res 2               ; DAC_NONE / DAC_SAMPLE / DAC_WAVE
 _dac_off: .res 2                ; owning channel * 8
 _dac_muted: .res 2              ; consume normally, write zero when muted
 _dac_rate: .res 2               ; KIT timer reload (default 127)
-_dac_peak: .res 2               ; per-frame |OUTPUT| peak, per slot
 in_tick:  .res 1                ; VBL tick re-entrancy guard
 zpbuf:    .res 32               ; cc65 runtime zp save (tick runs C in IRQ)
 wav_pos:  .res 2
@@ -338,6 +336,9 @@ handler:
         lda     _pcm_done
         bne     @s0finish
         inc     PCM_UNDERRUN     ; underrun: hold the last DAC value
+        bne     :+
+        dec     PCM_UNDERRUN     ; saturate at $FF; zero always means clean
+:
         bra     @slot1
 @s0finish:
         stz     TIM7CTLA
@@ -349,23 +350,14 @@ handler:
         bra     @slot1
 @s0feed:
         phx
-        phy
-        lda     (_pcm_ptr)
-        tay
-.ifndef ALYNXDJ_NO_DAC_PEAKS
-        bpl     :+
-        eor     #$ff
-:       cmp     _dac_peak
-        bcc     :+
-        sta     _dac_peak
-:
-.endif
         lda     _dac_muted
-        bne     :+
-        tya
-        bra     :++
-:       lda     #0
-:       ldx     _dac_off
+        bne     @s0zero
+        lda     (_pcm_ptr)
+        bra     @s0write
+@s0zero:
+        lda     #0
+@s0write:
+        ldx     _dac_off
         sta     AUD0DAC,x
         inc     _pcm_ptr
         bne     @s0done
@@ -376,7 +368,6 @@ handler:
         lda     #RING0_HI
         sta     _pcm_ptr+1
 @s0done:
-        ply
         plx
         bra     @slot1
 
@@ -385,15 +376,6 @@ handler:
         phy
         ldy     wav_pos
         lda     (wav_ptr0),y
-.ifndef ALYNXDJ_NO_DAC_PEAKS
-        pha
-        bpl     :+
-        eor     #$ff
-:       cmp     _dac_peak
-        bcc     :+
-        sta     _dac_peak
-:       pla
-.endif
         ldx     _dac_muted
         beq     :+
         lda     #0
@@ -432,6 +414,9 @@ handler:
         lda     _pcm_done+1
         bne     @s1finish
         inc     PCM_UNDERRUN+1
+        bne     :+
+        dec     PCM_UNDERRUN+1   ; saturate at $FF; zero always means clean
+:
         jmp     @vbl
 @s1finish:
         stz     TIM5CTLA
@@ -443,23 +428,14 @@ handler:
         bra     @vbl
 @s1feed:
         phx
-        phy
-        lda     (_pcm_ptr+2)
-        tay
-.ifndef ALYNXDJ_NO_DAC_PEAKS
-        bpl     :+
-        eor     #$ff
-:       cmp     _dac_peak+1
-        bcc     :+
-        sta     _dac_peak+1
-:
-.endif
         lda     _dac_muted+1
-        bne     :+
-        tya
-        bra     :++
-:       lda     #0
-:       ldx     _dac_off+1
+        bne     @s1zero
+        lda     (_pcm_ptr+2)
+        bra     @s1write
+@s1zero:
+        lda     #0
+@s1write:
+        ldx     _dac_off+1
         sta     AUD0DAC,x
         inc     _pcm_ptr+2
         bne     @s1done
@@ -470,7 +446,6 @@ handler:
         lda     #RING1_HI
         sta     _pcm_ptr+3
 @s1done:
-        ply
         plx
         bra     @vbl
 
@@ -479,15 +454,6 @@ handler:
         phy
         ldy     wav_pos+1
         lda     (wav_ptr1),y
-.ifndef ALYNXDJ_NO_DAC_PEAKS
-        pha
-        bpl     :+
-        eor     #$ff
-:       cmp     _dac_peak+1
-        bcc     :+
-        sta     _dac_peak+1
-:       pla
-.endif
         ldx     _dac_muted+1
         beq     :+
         lda     #0

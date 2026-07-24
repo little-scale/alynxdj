@@ -57,6 +57,7 @@ void pool_init(void)
     trig_kit[0] = trig_kit[1] = EMPTY;
     stream_cancel[0] = stream_cancel[1] = 0;
     stream_left[0] = stream_left[1] = 0;
+    dac_started[0] = dac_started[1] = 0;
     cart_seek(POOL_BLOCK, 0);
     cart_read(hdr, 4);
     if (hdr[0] != 'P' || hdr[1] != 'L') {
@@ -86,6 +87,11 @@ static void pump_voice(unsigned char voice)
         __asm__("cli");
         free_ = (unsigned)(tail - head - 1) & (RING_SIZE - 1);
         if (!free_)
+            return;
+        /* Rendering now checks in at glyph granularity.  Wait for a useful
+         * piece of room instead of turning those frequent service points
+         * into one- or two-byte cart transactions. */
+        if (free_ < PUMP_CHUNK)
             return;
         n = PUMP_CHUNK;
         if (n > free_)
@@ -170,9 +176,10 @@ static void do_trigger(unsigned char voice, unsigned char kit,
      * trigger that landed during prefill stays pending for the next frame,
      * while a cancellation must leave the timer stopped. */
     __asm__("sei");
-    if (trig_kit[voice] == EMPTY && !stream_cancel[voice])
+    if (trig_kit[voice] == EMPTY && !stream_cancel[voice]) {
         pcm_ring_start(voice);
-    else if (trig_kit[voice] != EMPTY)
+        ++dac_started[voice];
+    } else if (trig_kit[voice] != EMPTY)
         dac_mode[voice] = DAC_SAMPLE;
     __asm__("cli");
 }

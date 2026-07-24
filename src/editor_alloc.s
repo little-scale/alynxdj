@@ -6,7 +6,7 @@
 
         .setcpu "65C02"
 
-        .export  _find_new_chain, _find_new_phrase
+        .export  _find_new_chain, _find_new_phrase, _engine_table_cursor
         .export  _instr_taps, _reset_instr_taps, _clock_tap_glide
         .import  _sd, _voices, _live_taps, aslax4
         .importzp ptr1, ptr2
@@ -24,10 +24,51 @@ INSTR_TAPSLO = 5
 INSTR_TAPSHI = 9
 VOICE_TAPS   = 20
 VOICE_TAPRATE = 22
+VOICE_ENV      = 2
+VOICE_TABLE    = 29
+VOICE_TPOS     = 30
 VOICE_INUM   = 32
 VOICE_SIZE   = 49
 
         .segment "CODE"
+
+; unsigned char __fastcall__ engine_table_cursor(unsigned table_track)
+; AX arrives as table:track.  tpos normally points one step beyond the row
+; most recently applied, so fold it back for the display.  Row F sticks and
+; is therefore kept as F.  Return $FF if this track/table is not sounding.
+_engine_table_cursor:
+        stx     ptr1+1                  ; requested table
+        ldx     $C011                   ; eng_mode
+        beq     @no_table
+        cmp     #4
+        bcs     @no_table
+        tay                             ; track -> voice byte offset
+        lda     #0
+        cpy     #0
+        beq     @voice
+@offset:
+        clc
+        adc     #VOICE_SIZE
+        dey
+        bne     @offset
+@voice:
+        tay
+        lda     _voices+VOICE_ENV,y
+        beq     @no_table
+        lda     _voices+VOICE_TABLE,y
+        cmp     ptr1+1
+        bne     @no_table
+        lda     _voices+VOICE_TPOS,y
+        and     #$0F
+        beq     @done
+        cmp     #$0F
+        beq     @done
+        dec     a
+@done:
+        rts
+@no_table:
+        lda     #EMPTY
+        rts
 
 ; unsigned char find_new_chain(void)
 ; Lowest chain with 16 empty steps and no reference in song[128][4].
