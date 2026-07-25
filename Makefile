@@ -104,6 +104,7 @@ shot: $(ROM) $(RETROSHOT)
 	@echo "wrote $(BUILD)/shot.png"
 
 test-bank: $(ROM)
+	$(NODE) tools/test_sample_patch_browser.mjs sample-patch-browser.html
 	$(PYTHON) tools/test_sample_bank.py $(ROM) $(SAMPLE_BANK) sample-patch-browser.html $(BUILD)/auxmidi.bin $(BUILD)/auxhelp.bin $(BUILD)/help.bin
 
 test-dac: $(ROM) $(RETROSHOT)

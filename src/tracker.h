@@ -16,13 +16,13 @@
 /* command ids (cmd byte in steps/tables; 0 = none). Letters follow the
  * SMSGGDJ set where the meaning survives (DESIGN.md §8). */
 #define CMD_NONE 0
-#define CMD_A    1      /* A xx  run table xx (one-shot; 10 = off) */
+#define CMD_A    1      /* A xx  PHRASE-only table override; 10 = off */
 #define CMD_C    2      /* C xy  chord: loop +0,+x,+y semitones per tick */
 #define CMD_D    3      /* D xx  delay trigger xx ticks */
 #define CMD_G    4      /* G xx  signed direction + tick/row tap period */
-#define CMD_H    5      /* H xx  table: loop to row x; phrase: end phrase */
+#define CMD_H    5      /* H xx table loop; phrase 00=end, 01-0F=row branch */
 #define CMD_K    6      /* K xx  kill note after xx ticks */
-#define CMD_O    7      /* O xy  pan: ATTEN left x / right y */
+#define CMD_O    7      /* O xy  pan: L/R levels, 0 hard mute / F full */
 #define CMD_P    8      /* P xx  pitch bend, signed 1/16-semi per tick */
 #define CMD_V    9      /* V xy  vibrato speed x depth y (1/16 semis) */
 #define CMD_W    10     /* W xx  shorten this row to xx ticks */
@@ -76,7 +76,7 @@ struct instr {
     unsigned char type;     /* IT_* */
     unsigned char vol;      /* LFSR/WAV peak; KIT high-nibble PCM gain */
     unsigned char env;      /* ATK<<4 | DCY: 4-bit TIMES, higher = longer
-                               (0 = instant attack / sustain-forever decay);
+                               (0 = instant attack / immediate decay);
                                mapped through env_rate[] in the engine */
     unsigned char hold;     /* TBS<<4 | HOLD: table ticks/row (0 = per-note
                                wrapping cycle), peak ticks in low nibble;
@@ -140,6 +140,7 @@ unsigned char __fastcall__ engine_table_cursor(unsigned table_track);
 #define eng_mode (*(volatile unsigned char *)0xC011)
 #define eng_waiting (*(volatile unsigned char *)0xC016)
 extern unsigned char live_q[NCH];   /* queued chain, $FF none, $FE stop */
+#pragma zpsym("live_q")
 void __fastcall__ engine_live_queue(unsigned char track, unsigned char chain);
 #define eng_mute (*(volatile unsigned char *)0xC012)
 #define eng_gpos   (*(volatile unsigned char *)0xC014)

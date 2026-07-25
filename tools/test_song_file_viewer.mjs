@@ -48,6 +48,9 @@ if (!html.includes("LFSR · legacy $01"))
   throw new Error("viewer does not identify legacy type 01 as LFSR");
 if (!html.includes("KIT: 6-/7- full · 2-–5- half · 1- quarter · 0- mute"))
   throw new Error("viewer does not document the KIT VOL gain states");
+if (!html.includes('"PAN left"') || !html.includes('"PAN right"')
+    || !html.includes("Lynx II level: 0 mute · F full"))
+  throw new Error("viewer does not expose the universal PAN nibbles");
 
 function assert(condition,message) {
   if (!condition) throw new Error(message);
@@ -81,9 +84,17 @@ assert(elements.get("content").innerHTML.includes('<option value="7" selected>7-
 const kitVolEdit=element();
 kitVolEdit.value="4"; kitVolEdit.dataset={ifield:"vol"};
 elements.get("content").dispatch("change",{target:kitVolEdit});
+const panLeftEdit=element();
+panLeftEdit.value="8"; panLeftEdit.dataset={ifield:"panLeft"};
+elements.get("content").dispatch("change",{target:panLeftEdit});
+const panRightEdit=element();
+panRightEdit.value="3"; panRightEdit.dataset={ifield:"panRight"};
+elements.get("content").dispatch("change",{target:panRightEdit});
 elements.get("tabs").dispatch("click",{target:{closest(){return {dataset:{tab:"raw"}}}}});
 assert(elements.get("content").innerHTML.includes("1600  03 40"),
   "KIT coarse volume edit did not store a zero fine nibble");
+assert(elements.get("content").innerHTML.includes("1600  03 40 05 05 00 01 FF 83"),
+  "universal PAN edit did not pack left/right nibbles into byte 7");
 const songEdit=element();
 songEdit.value="1A"; songEdit.dataset={byte:"0",mode:"hex",max:"31",ff:"1"};
 elements.get("content").dispatch("change",{target:songEdit});

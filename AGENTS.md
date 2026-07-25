@@ -15,7 +15,7 @@ later hardware). The ROM and project name is **ALYNXDJ**.
 
 **DESIGN.md is the contract** (with a §0 decision log — read it before design
 decisions, don't re-litigate settled ones); **PLAN.md** holds the milestone
-history through M38. Key settled decisions: 4 identical
+history through M45. Key settled decisions: 4 identical
 tracks each playing LFSR/WAV/KIT (D1/D35), cc65 C editor + ca65 asm
 driver/IRQ/render (D2), 59.9 Hz VBlank engine tick with no region split (D3),
 flat RAM song block but **packed/RLE EEPROM save — 2 KB 93C86 is the whole
@@ -44,14 +44,33 @@ per u16-sized slot. The builder handles 8/16/24/32-bit integer WAV sources;
 older experimental rate IDs are intentionally rejected. D40 factory
 conversion peak-normalizes, then applies +12.00 dB into a tanh soft limiter
 before signed 8-bit quantization; the processing is baked into the bank.
-Command values retain their historical/save-format IDs, but PHRASE and TABLE
-selection steps through the implemented letters alphabetically in both
-directions (D21). `Jxy` follows the sibling mask-first order: x is the
-four-pass mask and y is signed transpose (D41). A clean Option-1 tap stops
-PLAY/WAIT or, while stopped,
+Command values retain their historical/save-format IDs. PHRASE steps through
+the implemented letters alphabetically; TABLE does the same but skips
+phrase-only `A` (D21). Editing a PHRASE/TABLE command pair updates one global
+recall latch, and tapping physical B on an empty command-letter cell inserts
+both remembered bytes without overwriting occupied data. Repeated phrase
+`Axx` targets preserve a TBS 0 playhead; changed targets restart. DCY 0 is
+immediate and HOLD F is the sole indefinite patch sustain (D45).
+`Jxy` follows the sibling mask-first order: x is the
+four-pass mask and y is signed transpose (D41). PAN is universal across
+LFSR/WAV/KIT: byte `xy` gives left/right output level, and existing command
+`Oxy` applies the same encoding live until the next note restores patch PAN
+(D42). Zero PAN nibbles also set MSTEREO's per-side hard-disable bit, making
+`00` silent and `F0`/`0F` exact endpoints even when fractional ATTEN/MPAN is
+not honored (D44). The standalone patcher's Slice-to-kit path keeps one long WAV
+unnormalized through shared gain/tanh, maps 1–8 equal slices to unique pads,
+and leaves optional per-slice micro fades off by default so continuous
+boundaries remain exact. It directly parses the WAV rate and uses band-limited
+5,208.333 Hz conversion so duration/pitch are browser-independent; each
+numbered waveform slice is directly clickable for preview/stop (D43).
+The patcher always exposes zero-based KIT `00`–`07`; source banks with fewer
+kits gain empty, fillable one-byte-silent pads on export, subject to the shared
+pool capacity (D25).
+A clean Option-1 tap stops PLAY/WAIT or, while
+stopped,
 starts all four tracks from the selected SONG/CHAIN/PHRASE context; its held
 mute/solo layer remains unchanged (D28). Phrase `H` is a pre-row branch and
-each track loops only its
+`H00` advances to the next chain phrase when present; each track loops only its
 current contiguous vertical SONG group (D29). D31 adds a nine-page,
 build-validated HELP screen above TABLE; it stops transport and cold-loads over
 the idle PCM rings. D32 adds deterministic row-00 hierarchy entry, an in-page
@@ -113,6 +132,8 @@ using a virtual environment.
   `$F600`, and `$F320`; the sample bank occupies blocks 45–249. HELP code is
   cart block 250 and its `AHD1` text is blocks 251–253; MIDI remains 254–255.
   The C stack is 512 bytes and `$D000-$D3FF` is normally two 512-byte rings.
+  The 32 bytes beyond the visible framebuffer at `$BFE0-$BFFF` are PADRAM
+  editor state; APPZP also owns compact editor flags and the four PCM heads.
   Entering HELP stops transport and cold-loads its renderer at `$D004` over
   those idle rings; FILES PURGE shares that stopped-only code overlay, and
   its scratch buffers are `$D3B0-$D3FF`. Keep

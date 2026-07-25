@@ -76,6 +76,45 @@
     .workspace-head { display:flex; justify-content:space-between; align-items:flex-end; gap:24px; margin-bottom:24px }
     .workspace-head h2 { margin:0; letter-spacing:-.025em; font-size:25px }
     .toolbar { display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:10px }
+    .slicer { margin-bottom:22px; padding:20px; background:linear-gradient(145deg,#58f3d20b,#a581ff0b),#15121f; border:1px solid #58f3d24f }
+    .slicer-head { display:flex; justify-content:space-between; align-items:flex-start; gap:24px; margin-bottom:17px }
+    .slicer-head h3 { margin:2px 0 6px; font-size:20px }
+    .slicer-head p { max-width:720px; margin:0; color:var(--muted); font-size:12px; line-height:1.5 }
+    .slice-drop { display:grid; min-height:150px; place-items:center; padding:24px; color:var(--muted); background:#100e18; border:1px dashed #a581ff8f; cursor:pointer; text-align:center; transition:.18s }
+    .slice-drop:hover,.slice-drop.dragging { color:var(--paper); background:#a581ff0d; border-color:var(--acid) }
+    .slice-drop strong { display:block; margin-bottom:7px; color:var(--paper); font-size:16px }
+    .slice-drop-copy { display:block; color:inherit }
+    .slice-drop .slice-drop-cta { display:block; margin-top:13px; color:var(--violet); text-transform:uppercase; letter-spacing:.1em; font:700 10px/1 ui-monospace,monospace }
+    .slice-source { display:flex; justify-content:space-between; align-items:center; gap:18px; margin-bottom:12px; padding:10px 12px; color:var(--muted); background:#ffffff06; border:1px solid var(--line); font-size:11px }
+    .slice-source strong { overflow:hidden; color:var(--paper); text-overflow:ellipsis; white-space:nowrap }
+    .slice-waveform { height:156px; margin:0 0 10px }
+    .slice-waveform .wave-bars { inset:12px 7px; gap:1px }
+    .slice-waveform .wave-bar { max-height:126px }
+    .slice-waveform .trim-range::-webkit-slider-thumb { height:156px }
+    .slice-waveform .trim-range::-moz-range-thumb { height:156px }
+    .slice-region { position:absolute; z-index:1; top:0; bottom:0; background:#58f3d20d; border-top:1px solid #58f3d23d; border-bottom:1px solid #58f3d23d; pointer-events:none }
+    .slice-hit { position:absolute; z-index:2; top:0; bottom:0; padding:0; color:#d7d3e4; background:transparent; border:0; border-left:1px solid transparent; cursor:pointer }
+    .slice-hit:hover { background:#58f3d21a; box-shadow:inset 0 0 0 1px #58f3d252 }
+    .slice-hit.playing { color:var(--acid); background:#a581ff29; box-shadow:inset 0 0 0 1px var(--violet) }
+    .slice-hit span { position:absolute; right:6px; bottom:6px; padding:4px 5px; background:#100e18c9; text-transform:uppercase; letter-spacing:.08em; font:700 8px/1 ui-monospace,monospace }
+    .slice-boundary { position:absolute; z-index:3; top:0; bottom:0; width:1px; background:#ffffff5c; pointer-events:none }
+    .slice-boundary b { position:absolute; top:5px; left:4px; color:#d7d3e4; text-shadow:0 1px 2px #000; font:700 8px/1 ui-monospace,monospace }
+    .slice-controls { display:grid; grid-template-columns:1fr 1fr 1fr 1.2fr; gap:10px; margin-top:16px }
+    .slice-control { display:grid; gap:8px; min-width:0; padding:11px; color:var(--muted); background:#ffffff06; border:1px solid var(--line); text-transform:uppercase; letter-spacing:.07em; font:700 9px/1 ui-monospace,monospace }
+    .slice-control select,.slice-control input[type=range] { width:100%; min-width:0 }
+    .slice-control select { padding:7px 8px; color:var(--paper); background:#171422; border:1px solid var(--line) }
+    .slice-control output { color:var(--acid); letter-spacing:0 }
+    .slice-note { display:flex; align-items:center; gap:9px; margin-top:12px; padding:9px 11px; color:#b9b4c8; background:#d9ff4f09; border-left:2px solid var(--acid); font:10px/1.45 ui-monospace,monospace }
+    .slice-map { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-top:14px }
+    .slice-map-card { display:grid; grid-template-columns:auto 1fr; align-items:center; gap:9px; padding:10px; background:#100e18; border:1px solid var(--line) }
+    .slice-map-card b { display:grid; width:28px; height:28px; place-items:center; color:var(--acid); border:1px solid #d9ff4f40; font:700 10px/1 ui-monospace,monospace }
+    .slice-map-card div { display:grid; gap:6px; min-width:0 }
+    .slice-map-card small { overflow:hidden; color:var(--muted); text-overflow:ellipsis; white-space:nowrap; font:9px/1 ui-monospace,monospace }
+    .slice-map-card select { width:100%; padding:5px 6px; color:var(--paper); background:#171422; border:1px solid var(--line); font-size:11px }
+    .slice-actions { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-top:15px }
+    .slice-actions p { margin:0; color:var(--muted); font-size:11px }
+    .slice-actions div { display:flex; gap:8px }
+    .slice-actions .primary { margin-top:0 }
     .kit-tabs { display:grid; grid-template-columns:repeat(8,1fr); margin-bottom:22px; overflow-x:auto; border:1px solid var(--line) }
     .kit-tabs button { position:relative; display:grid; align-content:center; gap:5px; min-width:95px; min-height:70px; padding:11px 14px; color:var(--muted); background:#171422; border:0; border-right:1px solid var(--line); cursor:pointer; text-align:left }
     .kit-tabs button:last-child { border-right:0 }
@@ -83,6 +122,9 @@
     .kit-tabs span { font-size:12px; font-weight:700; white-space:nowrap }
     .kit-tabs button.selected { color:var(--paper); background:var(--panel2); box-shadow:inset 0 -3px var(--acid) }
     .kit-tabs button.selected b { color:var(--acid) }
+    .kit-tabs button.empty { background:#12101a; border-bottom:1px dashed #756f8547 }
+    .kit-tabs button.empty span { color:#756f85; font-weight:600 }
+    .kit-tabs button.empty.selected span { color:var(--paper) }
     .kit-tabs i { position:absolute; top:9px; right:9px; width:6px; height:6px; background:var(--violet); border-radius:50%; box-shadow:0 0 10px var(--violet) }
     .sample-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:12px }
     .sample-card { min-width:0; padding:16px; background:#181522; border:1px solid var(--line); transition:.18s }
@@ -93,12 +135,14 @@
     .sample-title div { flex:1; min-width:0 }
     .sample-title h3 { margin:0 0 4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:13px }
     .sample-title p { margin:0; color:#756f85; text-transform:uppercase; font:10px/1 ui-monospace,monospace }
-    .changed-tag,.warning-chip { padding:4px 6px; color:#171520; background:var(--violet); font:800 9px/1 ui-monospace,monospace }
+    .changed-tag,.warning-chip,.empty-tag { padding:4px 6px; color:#171520; background:var(--violet); font:800 9px/1 ui-monospace,monospace }
     .warning-chip { color:#271c0f; background:#ffc85c }
+    .empty-tag { color:#aaa4b7; background:#252130; border:1px solid #514b5f }
     .waveform { position:relative; height:58px; margin:15px 0 8px; overflow:hidden; background:#100e18; border:1px solid #ffffff0b }
     .wave-bars { position:absolute; inset:8px 5px; display:flex; align-items:center; gap:2px; pointer-events:none }
     .wave-bar { flex:1 1 0; min-width:1px; background:var(--aqua); opacity:.68 }
     .changed .wave-bar { background:var(--violet); opacity:.86 }
+    .sample-card.empty .wave-bar { opacity:.12 }
     .trim-shade { position:absolute; z-index:2; top:0; bottom:0; background:#090711b8; pointer-events:none }
     .trim-shade.start { left:0 }
     .trim-shade.end { right:0 }
@@ -152,6 +196,8 @@
     [hidden] { display:none!important }
     @media (max-width:960px) {
       .sample-grid { grid-template-columns:repeat(2,1fr) }
+      .slice-controls { grid-template-columns:1fr 1fr }
+      .slice-map { grid-template-columns:repeat(2,1fr) }
       .rom-bar { grid-template-columns:1.5fr 1fr auto }
       .rom-stat:first-of-type { display:none }
       .export-panel { grid-template-columns:1fr; gap:24px }
@@ -172,6 +218,11 @@
       .workspace { padding:17px 12px }
       .workspace-head { flex-direction:column; align-items:flex-start }
       .toolbar { justify-content:space-between; width:100% }
+      .slicer-head,.slice-actions { flex-direction:column; align-items:stretch }
+      .slice-controls,.slice-map { grid-template-columns:1fr }
+      .slice-waveform { height:130px }
+      .slice-waveform .trim-range::-webkit-slider-thumb { height:130px }
+      .slice-waveform .trim-range::-moz-range-thumb { height:130px }
       .sample-grid { grid-template-columns:1fr }
       .sample-card:hover { transform:none }
       .export-panel { padding:18px }
@@ -199,9 +250,10 @@
     const RATE_ID = 1;
     const PCM_RATE = 1000000 / 192;             // timer reload 191
     const SLOT_CAP = 65535;                     // u16 sample length, about 12.58 s
+    const MAX_KITS = 8;
     const GAIN_MIN = -24;
     const GAIN_MAX = 24;
-    const KIT_NAMES = ["808","909","C78","606","Speech 1","Speech 2","Speech 3","Speech 4"];
+    const KIT_NAMES = ["808","909","C78","606","Break","Speech 1"];
     const PAD_NAMES = ["Pad 1","Pad 2","Pad 3","Pad 4","Pad 5","Pad 6","Pad 7","Pad 8"];
 
     function fail(message) { throw new Error(message) }
@@ -220,12 +272,20 @@
     function hasMagic(bytes,offset,text) {
       return [...text].every((char,index)=>bytes[offset+index]===char.charCodeAt(0));
     }
+    function expandKits(kits) {
+      if (kits.length < 1 || kits.length > MAX_KITS)
+        fail(`A pool must contain 1–${MAX_KITS} kits.`);
+      const expanded=kits.map(kit=>kit.map(sample=>sample));
+      while (expanded.length<MAX_KITS)
+        expanded.push(Array.from({length:8},()=>new Int8Array([0])));
+      return expanded;
+    }
 
     function parsePool(bytes,poolOffset,capacity,sourceName) {
       if (bytes[poolOffset] !== 80 || bytes[poolOffset+1] !== 76)
         fail(`No ALYNXDJ PL sample bank was found in ${sourceName}.`);
       const kitCount = bytes[poolOffset+2];
-      if (kitCount < 1 || kitCount > 8) fail(`${sourceName} declares ${kitCount} sample kits; ALYNXDJ supports 1–8.`);
+      if (kitCount < 1 || kitCount > MAX_KITS) fail(`${sourceName} declares ${kitCount} sample kits; ALYNXDJ supports 1–${MAX_KITS}.`);
       if (bytes[poolOffset+3] !== RATE_ID)
         fail(`${sourceName} does not use ALYNXDJ's 5,208.333 Hz sample-bank format.`);
       const directorySize = 4 + kitCount * 8 * 5;
@@ -240,16 +300,16 @@
           const length = readU16(bytes,entry+3);
           const end = relativeOffset + length;
           if (relativeOffset < directorySize || end > capacity)
-            fail(`Kit ${kit+1}, pad ${slot+1} points outside the sample pool.`);
-          if (relativeOffset < previousEnd) fail(`Kit ${kit+1}, pad ${slot+1} overlaps an earlier sample.`);
-          if (length < 1 || length > SLOT_CAP) fail(`Kit ${kit+1}, pad ${slot+1} has an unsupported sample length.`);
+            fail(`Kit ${kit}, pad ${slot+1} points outside the sample pool.`);
+          if (relativeOffset < previousEnd) fail(`Kit ${kit}, pad ${slot+1} overlaps an earlier sample.`);
+          if (length < 1 || length > SLOT_CAP) fail(`Kit ${kit}, pad ${slot+1} has an unsupported sample length.`);
           const start = poolOffset + relativeOffset;
           row.push(new Int8Array(bytes.buffer.slice(start,start+length)));
           previousEnd = end; poolUsed = Math.max(poolUsed,end);
         }
         kits.push(row);
       }
-      return {kits,kitCount,poolUsed};
+      return {kits:expandKits(kits),kitCount,poolUsed};
     }
 
     function parseRom(input) {
@@ -277,12 +337,12 @@
     }
 
     function buildPool(kits,capacity=POOL_CAPACITY) {
-      if (kits.length < 1 || kits.length > 8) fail("A pool must contain 1–8 kits.");
+      if (kits.length < 1 || kits.length > MAX_KITS) fail(`A pool must contain 1–${MAX_KITS} kits.`);
       for (const [kitIndex,kit] of kits.entries()) {
-        if (kit.length !== 8) fail(`Kit ${kitIndex+1} must contain exactly 8 pads.`);
+        if (kit.length !== 8) fail(`Kit ${kitIndex} must contain exactly 8 pads.`);
         for (const [slotIndex,sample] of kit.entries())
           if (sample.length < 1 || sample.length > SLOT_CAP)
-            fail(`Kit ${kitIndex+1}, pad ${slotIndex+1} exceeds the ${SLOT_CAP}-byte slot limit.`);
+            fail(`Kit ${kitIndex}, pad ${slotIndex+1} exceeds the ${SLOT_CAP}-byte slot limit.`);
       }
       const directorySize = 4 + kits.length * 8 * 5;
       const used = kits.reduce((total,kit) => total + kit.reduce((sum,sample) => sum+sample.length,0),directorySize);
@@ -329,6 +389,136 @@
       return output;
     }
 
+    /* The slicer keeps decoded audio as floating point until shared gain and
+     * drive have been applied. Unlike ordinary one-shot import, this path
+     * deliberately performs no peak normalization or trailing-silence trim:
+     * adjacent pads therefore retain the source recording's relative levels
+     * and sample-to-sample continuity when the fade option is off. */
+    function processFloatSample(source,gainDb=0,tanhDrive=false) {
+      if (!source?.length) fail("A slice source must contain audio.");
+      gainDb=Math.max(GAIN_MIN,Math.min(GAIN_MAX,Number(gainDb)||0));
+      const gain=10**(gainDb/20), output=new Int8Array(source.length);
+      for (let i=0;i<source.length;i++) {
+        const amplified=Number(source[i])*gain;
+        const shaped=tanhDrive?Math.tanh(amplified):Math.max(-1,Math.min(1,amplified));
+        output[i]=Math.max(-127,Math.min(127,roundHalfToEven(shaped*127)));
+      }
+      return output;
+    }
+
+    /* Read the WAV container directly instead of relying on decodeAudioData,
+     * which may first convert to the AudioContext's rate. Keeping the rate
+     * declared by the file beside its original frame count makes duration
+     * and pitch conversion deterministic across browsers. */
+    function decodeWav(input) {
+      const bytes=input instanceof Uint8Array
+        ?new Uint8Array(input.buffer,input.byteOffset,input.byteLength)
+        :new Uint8Array(input);
+      const view=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength);
+      const tag=(offset,text)=>offset+text.length<=bytes.length&&[...text].every((char,index)=>bytes[offset+index]===char.charCodeAt(0));
+      if (bytes.length<44||!tag(0,"RIFF")||!tag(8,"WAVE")) fail("The selected file is not a supported RIFF/WAVE file.");
+      let format=0,channels=0,sourceRate=0,blockAlign=0,bits=0,fmtFound=false,dataOffset=-1,dataLength=0;
+      for (let offset=12;offset+8<=bytes.length;) {
+        const size=view.getUint32(offset+4,true), payload=offset+8, end=payload+size;
+        if (end>bytes.length) fail("The WAV file contains a truncated chunk.");
+        if (tag(offset,"fmt ")) {
+          if (size<16) fail("The WAV format chunk is incomplete.");
+          format=view.getUint16(payload,true);
+          channels=view.getUint16(payload+2,true);
+          sourceRate=view.getUint32(payload+4,true);
+          blockAlign=view.getUint16(payload+12,true);
+          bits=view.getUint16(payload+14,true);
+          if (format===0xFFFE&&size>=40) format=view.getUint16(payload+24,true);
+          fmtFound=true;
+        } else if (tag(offset,"data")&&dataOffset<0) {
+          dataOffset=payload; dataLength=size;
+        }
+        offset=end+(size&1);
+      }
+      if (!fmtFound||dataOffset<0) fail("The WAV file is missing its format or audio-data chunk.");
+      const bytesPerSample=Math.ceil(bits/8);
+      if (!channels||!sourceRate||!blockAlign||blockAlign<channels*bytesPerSample)
+        fail("The WAV file has invalid channel or sample-rate metadata.");
+      if (format!==1&&format!==3) fail("Use an uncompressed PCM or floating-point WAV file.");
+      if ((format===1&&![8,16,24,32].includes(bits))||(format===3&&![32,64].includes(bits)))
+        fail(`The WAV file's ${bits}-bit sample format is not supported.`);
+      const frames=Math.floor(dataLength/blockAlign);
+      if (!frames) fail("The WAV file contains no audio frames.");
+      const decoded=Array.from({length:channels},()=>new Float32Array(frames));
+      for (let frame=0;frame<frames;frame++) {
+        const base=dataOffset+frame*blockAlign;
+        for (let channel=0;channel<channels;channel++) {
+          const pos=base+channel*bytesPerSample; let value;
+          if (format===3)
+            value=bits===32?view.getFloat32(pos,true):view.getFloat64(pos,true);
+          else if (bits===8)
+            value=(view.getUint8(pos)-128)/128;
+          else if (bits===16)
+            value=view.getInt16(pos,true)/32768;
+          else if (bits===24) {
+            let packed=view.getUint8(pos)|(view.getUint8(pos+1)<<8)|(view.getUint8(pos+2)<<16);
+            if (packed&0x800000) packed-=0x1000000;
+            value=packed/8388608;
+          } else
+            value=view.getInt32(pos,true)/2147483648;
+          decoded[channel][frame]=Number.isFinite(value)?value:0;
+        }
+      }
+      return {channels:decoded,sourceRate,sourceDuration:frames/sourceRate,sourceFrames:frames};
+    }
+
+    function bandlimitedResample(source,sourceRate,targetRate) {
+      if (Math.abs(sourceRate-targetRate)<1e-9) return Float32Array.from(source);
+      const outputLength=Math.max(1,Math.round(source.length*targetRate/sourceRate));
+      const output=new Float32Array(outputLength), step=sourceRate/targetRate;
+      const cutoff=Math.min(1,targetRate/sourceRate), radius=16;
+      for (let i=0;i<outputLength;i++) {
+        const center=i*step; let sum=0,weightSum=0;
+        const first=Math.max(0,Math.ceil(center-radius+1));
+        const last=Math.min(source.length-1,Math.floor(center+radius-1));
+        for (let sample=first;sample<=last;sample++) {
+          const distance=sample-center, scaled=Math.PI*cutoff*distance;
+          const sinc=Math.abs(scaled)<1e-12?1:Math.sin(scaled)/scaled;
+          const window=.5+.5*Math.cos(Math.PI*distance/radius);
+          const weight=cutoff*sinc*window;
+          sum+=source[sample]*weight; weightSum+=weight;
+        }
+        output[i]=weightSum?sum/weightSum:source[Math.min(source.length-1,Math.round(center))];
+      }
+      return output;
+    }
+
+    function fadeOutSample(source,fadeSamples=0) {
+      const output=Int8Array.from(source), count=Math.min(output.length,Math.max(0,Math.floor(Number(fadeSamples)||0)));
+      if (!count) return output;
+      if (count===1) { output[output.length-1]=0; return output }
+      const start=output.length-count;
+      for (let i=0;i<count;i++) output[start+i]=roundHalfToEven(output[start+i]*(count-1-i)/(count-1));
+      return output;
+    }
+
+    function sliceSample(source,trimStart=0,trimEnd=source?.length,sliceCount=8,gainDb=0,tanhDrive=false,fadeMs=0) {
+      if (!source?.length) fail("Load a longer WAV before slicing.");
+      const length=source.length;
+      trimStart=Math.max(0,Math.min(length-1,Math.floor(Number(trimStart)||0)));
+      trimEnd=Math.max(trimStart+1,Math.min(length,Math.floor(Number(trimEnd)||length)));
+      sliceCount=Math.floor(Number(sliceCount)||0);
+      if (sliceCount<1||sliceCount>8) fail("Choose between one and eight slices.");
+      const regionLength=trimEnd-trimStart;
+      if (regionLength<sliceCount) fail("The selected region is too short for that many slices.");
+      const processed=processFloatSample(source.subarray(trimStart,trimEnd),gainDb,tanhDrive);
+      const fadeSamples=Math.max(0,Math.round(Math.max(0,Number(fadeMs)||0)*PCM_RATE/1000));
+      const slices=[];
+      for (let slice=0;slice<sliceCount;slice++) {
+        const start=Math.floor(regionLength*slice/sliceCount);
+        const end=Math.floor(regionLength*(slice+1)/sliceCount);
+        if (end-start>SLOT_CAP)
+          fail(`Slice ${slice+1} is ${((end-start)/PCM_RATE).toFixed(3)} s; shorten the region or use more slices so every pad stays under 12.583 s.`);
+        slices.push(fadeOutSample(processed.subarray(start,end),fadeSamples));
+      }
+      return slices;
+    }
+
     function prepareSample(source,gainDb=0,tanhDrive=false,trimStart=0,trimEnd=source?.length) {
       if (!source?.length) fail("A sample must contain at least one PCM byte.");
       const basePcm=source instanceof Int8Array?source:Int8Array.from(source), length=basePcm.length;
@@ -341,7 +531,7 @@
       return {basePcm,fullPcm,pcm:fullPcm.slice(trimStart,trimEnd),gainDb,tanhDrive,trimStart,trimEnd};
     }
 
-    function convertChannels(channels,sourceRate) {
+    function mixAndResampleChannels(channels,sourceRate) {
       if (!channels.length || !channels[0].length || !Number.isFinite(sourceRate) || sourceRate<=0)
         fail("The selected audio file contains no decodable samples.");
       const sourceLength=Math.min(...channels.map(channel=>channel.length));
@@ -349,13 +539,12 @@
       for (let i=0;i<sourceLength;i++) {
         let sum=0; for (const channel of channels) sum+=channel[i]; mono[i]=sum/channels.length;
       }
-      const resampledLength=Math.max(1,Math.floor(sourceLength*PCM_RATE/sourceRate));
-      const resampled=new Float32Array(resampledLength), sourcePerOutput=sourceRate/PCM_RATE;
-      for (let i=0;i<resampledLength;i++) {
-        const position=i*sourcePerOutput, left=Math.min(sourceLength-1,Math.floor(position));
-        const right=Math.min(sourceLength-1,left+1), mix=position-left;
-        resampled[i]=mono[left]+(mono[right]-mono[left])*mix;
-      }
+      const resampled=bandlimitedResample(mono,sourceRate,PCM_RATE), resampledLength=resampled.length;
+      return {pcm:resampled,sourceDuration:sourceLength/sourceRate,outputDuration:resampledLength/PCM_RATE};
+    }
+
+    function convertChannels(channels,sourceRate) {
+      const converted=mixAndResampleChannels(channels,sourceRate), resampled=converted.pcm;
       const threshold=10**(-48/20); let lastAudible=-1;
       for (let i=resampled.length-1;i>=0;i--) if (Math.abs(resampled[i])>threshold) { lastAudible=i; break }
       const trimmedLength=lastAudible>=0?Math.min(resampled.length,lastAudible+Math.floor(.01*PCM_RATE)):resampled.length;
@@ -364,8 +553,12 @@
       if (!peak) peak=1;
       const pcm=new Int8Array(outputLength);
       for (let i=0;i<outputLength;i++) pcm[i]=Math.max(-127,Math.min(127,roundHalfToEven(resampled[i]/peak*120)));
-      return {pcm,sourceDuration:sourceLength/sourceRate,outputDuration:outputLength/PCM_RATE,
+      return {pcm,sourceDuration:converted.sourceDuration,outputDuration:outputLength/PCM_RATE,
               wasCapped:trimmedLength>SLOT_CAP,wasTrimmed:trimmedLength<resampled.length};
+    }
+
+    function convertChannelsForSlicing(channels,sourceRate) {
+      return mixAndResampleChannels(channels,sourceRate);
     }
 
     function sampleDuration(sample) { return sample.length/PCM_RATE }
@@ -378,20 +571,21 @@
     function bankOutputName(name) { return `${name.replace(/\.(?:lnx|bin)$/i,"")||"alynxdj"}-samples.bin` }
 
     globalThis.ALynxSamplePatcherCore = {
-      ROM_BYTES,POOL_OFFSET,LEGACY_POOL_END,POOL_END,PRE_HELP_POOL_END,POOL_CAPACITY,RATE_ID,PCM_RATE,SLOT_CAP,GAIN_MIN,GAIN_MAX,
-      parseRom,parseBank,buildPool,patchRom,convertChannels,processSample,prepareSample
+      ROM_BYTES,POOL_OFFSET,LEGACY_POOL_END,POOL_END,PRE_HELP_POOL_END,POOL_CAPACITY,RATE_ID,PCM_RATE,SLOT_CAP,MAX_KITS,GAIN_MIN,GAIN_MAX,
+      parseRom,parseBank,buildPool,patchRom,decodeWav,bandlimitedResample,convertChannels,convertChannelsForSlicing,
+      processSample,processFloatSample,fadeOutSample,sliceSample,prepareSample,expandKits
     };
     if (typeof document === "undefined") return;
 
     const app=document.getElementById("app");
-    const state={rom:null,romName:"",bank:null,bankName:"",activeKit:0,replacements:new Map(),message:"Load a built ALYNXDJ ROM to begin.",error:"",busy:false,playingIndex:null,audioContext:null,audioSource:null};
+    const state={rom:null,romName:"",bank:null,bankName:"",activeKit:0,replacements:new Map(),message:"Load a built ALYNXDJ ROM to begin.",error:"",busy:false,playingIndex:null,audioContext:null,audioSource:null,slicerOpen:false,slicer:null};
     const html=value=>String(value).replace(/[&<>"']/g,char=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]));
     const percent=(value,total)=>Math.min(100,value/total*100);
     const gainLabel=value=>`${value>0?"+":""}${Number(value).toFixed(1)} dB`;
     const baseSource=()=>state.bank||state.rom;
     const currentCapacity=()=>state.rom?.poolCapacity||POOL_CAPACITY;
     const changedCount=()=>state.bank?state.bank.kitCount*8:state.replacements.size;
-    const changedInKit=kit=>Boolean(state.bank)||[...state.replacements.keys()].some(index=>Math.floor(index/8)===kit);
+    const changedInKit=kit=>(Boolean(state.bank)&&kit<state.bank.kitCount)||[...state.replacements.keys()].some(index=>Math.floor(index/8)===kit);
     const effectiveKits=()=>baseSource().kits.map((kit,k)=>kit.map((sample,s)=>state.replacements.get(k*8+s)?.pcm||sample));
     function sourceSample(index) {
       const edit=state.replacements.get(index);
@@ -411,16 +605,17 @@
       if (!state.rom) return {used:0,valid:false,reason:""};
       try { return {used:buildPool(effectiveKits(),state.rom.poolCapacity).length,valid:true,reason:""} }
       catch (problem) {
-        const used=4+baseSource().kitCount*40+effectiveKits().flat().reduce((total,sample)=>total+sample.length,0);
+        const used=4+effectiveKits().length*40+effectiveKits().flat().reduce((total,sample)=>total+sample.length,0);
         return {used,valid:false,reason:problem instanceof Error?problem.message:"The sample pool is too large."};
       }
     }
-    function waveform(sample) {
+    function waveform(sample,bars=48,maxHeight=30) {
       const values=[];
-      for (let bar=0;bar<48;bar++) {
-        const start=Math.floor(bar*sample.length/48), end=Math.max(start+1,Math.floor((bar+1)*sample.length/48)); let peak=0;
+      const fullScale=sample instanceof Float32Array?1:127;
+      for (let bar=0;bar<bars;bar++) {
+        const start=Math.floor(bar*sample.length/bars), end=Math.max(start+1,Math.floor((bar+1)*sample.length/bars)); let peak=0;
         for (let i=start;i<Math.min(end,sample.length);i++) peak=Math.max(peak,Math.abs(sample[i]));
-        values.push(Math.max(2,Math.round(peak/127*30)));
+        values.push(Math.max(2,Math.round(peak/fullScale*maxHeight)));
       }
       return values.map(height=>`<span class="wave-bar" style="height:${height}px"></span>`).join("");
     }
@@ -460,26 +655,90 @@
         ${input(".lnx,application/octet-stream","romInput")}
       </section>`;
     }
+    function slicePadMap(count,current=[]) {
+      const result=[], used=new Set();
+      for (let slice=0;slice<count;slice++) {
+        let pad=Number(current[slice]);
+        if (!Number.isInteger(pad)||pad<0||pad>7||used.has(pad)) {
+          pad=0; while (used.has(pad)&&pad<8) pad++;
+        }
+        result.push(pad); used.add(pad);
+      }
+      return result;
+    }
+    function renderSlicer() {
+      if (!state.slicerOpen) return "";
+      const close=`<button class="text-button" data-action="close-slicer" type="button">Close slicer</button>`;
+      if (!state.slicer) return `<section class="slicer">
+        <div class="slicer-head"><div><p class="eyebrow">SLICE TO KIT</p><h3>Turn one recording into up to eight pads</h3><p>Drop a longer WAV, choose its useful region, divide it equally, then map the slices into the current kit.</p></div>${close}</div>
+        <button class="slice-drop" data-slice-drop data-action="choose-slice" type="button"><span class="slice-drop-copy"><strong>Drop one longer WAV here</strong>It stays local and is resampled to the Lynx's 5.208 kHz rate.<span class="slice-drop-cta">or choose a file</span></span></button>
+        ${input(".wav,audio/wav,audio/x-wav","sliceInput")}
+      </section>`;
+      const slicer=state.slicer, length=slicer.pcm.length;
+      const trimStart=Math.max(0,Math.min(length-1,slicer.trimStart));
+      const trimEnd=Math.max(trimStart+1,Math.min(length,slicer.trimEnd));
+      const regionLength=trimEnd-trimStart, left=trimStart/length*100, right=(1-trimEnd/length)*100;
+      const boundaries=Array.from({length:slicer.sliceCount-1},(_,boundary)=>{
+        const position=trimStart+Math.floor(regionLength*(boundary+1)/slicer.sliceCount);
+        return `<i class="slice-boundary" style="left:${position/length*100}%"><b>${boundary+2}</b></i>`;
+      }).join("");
+      const sliceHits=Array.from({length:slicer.sliceCount},(_,slice)=>{
+        const start=trimStart+Math.floor(regionLength*slice/slicer.sliceCount);
+        const end=trimStart+Math.floor(regionLength*(slice+1)/slicer.sliceCount);
+        const playing=state.playingIndex===`slice-${slice}`;
+        return `<button class="slice-hit ${playing?"playing":""}" style="left:${start/length*100}%;width:${(end-start)/length*100}%" data-action="audition-slice" data-slice="${slice}" data-slice-hit="${slice}" type="button" aria-label="${playing?"Stop":"Audition"} slice ${slice+1}"><span>${playing?"■ Stop":`▶ ${slice+1}`}</span></button>`;
+      }).join("");
+      const countOptions=Array.from({length:8},(_,index)=>`<option value="${index+1}" ${slicer.sliceCount===index+1?"selected":""}>${index+1} slice${index?"s":""}</option>`).join("");
+      const fadeOptions=[0,1,2,5,10].map(ms=>`<option value="${ms}" ${slicer.fadeMs===ms?"selected":""}>${ms?`${ms} ms`:"Off"}</option>`).join("");
+      const padMap=slicePadMap(slicer.sliceCount,slicer.padMap); slicer.padMap=padMap;
+      const mappings=padMap.map((pad,slice)=>{
+        const start=Math.floor(regionLength*slice/slicer.sliceCount), end=Math.floor(regionLength*(slice+1)/slicer.sliceCount);
+        const padOptions=PAD_NAMES.map((name,index)=>`<option value="${index}" ${pad===index?"selected":""}>${index+1} · ${html(name)}</option>`).join("");
+        const playing=state.playingIndex===`slice-${slice}`;
+        return `<article class="slice-map-card"><b>${slice+1}</b><div><small>${sampleTime(end-start)} · ${formatBytes(end-start)}</small><select data-slice-pad="${slice}" aria-label="Destination pad for slice ${slice+1}">${padOptions}</select><button class="audition" data-action="audition-slice" data-slice="${slice}" type="button">${playing?"■ Stop":"▶ Audition"}</button></div></article>`;
+      }).join("");
+      return `<section class="slicer" data-slice-drop>
+        <div class="slicer-head"><div><p class="eyebrow">SLICE TO KIT</p><h3>Choose the region and pad order</h3><p>Every slice receives the same gain and tanh processing. Slice levels are never normalized independently.</p></div>${close}</div>
+        <div class="slice-source"><strong>${html(slicer.fileName)}</strong><span>${slicer.sourceDuration.toFixed(3)} s source → ${sampleTime(length)} at 5.208 kHz</span><button class="secondary" data-action="choose-slice" type="button">Change WAV</button></div>
+        ${input(".wav,audio/wav,audio/x-wav","sliceInput")}
+        <div class="waveform slice-waveform" data-slice-waveform><div class="wave-bars" aria-hidden="true">${slicer.waveBars}</div><div class="slice-region" style="left:${left}%;right:${right}%"></div><div class="trim-shade start" style="width:${left}%"></div><div class="trim-shade end" style="width:${right}%"></div>${sliceHits}<i class="trim-line start" style="left:${left}%"></i><i class="trim-line end" style="right:${right}%"></i>${boundaries}<input class="trim-range" type="range" min="0" max="${length}" step="1" value="${trimStart}" data-slice-start aria-label="Slice region start"><input class="trim-range" type="range" min="0" max="${length}" step="1" value="${trimEnd}" data-slice-end aria-label="Slice region end"></div>
+        <div class="trim-readout"><span>IN <output data-slice-start-output>${sampleTime(trimStart)}</output></span><span>OUT <output data-slice-end-output>${sampleTime(trimEnd)}</output></span><span>REGION <output data-slice-length-output>${sampleTime(regionLength)}</output></span></div>
+        <div class="slice-controls">
+          <label class="slice-control"><span>Slices</span><select data-slice-count>${countOptions}</select></label>
+          <label class="slice-control"><span>End fade</span><select data-slice-fade>${fadeOptions}</select></label>
+          <label class="slice-control"><span>Gain <output data-slice-gain-output>${gainLabel(slicer.gainDb)}</output></span><input type="range" min="${GAIN_MIN}" max="${GAIN_MAX}" step="0.5" value="${slicer.gainDb}" data-slice-gain></label>
+          <label class="drive-control ${slicer.tanhDrive?"active":""}" title="Apply shared tanh soft saturation after gain"><span>Tanh drive</span><span>shared soft clip</span><input type="checkbox" data-slice-drive ${slicer.tanhDrive?"checked":""}></label>
+        </div>
+        <div class="slice-note"><strong>Rate locked.</strong> ${Number(slicer.sourceRate).toLocaleString()} Hz WAV → ${PCM_RATE.toFixed(3)} Hz Lynx PCM with band-limited conversion; ${slicer.sourceDuration.toFixed(3)} s → ${slicer.outputDuration.toFixed(3)} s. <strong>Normalization off.</strong> Relative levels and boundary samples remain continuous when end fade is Off. Enable a tiny fade for independent one-shots that click when their DAC stream ends.</div>
+        <div class="slice-map">${mappings}</div>
+        <div class="slice-actions"><p>Equal divisions of the selected region; each destination pad must be unique.</p><div><button class="secondary" data-action="clear-slice" type="button">Discard source</button><button class="primary" data-action="apply-slices" type="button">Slice into kit ${state.activeKit}</button></div></div>
+      </section>`;
+    }
     function renderWorkspace(kits) {
       const kit=state.activeKit;
-      const tabs=baseSource().kits.map((_,index)=>`<button type="button" role="tab" aria-selected="${kit===index}" class="${kit===index?"selected":""}" data-kit="${index}"><b>${String(index+1).padStart(2,"0")}</b><span>${html(KIT_NAMES[index]||`Kit ${index+1}`)}</span>${changedInKit(index)?"<i></i>":""}</button>`).join("");
+      const tabs=kits.map((_,index)=>{
+        const filled=index<baseSource().kitCount||changedInKit(index);
+        const classes=[kit===index?"selected":"",filled?"":"empty"].filter(Boolean).join(" ");
+        return `<button type="button" role="tab" aria-selected="${kit===index}" class="${classes}" data-kit="${index}"><b>${String(index).padStart(2,"0")}</b><span>${html(filled?(KIT_NAMES[index]||"Custom"):"Empty")}</span>${changedInKit(index)?"<i></i>":""}</button>`;
+      }).join("");
       const cards=kits[kit].map((sample,slot)=>{
         const index=kit*8+slot, replacement=state.replacements.get(index), playing=state.playingIndex===index;
         const gainDb=replacement?.gainDb??0, tanhDrive=replacement?.tanhDrive??false;
         const basePcm=replacement?.basePcm||baseSource().kits[kit][slot], previewPcm=replacement?.fullPcm||basePcm;
         const trimStart=replacement?.trimStart??0, trimEnd=replacement?.trimEnd??basePcm.length;
         const isTrimmed=trimStart>0||trimEnd<basePcm.length, trimLeft=trimStart/basePcm.length*100, trimRight=(1-trimEnd/basePcm.length)*100;
-        const sourceLabel=replacement?.fileName?"Replacement WAV":isTrimmed?"Trimmed sample":replacement?"Processed sample":state.bank?"From imported bank":"From loaded ROM";
+        const isEmpty=kit>=baseSource().kitCount&&!replacement;
+        const sourceLabel=replacement?.fileName?"Replacement WAV":isEmpty?"Empty · drop WAV to fill":isTrimmed?"Trimmed sample":replacement?"Processed sample":state.bank?"From imported bank":"From loaded ROM";
         const changeTag=replacement?(replacement.fileName?"NEW":isTrimmed?"TRIM":"FX"):"";
-        return `<article class="sample-card ${replacement?"changed":""}" data-slot="${index}">
+        return `<article class="sample-card ${replacement?"changed":""} ${isEmpty?"empty":""}" data-slot="${index}">
           <div class="drop-hint">DROP WAV TO REPLACE</div>
-          <div class="sample-title"><span class="pad-number">${String(slot+1).padStart(2,"0")}</span><div><h3>${html(replacement?.fileName||PAD_NAMES[slot])}</h3><p>${sourceLabel}</p></div>${changeTag?`<span class="changed-tag">${changeTag}</span>`:""}</div>
-          <div class="waveform" data-trim-waveform="${index}"><div class="wave-bars" aria-hidden="true">${waveform(previewPcm)}</div><div class="trim-shade start" style="width:${trimLeft}%"></div><div class="trim-shade end" style="width:${trimRight}%"></div><i class="trim-line start" style="left:${trimLeft}%"></i><i class="trim-line end" style="right:${trimRight}%"></i><input class="trim-range" type="range" min="0" max="${basePcm.length}" step="1" value="${trimStart}" data-trim-start="${index}" aria-label="Sample start point for kit ${kit+1}, pad ${slot+1}"><input class="trim-range" type="range" min="0" max="${basePcm.length}" step="1" value="${trimEnd}" data-trim-end="${index}" aria-label="Sample end point for kit ${kit+1}, pad ${slot+1}"></div>
+          <div class="sample-title"><span class="pad-number">${String(slot+1).padStart(2,"0")}</span><div><h3>${html(replacement?.fileName||(isEmpty?"Empty pad":PAD_NAMES[slot]))}</h3><p>${sourceLabel}</p></div>${changeTag?`<span class="changed-tag">${changeTag}</span>`:isEmpty?'<span class="empty-tag">EMPTY</span>':""}</div>
+          <div class="waveform" data-trim-waveform="${index}"><div class="wave-bars" aria-hidden="true">${waveform(previewPcm)}</div><div class="trim-shade start" style="width:${trimLeft}%"></div><div class="trim-shade end" style="width:${trimRight}%"></div><i class="trim-line start" style="left:${trimLeft}%"></i><i class="trim-line end" style="right:${trimRight}%"></i><input class="trim-range" type="range" min="0" max="${basePcm.length}" step="1" value="${trimStart}" data-trim-start="${index}" aria-label="Sample start point for kit ${kit}, pad ${slot+1}"><input class="trim-range" type="range" min="0" max="${basePcm.length}" step="1" value="${trimEnd}" data-trim-end="${index}" aria-label="Sample end point for kit ${kit}, pad ${slot+1}"></div>
           <div class="trim-readout"><span>IN <output data-trim-start-output="${index}">${sampleTime(trimStart)}</output></span><span>OUT <output data-trim-end-output="${index}">${sampleTime(trimEnd)}</output></span><span>LEN <output data-trim-length-output="${index}">${sampleTime(trimEnd-trimStart)}</output></span></div>
           <div class="sample-meta"><span>${sampleDuration(sample).toFixed(3)} s</span><span>${formatBytes(sample.length)}</span>${isTrimmed?'<span class="warning-chip">TRIMMED</span>':""}${replacement?.wasCapped?'<span class="warning-chip">CAPPED</span>':""}</div>
           <div class="processing">
-            <label class="gain-control"><span class="gain-head"><span>Gain</span><output data-gain-output="${index}">${gainLabel(gainDb)}</output></span><input type="range" min="${GAIN_MIN}" max="${GAIN_MAX}" step="0.5" value="${gainDb}" data-gain="${index}" aria-label="Gain for kit ${kit+1}, pad ${slot+1}"></label>
-            <label class="drive-control ${tanhDrive?"active":""}" title="Apply tanh soft saturation after gain"><span>Tanh drive</span><span>soft clip</span><input type="checkbox" data-drive="${index}" ${tanhDrive?"checked":""} aria-label="Tanh drive for kit ${kit+1}, pad ${slot+1}"></label>
+            <label class="gain-control"><span class="gain-head"><span>Gain</span><output data-gain-output="${index}">${gainLabel(gainDb)}</output></span><input type="range" min="${GAIN_MIN}" max="${GAIN_MAX}" step="0.5" value="${gainDb}" data-gain="${index}" aria-label="Gain for kit ${kit}, pad ${slot+1}"></label>
+            <label class="drive-control ${tanhDrive?"active":""}" title="Apply tanh soft saturation after gain"><span>Tanh drive</span><span>soft clip</span><input type="checkbox" data-drive="${index}" ${tanhDrive?"checked":""} aria-label="Tanh drive for kit ${kit}, pad ${slot+1}"></label>
           </div>
           <div class="sample-actions">
             <button class="audition" data-action="audition" data-index="${index}" type="button"><span aria-hidden="true">${playing?"■":"▶"}</span>${playing?"Playing":"Audition"}</button>
@@ -490,8 +749,9 @@
       }).join("");
       return `<section class="workspace panel">
         <div class="workspace-head"><div><p class="eyebrow">SAMPLE DIRECTORY</p><h2>Replace, gain, or drive any pad</h2></div>
-          <div class="toolbar"><button class="secondary" data-action="choose-bank" type="button" ${state.busy?"disabled":""}>Import sample bank…</button>${input(".bin,application/octet-stream","bankInput")}<button class="secondary" data-action="download-bank" type="button" ${state.busy?"disabled":""}>Download sample bank</button><button class="secondary" data-action="choose-kit" type="button" ${state.busy?"disabled":""}>Replace this kit…</button>${input(".wav,audio/wav,audio/x-wav","kitInput",true)}<button class="text-button" data-action="reset" type="button" ${changedCount()?"":"disabled"}>Reset all</button></div>
+          <div class="toolbar"><button class="secondary" data-action="toggle-slicer" type="button" ${state.busy?"disabled":""}>Slice long sample…</button><button class="secondary" data-action="choose-bank" type="button" ${state.busy?"disabled":""}>Import sample bank…</button>${input(".bin,application/octet-stream","bankInput")}<button class="secondary" data-action="download-bank" type="button" ${state.busy?"disabled":""}>Download sample bank</button><button class="secondary" data-action="choose-kit" type="button" ${state.busy?"disabled":""}>Replace this kit…</button>${input(".wav,audio/wav,audio/x-wav","kitInput",true)}<button class="text-button" data-action="reset" type="button" ${changedCount()?"":"disabled"}>Reset all</button></div>
         </div>
+        ${renderSlicer()}
         <div class="kit-tabs" role="tablist" aria-label="Sample kits">${tabs}</div>
         <div class="sample-grid" role="tabpanel">${cards}</div>
       </section>`;
@@ -517,8 +777,8 @@
       clearNotices(); state.busy=true; render();
       try {
         const parsed=parseRom(await file.arrayBuffer());
-        state.rom=parsed; state.romName=file.name; state.bank=null; state.bankName=""; state.replacements.clear(); state.activeKit=0;
-        state.message=`${file.name} loaded — ${parsed.kitCount*8} sample slots ready${parsed.legacyLayout?"; legacy block-200 layout protected":""}.`;
+        state.rom=parsed; state.romName=file.name; state.bank=null; state.bankName=""; state.replacements.clear(); state.activeKit=0; state.slicerOpen=false; state.slicer=null;
+        state.message=`${file.name} loaded — ${parsed.kitCount} populated kit${parsed.kitCount===1?"":"s"}; KIT 0–7 are available${parsed.kitCount<MAX_KITS?` with ${MAX_KITS-parsed.kitCount} empty, fillable kit slot${MAX_KITS-parsed.kitCount===1?"":"s"}`:""}${parsed.legacyLayout?"; legacy block-200 layout protected":""}.`;
         state.busy=false; render();
       } catch (problem) { report(problem,"The ROM could not be loaded.") }
     }
@@ -527,7 +787,7 @@
       try {
         const parsed=parseBank(await file.arrayBuffer());
         state.bank=parsed; state.bankName=file.name; state.replacements.clear(); state.activeKit=0;
-        state.message=`${file.name} imported — ${parsed.kitCount*8} samples will replace the ROM bank.`;
+        state.message=`${file.name} imported — ${parsed.kitCount} populated kit${parsed.kitCount===1?"":"s"}${parsed.kitCount<MAX_KITS?` plus ${MAX_KITS-parsed.kitCount} empty kit slot${MAX_KITS-parsed.kitCount===1?"":"s"}`:""} will replace the ROM bank.`;
         state.busy=false; render();
       } catch (problem) { report(problem,"The sample bank could not be loaded.") }
     }
@@ -541,17 +801,28 @@
       return state.audioContext;
     }
     async function decodeSample(file) {
-      const context=await audioContext(); let decoded;
-      try { decoded=await context.decodeAudioData(await file.arrayBuffer()) }
-      catch { fail(`${file.name} is not a WAV file this browser can decode.`) }
-      const converted=convertChannels(Array.from({length:decoded.numberOfChannels},(_,channel)=>decoded.getChannelData(channel)),decoded.sampleRate);
+      let decoded;
+      try { decoded=decodeWav(await file.arrayBuffer()) }
+      catch (problem) { fail(`${file.name}: ${problem instanceof Error?problem.message:"the WAV could not be decoded."}`) }
+      const converted=convertChannels(decoded.channels,decoded.sourceRate);
       return {...converted,...prepareSample(converted.pcm),fileName:file.name};
+    }
+    async function loadSliceSource(file) {
+      clearNotices(); state.busy=true; render();
+      try {
+        let decoded;
+        try { decoded=decodeWav(await file.arrayBuffer()) }
+        catch (problem) { fail(`${file.name}: ${problem instanceof Error?problem.message:"the WAV could not be decoded."}`) }
+        const converted=convertChannelsForSlicing(decoded.channels,decoded.sourceRate);
+        state.slicer={fileName:file.name,pcm:converted.pcm,waveBars:waveform(converted.pcm,128,62),sourceRate:decoded.sourceRate,sourceDuration:converted.sourceDuration,outputDuration:converted.outputDuration,trimStart:0,trimEnd:converted.pcm.length,sliceCount:8,fadeMs:0,gainDb:0,tanhDrive:false,padMap:slicePadMap(8)};
+        state.slicerOpen=true; state.message=`${file.name}: ${decoded.sourceRate.toLocaleString()} Hz → ${PCM_RATE.toFixed(3)} Hz; duration preserved at ${converted.outputDuration.toFixed(3)} s.`; state.busy=false; render();
+      } catch (problem) { report(problem,"The long sample could not be converted.") }
     }
     async function replaceSlot(index,file) {
       clearNotices(); state.busy=true; render();
       try {
         const replacement=await decodeSample(file); state.replacements.set(index,replacement);
-        state.message=`${file.name} prepared for kit ${Math.floor(index/8)+1}, pad ${index%8+1}.`;
+        state.message=`${file.name} prepared for kit ${Math.floor(index/8)}, pad ${index%8+1}.`;
         state.busy=false; render();
       } catch (problem) { report(problem,"The sample could not be converted.") }
     }
@@ -562,14 +833,14 @@
         if (!ordered.length) fail("Choose one to eight WAV files.");
         const converted=await Promise.all(ordered.map(decodeSample));
         converted.forEach((sample,slot)=>state.replacements.set(state.activeKit*8+slot,sample));
-        state.message=`${converted.length} WAV ${converted.length===1?"file":"files"} prepared for kit ${state.activeKit+1}.`;
+        state.message=`${converted.length} WAV ${converted.length===1?"file":"files"} prepared for kit ${state.activeKit}.`;
         state.busy=false; render();
       } catch (problem) { report(problem,"The kit could not be converted.") }
     }
-    async function audition(index) {
+    async function playPcm(sample,key) {
       clearNotices();
-      if (state.playingIndex===index && state.audioSource) { state.audioSource.stop(); state.audioSource=null; state.playingIndex=null; render(); return }
-      const context=await audioContext(), sample=effectiveKits()[Math.floor(index/8)][index%8];
+      if (state.playingIndex===key && state.audioSource) { state.audioSource.stop(); state.audioSource=null; state.playingIndex=null; render(); return }
+      const context=await audioContext();
       if (state.audioSource) { try { state.audioSource.stop() } catch {} }
       const outputLength=Math.max(1,Math.ceil(sample.length*context.sampleRate/PCM_RATE));
       const buffer=context.createBuffer(1,outputLength,context.sampleRate), output=buffer.getChannelData(0);
@@ -579,9 +850,33 @@
         output[i]=(sample[left]+(sample[right]-sample[left])*mix)/127;
       }
       const source=context.createBufferSource(); source.buffer=buffer; source.connect(context.destination);
-      state.audioSource=source; state.playingIndex=index;
+      state.audioSource=source; state.playingIndex=key;
       source.onended=()=>{ if (state.audioSource===source) { state.audioSource=null; state.playingIndex=null; render() } };
       source.start(); render();
+    }
+    async function audition(index) {
+      return playPcm(effectiveKits()[Math.floor(index/8)][index%8],index);
+    }
+    async function auditionSlice(index) {
+      if (!state.slicer) return;
+      const slices=sliceSample(state.slicer.pcm,state.slicer.trimStart,state.slicer.trimEnd,state.slicer.sliceCount,state.slicer.gainDb,state.slicer.tanhDrive,state.slicer.fadeMs);
+      return playPcm(slices[index],`slice-${index}`);
+    }
+    function applySlices() {
+      if (!state.slicer) return;
+      try {
+        const slices=sliceSample(state.slicer.pcm,state.slicer.trimStart,state.slicer.trimEnd,state.slicer.sliceCount,state.slicer.gainDb,state.slicer.tanhDrive,state.slicer.fadeMs);
+        const padMap=slicePadMap(slices.length,state.slicer.padMap);
+        const proposed=effectiveKits().map(kit=>kit.map(sample=>sample));
+        slices.forEach((sample,slice)=>{ proposed[state.activeKit][padMap[slice]]=sample });
+        buildPool(proposed,state.rom.poolCapacity);
+        slices.forEach((pcm,slice)=>{
+          const pad=padMap[slice], index=state.activeKit*8+pad;
+          state.replacements.set(index,{basePcm:pcm,fullPcm:pcm,pcm,gainDb:0,tanhDrive:false,trimStart:0,trimEnd:pcm.length,fileName:`${state.slicer.fileName} · Slice ${slice+1}`,sliceSource:true});
+        });
+        state.message=`${slices.length} slice${slices.length===1?"":"s"} placed into kit ${state.activeKit}; source levels were preserved without normalization.`;
+        clearNotices(); render();
+      } catch (problem) { report(problem,"The slices could not be added to this kit.") }
     }
     function downloadRom() {
       if (!state.rom || !changedCount()) return;
@@ -621,6 +916,36 @@
       card.querySelector(`[data-trim-length-output="${index}"]`).textContent=sampleTime(trimEnd-trimStart);
       return {index,trimStart,trimEnd};
     }
+    function updateSlicePreview(moved) {
+      if (!state.slicer) return;
+      const waveformElement=app.querySelector("[data-slice-waveform]");
+      const startInput=app.querySelector("[data-slice-start]"), endInput=app.querySelector("[data-slice-end]");
+      if (!waveformElement||!startInput||!endInput) return;
+      const length=state.slicer.pcm.length; let trimStart=Number(startInput.value), trimEnd=Number(endInput.value);
+      if (moved?.matches("[data-slice-start]")) trimStart=Math.max(0,Math.min(trimEnd-1,trimStart));
+      else if (moved?.matches("[data-slice-end]")) trimEnd=Math.min(length,Math.max(trimStart+1,trimEnd));
+      trimStart=Math.max(0,Math.min(length-1,trimStart)); trimEnd=Math.min(length,Math.max(trimStart+1,trimEnd));
+      startInput.value=String(trimStart); endInput.value=String(trimEnd);
+      state.slicer.trimStart=trimStart; state.slicer.trimEnd=trimEnd;
+      const left=trimStart/length*100, right=(1-trimEnd/length)*100, regionLength=trimEnd-trimStart;
+      waveformElement.querySelector(".trim-shade.start").style.width=`${left}%`;
+      waveformElement.querySelector(".trim-shade.end").style.width=`${right}%`;
+      waveformElement.querySelector(".trim-line.start").style.left=`${left}%`;
+      waveformElement.querySelector(".trim-line.end").style.right=`${right}%`;
+      const region=waveformElement.querySelector(".slice-region"); region.style.left=`${left}%`; region.style.right=`${right}%`;
+      [...waveformElement.querySelectorAll(".slice-boundary")].forEach((line,boundary)=>{
+        const position=trimStart+Math.floor(regionLength*(boundary+1)/state.slicer.sliceCount);
+        line.style.left=`${position/length*100}%`;
+      });
+      [...waveformElement.querySelectorAll("[data-slice-hit]")].forEach((hit,slice)=>{
+        const start=trimStart+Math.floor(regionLength*slice/state.slicer.sliceCount);
+        const end=trimStart+Math.floor(regionLength*(slice+1)/state.slicer.sliceCount);
+        hit.style.left=`${start/length*100}%`; hit.style.width=`${(end-start)/length*100}%`;
+      });
+      app.querySelector("[data-slice-start-output]").textContent=sampleTime(trimStart);
+      app.querySelector("[data-slice-end-output]").textContent=sampleTime(trimEnd);
+      app.querySelector("[data-slice-length-output]").textContent=sampleTime(regionLength);
+    }
 
     app.addEventListener("click",event=>{
       const tab=event.target.closest("[data-kit]");
@@ -630,8 +955,14 @@
       if (action==="choose-rom") document.getElementById("romInput").click();
       else if (action==="choose-bank") document.getElementById("bankInput").click();
       else if (action==="choose-kit") document.getElementById("kitInput").click();
-      else if (action==="reset") { state.bank=null; state.bankName=""; state.replacements.clear(); state.activeKit=Math.min(state.activeKit,state.rom.kitCount-1); state.message="Imported bank and sample edits cleared; the original ROM samples are active."; clearNotices(); render() }
-      else if (action==="revert") { const index=Number(button.dataset.index); state.replacements.delete(index); state.message=`Kit ${Math.floor(index/8)+1}, pad ${index%8+1} restored to the ${state.bank?"imported bank":"ROM"} sample.`; render() }
+      else if (action==="toggle-slicer") { state.slicerOpen=!state.slicerOpen; clearNotices(); render() }
+      else if (action==="close-slicer") { state.slicerOpen=false; render() }
+      else if (action==="choose-slice") document.getElementById("sliceInput").click();
+      else if (action==="clear-slice") { state.slicer=null; state.message="Slice source discarded; current kit pads were not changed."; clearNotices(); render() }
+      else if (action==="apply-slices") applySlices();
+      else if (action==="audition-slice") auditionSlice(Number(button.dataset.slice)).catch(problem=>report(problem,"The slice could not be auditioned."));
+      else if (action==="reset") { state.bank=null; state.bankName=""; state.replacements.clear(); state.activeKit=Math.min(state.activeKit,MAX_KITS-1); state.message="Imported bank and sample edits cleared; the original ROM samples and empty kit slots are active."; clearNotices(); render() }
+      else if (action==="revert") { const index=Number(button.dataset.index); state.replacements.delete(index); state.message=`Kit ${Math.floor(index/8)}, pad ${index%8+1} restored to the ${state.bank?"imported bank":"ROM"} sample.`; render() }
       else if (action==="audition") audition(Number(button.dataset.index)).catch(problem=>report(problem,"The sample could not be auditioned."));
       else if (action==="download-bank") downloadBank();
       else if (action==="download") downloadRom();
@@ -641,40 +972,64 @@
       if (target.id==="romInput" && target.files?.[0]) loadRom(target.files[0]);
       else if (target.id==="bankInput" && target.files?.[0]) loadBank(target.files[0]);
       else if (target.id==="kitInput" && target.files?.length) replaceKit(target.files);
+      else if (target.id==="sliceInput" && target.files?.[0]) loadSliceSource(target.files[0]);
       else if (target.matches("[data-sample-input]") && target.files?.[0]) replaceSlot(Number(target.dataset.sampleInput),target.files[0]);
       else if (target.matches("[data-trim-start],[data-trim-end]")) {
         const trim=updateTrimPreview(target.closest("[data-slot]"),target);
         updateProcessing(trim.index,{trimStart:trim.trimStart,trimEnd:trim.trimEnd}); clearNotices();
-        state.message=`Kit ${Math.floor(trim.index/8)+1}, pad ${trim.index%8+1} trimmed to ${sampleTime(trim.trimEnd-trim.trimStart)}.`; render();
+        state.message=`Kit ${Math.floor(trim.index/8)}, pad ${trim.index%8+1} trimmed to ${sampleTime(trim.trimEnd-trim.trimStart)}.`; render();
       }
       else if (target.matches("[data-gain]")) {
         const index=Number(target.dataset.gain), gainDb=Number(target.value);
         updateProcessing(index,{gainDb}); clearNotices();
-        state.message=`Kit ${Math.floor(index/8)+1}, pad ${index%8+1} gain set to ${gainLabel(gainDb)}.`; render();
+        state.message=`Kit ${Math.floor(index/8)}, pad ${index%8+1} gain set to ${gainLabel(gainDb)}.`; render();
       } else if (target.matches("[data-drive]")) {
         const index=Number(target.dataset.drive), tanhDrive=target.checked;
         updateProcessing(index,{tanhDrive}); clearNotices();
-        state.message=`Kit ${Math.floor(index/8)+1}, pad ${index%8+1} tanh drive ${tanhDrive?"enabled":"disabled"}.`; render();
+        state.message=`Kit ${Math.floor(index/8)}, pad ${index%8+1} tanh drive ${tanhDrive?"enabled":"disabled"}.`; render();
+      } else if (target.matches("[data-slice-start],[data-slice-end]")) {
+        updateSlicePreview(target); clearNotices(); render();
+      } else if (target.matches("[data-slice-count]")) {
+        state.slicer.sliceCount=Math.max(1,Math.min(8,Number(target.value)||1));
+        state.slicer.padMap=slicePadMap(state.slicer.sliceCount,state.slicer.padMap); clearNotices(); render();
+      } else if (target.matches("[data-slice-fade]")) {
+        state.slicer.fadeMs=Math.max(0,Number(target.value)||0); clearNotices(); render();
+      } else if (target.matches("[data-slice-gain]")) {
+        state.slicer.gainDb=Math.max(GAIN_MIN,Math.min(GAIN_MAX,Number(target.value)||0)); clearNotices(); render();
+      } else if (target.matches("[data-slice-drive]")) {
+        state.slicer.tanhDrive=target.checked; clearNotices(); render();
+      } else if (target.matches("[data-slice-pad]")) {
+        const slice=Number(target.dataset.slicePad), next=Number(target.value), previous=state.slicer.padMap[slice];
+        const occupied=state.slicer.padMap.findIndex((pad,index)=>index!==slice&&pad===next);
+        if (occupied>=0) state.slicer.padMap[occupied]=previous;
+        state.slicer.padMap[slice]=next; clearNotices(); render();
       }
       if (target.type==="file") target.value="";
     });
     app.addEventListener("input",event=>{
       const target=event.target;
       if (target.matches("[data-trim-start],[data-trim-end]")) updateTrimPreview(target.closest("[data-slot]"),target);
+      else if (target.matches("[data-slice-start],[data-slice-end]")) updateSlicePreview(target);
       else if (target.matches("[data-gain]")) {
         const output=app.querySelector(`[data-gain-output="${target.dataset.gain}"]`);
         if (output) output.textContent=gainLabel(Number(target.value));
+      } else if (target.matches("[data-slice-gain]")) {
+        state.slicer.gainDb=Number(target.value);
+        const output=app.querySelector("[data-slice-gain-output]");
+        if (output) output.textContent=gainLabel(state.slicer.gainDb);
       }
     });
     app.addEventListener("dragover",event=>{
-      const target=event.target.closest("[data-rom-drop],[data-slot]"); if (!target) return;
+      const target=event.target.closest("[data-rom-drop],[data-slot],[data-slice-drop]"); if (!target) return;
       event.preventDefault(); target.classList.add("dragging");
     });
-    app.addEventListener("dragleave",event=>event.target.closest("[data-rom-drop],[data-slot]")?.classList.remove("dragging"));
+    app.addEventListener("dragleave",event=>event.target.closest("[data-rom-drop],[data-slot],[data-slice-drop]")?.classList.remove("dragging"));
     app.addEventListener("drop",event=>{
-      const target=event.target.closest("[data-rom-drop],[data-slot]"); if (!target) return;
+      const target=event.target.closest("[data-rom-drop],[data-slot],[data-slice-drop]"); if (!target) return;
       event.preventDefault(); target.classList.remove("dragging"); const file=event.dataTransfer.files?.[0]; if (!file) return;
-      if (target.matches("[data-rom-drop]")) loadRom(file); else replaceSlot(Number(target.dataset.slot),file);
+      if (target.matches("[data-rom-drop]")) loadRom(file);
+      else if (target.matches("[data-slice-drop]")) loadSliceSource(file);
+      else replaceSlot(Number(target.dataset.slot),file);
     });
     render();
   })();

@@ -15,7 +15,7 @@
         .export         _wave_stop
         .export         _pcm_ring_start
         .export         _pcm_ptr
-        .export         _pcm_head
+        .exportzp       _pcm_head
         .export         _pcm_done
         .export         _dac_mode
         .export         _dac_off
@@ -58,9 +58,9 @@ RING1_HI = $D2                  ; slot 1: $D200-$D3FF (512 bytes)
 _pcm_ptr: .res 4                ; two ring tails, IRQ-owned
 wav_ptr0: .res 2
 wav_ptr1: .res 2
+_pcm_head: .res 4               ; two ring heads, pump-owned
 
         .bss
-_pcm_head: .res 4               ; two ring heads, pump-owned
 _pcm_done: .res 2
 _dac_mode: .res 2               ; DAC_NONE / DAC_SAMPLE / DAC_WAVE
 _dac_off: .res 2                ; owning channel * 8

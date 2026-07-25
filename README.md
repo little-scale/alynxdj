@@ -21,7 +21,8 @@ The **12-bit LFSR is fully exposed per instrument**: a raw 9-bit tap mask
 (taps 0–5, 7, 10, 11) plus the 12-bit shifter seed. For many tap sets the
 seed selects between disjoint state cycles — genuinely different waveforms
 from the same taps. This is the heart of the Lynx sound and the heart of
-this tracker. Plus: per-channel stereo attenuation (Lynx II), and ComLynx
+this tracker. Plus: per-instrument and live-command stereo panning (Lynx II),
+and ComLynx
 as a multi-drop sync bus.
 
 ## Status
@@ -40,15 +41,18 @@ decision log):
 - All three voice types, with the **12-bit LFSR fully exposed** (raw taps
   + seed per instrument), per-instrument TSP, LFSR SWP/free-running
   sine-VIB/repeating-decay TRM
-  modulation, and 32-byte wavetables; everything verified by
+  modulation, universal left/right PAN,
+  and 32-byte wavetables; everything verified by
   FFT / cross-correlation in the headless harness
-- **22 sequencer commands** (incl. slow `G` LFSR-tap glide and cumulative
-  signed `B` taps automation), selected alphabetically in PHRASE and TABLE;
+- **22 sequencer commands** (incl. slow `G` LFSR-tap glide, cumulative
+  signed `B` taps automation, and live `Oxy` panning), selected
+  alphabetically in PHRASE and TABLE (`A` is PHRASE-only), with shared
+  last-command/value recall on empty command cells;
   in-page instrument selection, row-safe TABLE command deletion, per-instrument
   TBS table clocks, one global groove, full-row block select/cut/paste,
   clipboard, mute/solo, LIVE clip-launcher mode
-- **Cart-streamed portable sample bank**: all eight `samples/` kits at full
-  quality (808/909/C78/606 + four speech banks), kit-per-instrument. The
+- **Cart-streamed portable sample bank**: up to eight 8-pad kits at full
+  quality, kit-per-instrument. The
   factory bank is one reusable `.bin`, and custom banks carry between releases.
   KIT VOL provides full, half, quarter, and mute levels using signed PCM
   shifts outside the audio interrupt.
@@ -88,10 +92,20 @@ modern browser. It is a single self-contained file: load a built ALYNXDJ ROM,
 replace or audition individual WAVs (or a complete eight-sample kit), then
 set per-sample gain from −24 to +24 dB, optionally apply tanh soft saturation,
 drag non-destructive IN/OUT points over each waveform to trim it,
-import/export a complete portable sample-bank `.bin`, and save a new `.lnx`
+or use **Slice to kit** to divide a selected region of one longer WAV into
+1–8 equal slices and map them to pads. The slicer does not normalize its
+source or individual slices: one shared gain/tanh stage preserves their
+relative levels, while an optional micro fade-out handles independent
+one-shot endings (leave it off for continuous chained slices). It reads the
+WAV's declared sample rate directly and uses band-limited conversion to
+5,208.333 Hz, preserving source duration and pitch without browser-dependent
+AudioContext resampling or high-frequency aliases. Click any numbered region
+directly in the slice waveform to preview it; click the playing region again
+to stop. The tool can
+also import/export a complete portable sample-bank `.bin` and save a new `.lnx`
 image. Processing affects browser audition, bank export, and the patched
 5,208.333 Hz signed 8-bit PCM; no files are uploaded. The converter accepts
-8/16/24/32-bit integer WAVs. Each slot can be up to 65,535 bytes
+8/16/24/32-bit integer and 32/64-bit floating-point WAVs. Each slot can be up to 65,535 bytes
 (~12.58 seconds), while the complete bank has 209,920 bytes.
 
 ## Song file viewer
@@ -143,6 +157,10 @@ make pico     # companion RP2040 UF2; requires PICO_SDK_PATH + Arm toolchain
 Factory sample conversion resamples to 5,208.333 Hz, peak-normalizes, then
 applies **+12.00 dB into tanh soft saturation** before signed 8-bit
 quantization. The processing is baked into the bank and has no runtime cost.
+The standalone patcher always shows the software's KIT `00`–`07`. Kits absent
+from a loaded ROM or bank appear as empty, fillable pads and are written as
+minimal silent entries unless replaced, provided the shared sample capacity
+still fits.
 
 The standard image remains 256 KB: it provides 209,920 bytes for sample-bank
 data, followed by the protected HELP and MIDI blocks.

@@ -67,24 +67,31 @@ The payload unpacks to `struct songdata` verbatim (**7680 bytes**):
 (signed 8-bit wavetables, appended in v3 — older payloads simply leave
 the factory waves in place).
 
-Instrument record bytes: 0 type, 1 vol, 2 **env** (ATK<<4 | DCY, 4-bit
-times through the engine's `env_rate[]` curve — v2), 3 **TBS<<4 | HOLD**
+Instrument record bytes: 0 type, 1 vol, 2 **env** (ATK<<4 | DCY, 4-bit times
+through the engine's `env_rate[]` curve — v2; DCY 0 is immediate, producing
+one audible engine tick rather than sustain), 3 **TBS<<4 | HOLD**
 (v6 table speed in the high nibble; envelope hold in the low nibble, where
 `0`–`E` are timed and `F` is indefinite sustain),
 4 shared WAV/KIT selector (WAV: $FF = hardware triangle, 0–7 = wavetable;
 KIT: total bank 0–7, with invalid/legacy $FF normalized to 0 by current
 editors; v3), 5 taps bits 7-0,
-6 table, 7 pan, 8 fine, 9 taps bit 8, 10 seed bits 7-0,
+6 table, 7 **PAN** (Lynx II left/right level nibbles, `0` mute and `F` full;
+universal across LFSR/WAV/KIT, default `$FF`), 8 fine,
+9 taps bit 8, 10 seed bits 7-0,
 11 seed bits 11-8, 12 **SWP** (signed 1/16-semitone per tick; positive falls),
 13 **VIB** (speed/depth nibbles), 14 **TRM** (speed/depth nibbles; repeating
 descending volume saw),
 15 **TSP** (signed semitones). SWP/VIB/TRM are v4 and apply to LFSR,
 including the legacy type `$01` alias;
 TSP is v5 and applies to every instrument type before pitch/pad selection.
-TBS is v6: 0 advances one table row per triggered note; 1–15 advance every N
-engine ticks. Every mode wraps row 15 to row 0 by default, while `H` defines
+TBS is v6: 0 advances one table row per triggered note, including repeated
+PHRASE `Axx` selections of the same live table; 1–15 advance every N engine
+ticks. Every mode wraps row 15 to row 0 by default, while `H` defines
 a shorter or non-zero loop point. HOLD-F sustain changes playback semantics
-only and does not change the stored record or format version.
+only and does not change the stored record or format version. Exposing the
+existing byte-7 PAN for every instrument type likewise does not change the
+record or format version. `Oxy` uses the same nibble encoding as a transient
+voice override and is restored from byte 7 at the next note.
 
 Command IDs and bytes retain their established layout. Current `Jxy`
 semantics match SMSGGDJ/GENMDDJ: high nibble x is a four-pass mask and low

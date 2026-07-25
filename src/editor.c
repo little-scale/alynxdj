@@ -67,12 +67,13 @@ static unsigned char cmd_prev(unsigned char c)
 #define GRID_TOP 1
 #define BODY_X_OFFSET 8
 
+#pragma bss-name (push, "PADRAM")
 unsigned char screen;
 static unsigned char cur_track;         /* set by the SONG cursor column */
 static unsigned char edit_chain;        /* what CHAIN shows */
-static unsigned char edit_phrase;       /* what PHRASE shows */
+unsigned char edit_phrase;              /* what PHRASE shows */
 unsigned char edit_instr;               /* what INSTR shows */
-static unsigned char edit_table;        /* what TABLE shows */
+unsigned char edit_table;               /* what TABLE shows */
 
 /* per-screen cursors */
 unsigned char s_row;
@@ -80,12 +81,12 @@ static unsigned char s_col;             /* SONG: 0-127 x 0-3 */
 unsigned char c_row;
 static unsigned char c_col;             /* CHAIN: 0-15 x {phrase,tsp} */
 unsigned char p_row;
-static unsigned char p_col;             /* PHRASE: note,instr,cmd,param */
+unsigned char p_col;                    /* PHRASE: note,instr,cmd,param */
 unsigned char i_row;                    /* INSTR: field index */
 unsigned char ifield_type;
 unsigned char __fastcall__ ifield_screen_y(unsigned char f);
 unsigned char __fastcall__ instr_selector(unsigned char dir);
-static unsigned char t_row, t_col;      /* TABLE: 0-15 x vol,tsp,cmd,param */
+unsigned char t_row, t_col;             /* TABLE: 0-15 x vol,tsp,cmd,param */
 static unsigned char f_row;             /* FILES: SAVE/LOAD/NEW/DEMO/PURGE */
 static unsigned char f_status;          /* last save/load ST_* result */
 static unsigned char f_confirm;         /* action armed, awaiting 2nd tap */
@@ -96,8 +97,10 @@ static unsigned char edit_wave;         /* what WAVE shows */
 static unsigned char live_mode;         /* SONG screen is a clip launcher */
 static unsigned char pj_row;            /* PROJECT: field index */
 static unsigned char o_row;             /* OPTIONS: field index */
+#pragma bss-name (pop)
 unsigned char opt_prelisten = 1;        /* audition on edit */
 unsigned char opt_repeat = 12;          /* DAS delay, frames */
+#pragma bss-name (push, "PADRAM")
 static unsigned char edit_groove;       /* what GROOVE shows */
 
 /* clipboard: single fields and row ranges share one kind tag */
@@ -111,8 +114,12 @@ static unsigned char edit_groove;       /* what GROOVE shows */
 #define CLIP_RSNG  7                    /* song row range */
 static unsigned char clip_kind;
 static struct step clip_step;
-static struct chainstep clip_chst;
+#pragma bss-name (pop)
+extern struct chainstep clip_chst;
+#pragma zpsym("clip_chst")
+#pragma bss-name (push, "PADRAM")
 static unsigned char clip_cell;
+#pragma bss-name (pop)
 #pragma bss-name (push, "SONG")
 static unsigned char blk_song[16][NCH];
 #pragma bss-name (pop)
@@ -122,7 +129,8 @@ static unsigned char blk_song[16][NCH];
 static struct step blk_steps[16];
 static struct chainstep blk_chst[16];
 #pragma bss-name (pop)
-static unsigned char blk_n;
+extern unsigned char blk_n;
+#pragma zpsym("blk_n")
 
 #pragma code-name (push, "MIDICODE")
 void editor_clipboard_clear(void)
@@ -134,16 +142,21 @@ void editor_clipboard_clear(void)
 
 /* block select (A-held + B long-hold, ported gesture) */
 #define SEL_HOLD 20
-unsigned char sel_active;
-unsigned char sel_anchor;
-static unsigned char ab_pending, ab_timer;
+extern unsigned char sel_active;
+extern unsigned char sel_anchor;
+extern unsigned char ab_pending, ab_timer;
+#pragma zpsym("sel_active")
+#pragma zpsym("sel_anchor")
+#pragma zpsym("ab_pending")
+#pragma zpsym("ab_timer")
 
 /* A double-tap window (paste / mint / clone), ~0.3 s */
 #define TAP_WINDOW 18
 static unsigned char a_release_age = 0xFF;
 /* First physical-B tap inserted the remembered value into an empty
  * SONG/CHAIN cell.  The second tap must still treat that cell as empty. */
-static unsigned char tap_was_empty;
+extern unsigned char tap_was_empty;
+#pragma zpsym("tap_was_empty")
 
 #define MIRROR_PACKLEN (*(volatile unsigned int *)0xC01A)
 #define MIRROR_STATUS  (*(volatile unsigned char *)0xC01C)
@@ -153,19 +166,31 @@ static unsigned char tap_was_empty;
 static unsigned char last_note = 37;    /* C-4 */
 static unsigned char last_chain = 0;
 static unsigned char last_phrase = 0;
-static unsigned char last_instr;        /* last explicitly edited PHRASE instr */
-static unsigned char live_q_row[NCH];   /* SONG row that armed each LIVE queue */
+extern unsigned char last_instr;        /* last explicitly edited PHRASE instr */
+extern unsigned char live_q_row[NCH];   /* SONG row that armed each LIVE queue */
+#pragma zpsym("last_instr")
+#pragma zpsym("live_q_row")
 
 /* playhead bookkeeping: what's currently accented, per screen */
-static unsigned char ph_song[NCH];      /* drawn song row per track, $FF none */
+extern unsigned char ph_song[NCH];      /* drawn song row per track, $FF none */
+#pragma zpsym("ph_song")
 static unsigned char ph_row = 0xFF;     /* CHAIN/PHRASE/TABLE drawn row */
 
 /* key repeat */
 #define DAS_DELAY 12
 #define DAS_RATE   2
-static unsigned char rep_dir, rep_timer;
-static unsigned char a_used, b_used;
-static unsigned char o1_used;
+extern unsigned char rep_dir, rep_timer;
+extern unsigned char a_used, b_used;
+extern unsigned char o1_used;
+#pragma zpsym("rep_dir")
+#pragma zpsym("rep_timer")
+#pragma zpsym("a_used")
+#pragma zpsym("b_used")
+#pragma zpsym("o1_used")
+
+void editor_zp_clear(void);
+void command_latch(void);
+unsigned char command_insert(void);
 
 /* ---------------- drawing ---------------- */
 
@@ -414,11 +439,10 @@ void draw_phrase_screen(void)
 #define IF_INST  14
 static const char *const ifield_name[NIFIELDS] = {
     "TYPE", "VOL", "ATK", "HOLD", "DCY", "TSP", "SWP", "VIB",
-    "TRM", "TAPS", "SEED", "BANK", "TABLE", "TBS", "INSTR",
+    "TRM", "TAPS", "SEED", "PAN", "TABLE", "TBS", "INSTR",
 };
-/* INSTR is field 14 to preserve the established field IDs, but draws above
- * TYPE.  The assembly layout helper owns fixed rows and type visibility so
- * drawing and cursor movement cannot disagree. */
+/* INSTR draws above TYPE.  The assembly layout helper owns fixed rows and
+ * type visibility so drawing and cursor movement cannot disagree. */
 #pragma rodata-name (push, "MIDICODE")
 static const char itype_wav[] = "WAV";
 #pragma rodata-name (pop)
@@ -474,7 +498,7 @@ static void draw_instr_row(unsigned char r, unsigned char cursor_here)
     y = ifield_screen_y(r);
     if (!y)
         return;
-    if (r == IF_WAVE) {                 /* shared WAV/KIT selector */
+    if (r == IF_SWP && ifield_type > IT_LEGACY_NOISE) {
         draw_text(1, y, ifield_type == IT_WAV ? (const char *)"WAVE"
                                                : itype_kit,
                   PEN_DIM, PEN_BG);
@@ -516,11 +540,7 @@ static void draw_instr_row(unsigned char r, unsigned char cursor_here)
             draw_hex8(8, y, sd.instrs[edit_instr].table, fg, bg);
         break;
     case IF_WAVE:
-        v = instr_selector(EMPTY);
-        if (v >= 8)
-            draw_text(8, y, "--", fg, bg);
-        else
-            draw_hex8(8, y, v, fg, bg);
+        draw_hex8(8, y, sd.instrs[edit_instr].pan, fg, bg);
         break;
     case 1:
         draw_hex8(8, y, sd.instrs[edit_instr].vol, fg, bg);
@@ -531,6 +551,15 @@ static void draw_instr_row(unsigned char r, unsigned char cursor_here)
         draw_hex8(8, y, (unsigned char)sd.instrs[edit_instr].tsp, fg, bg);
         break;
     case IF_SWP:
+        if (ifield_type > IT_LEGACY_NOISE) {
+            v = instr_selector(EMPTY);
+            if (v >= 8)
+                draw_text(8, y, "--", fg, bg);
+            else
+                draw_hex8(8, y, v, fg, bg);
+            break;
+        }
+        /* fall through: LFSR SWP shares the packed modulation renderer */
     case IF_VIB:
     case IF_TRM: {
         struct instr *in = &sd.instrs[edit_instr];
@@ -1130,23 +1159,6 @@ audition_row:
     }
 }
 
-#pragma code-name (push, "MIDICODE")
-static unsigned char table_previous_cmd(unsigned char row,
-                                        unsigned char *param)
-{
-    unsigned char r = row;
-
-    do {
-        r = r ? r - 1 : PHRASE_ROWS - 1;
-        if (sd.tables[edit_table][r].cmd) {
-            *param = sd.tables[edit_table][r].param;
-            return sd.tables[edit_table][r].cmd;
-        }
-    } while (r != row);
-    return CMD_NONE;
-}
-#pragma code-name (pop)
-
 static void edit_table_cell(unsigned char dir)
 {
     struct tablerow *tr = &sd.tables[edit_table][t_row];
@@ -1169,14 +1181,16 @@ static void edit_table_cell(unsigned char dir)
         }
         break;
     case 2:
-        if (!tr->cmd) {
-            tr->cmd = table_previous_cmd(t_row, &tr->param);
-            if (tr->cmd)
-                break;                  /* first edit repeats cmd + value */
-        }
-        switch (dir) {
-        case 0: case 3: tr->cmd = cmd_next(tr->cmd); break;
-        case 1: case 2: tr->cmd = cmd_prev(tr->cmd); break;
+        if (!tr->cmd && command_insert() == 2)
+            break;                      /* first edit repeats cmd + value */
+        if (dir == 0 || dir == 3) {
+            tr->cmd = cmd_next(tr->cmd);
+            if (tr->cmd == CMD_A)
+                tr->cmd = CMD_B;
+        } else {
+            tr->cmd = cmd_prev(tr->cmd);
+            if (tr->cmd == CMD_A)
+                tr->cmd = CMD_NONE;
         }
         break;
     case 3:
@@ -1232,6 +1246,8 @@ static void edit_instr_cell(unsigned char dir)
         else ++in->tsp;
         break;
     case IF_SWP:
+        instr_selector(dir);
+        break;
     case IF_VIB:
     case IF_TRM:
         if (in->type > IT_LEGACY_NOISE)
@@ -1253,11 +1269,8 @@ static void edit_instr_cell(unsigned char dir)
         in->seed_hi = (unsigned char)(t >> 8);
         break;
     case IF_TABLE:
-        v = in->table;
-        if (dir == 0 || dir == 3)
-            in->table = (v >= NTABLES) ? 0 : (v < NTABLES - 1 ? v + 1 : v);
-        else
-            in->table = (v == 0 || v >= NTABLES) ? EMPTY : v - 1;
+        /* Compact assembly avoids a cc65 2.18 stack-reload miscompile here. */
+        instr_selector(dir);
         return;
     case IF_WAVE:
         instr_selector(dir);
@@ -1366,20 +1379,26 @@ static void edit_cell(unsigned char dir)
 static void insert_cell(void)
 {
     tap_was_empty = 0;
+    if (command_insert())
+        return;
     switch (screen) {
-    case SCR_SONG:
-        if (sd.song[s_row][s_col] == EMPTY) {
+    case SCR_SONG: {
+        unsigned char *cell = &sd.song[s_row][s_col];
+        if (*cell == EMPTY) {
             tap_was_empty = 1;
-            sd.song[s_row][s_col] = last_chain;
+            *cell = last_chain;
         }
         break;
-    case SCR_CHAIN:
-        if (c_col == 0 && sd.chains[edit_chain][c_row].phrase == EMPTY) {
+    }
+    case SCR_CHAIN: {
+        struct chainstep *cs = &sd.chains[edit_chain][c_row];
+        if (c_col == 0 && cs->phrase == EMPTY) {
             tap_was_empty = 1;
-            sd.chains[edit_chain][c_row].phrase = last_phrase;
-            sd.chains[edit_chain][c_row].tsp = 0;
+            cs->phrase = last_phrase;
+            cs->tsp = 0;
         }
         break;
+    }
     case SCR_PHRASE: {
         struct step *s = &sd.phrases[edit_phrase][p_row];
         if (p_col == 0 && !s->note) {
@@ -1471,6 +1490,7 @@ static void nav(unsigned char to_right)
             struct step *s = &sd.phrases[edit_phrase][p_row];
             if (s->note && s->instr < NINSTR)
                 edit_instr = s->instr;
+            i_row = IF_INST;
             screen = SCR_INSTR;
         } else if (screen == SCR_INSTR) {
             unsigned char t = sd.instrs[edit_instr].table;
@@ -1882,6 +1902,7 @@ static void context_play(void)
 void editor_init(void)
 {
     unsigned char c;
+    editor_zp_clear();
     last_instr = 0;
     for (c = 0; c < NCH; ++c) {
         ph_song[c] = 0xFF;
@@ -2089,6 +2110,7 @@ void editor_frame(unsigned char joy, unsigned char prev)
         } else if (joy & JOY_BTN_A_MASK) {   /* edit chord (physical B) */
             a_used = 1;
             edit_cell(dir);
+            command_latch();
         } else if (screen == SCR_HELP)
             help_turn(dir);
         else
@@ -2104,9 +2126,11 @@ void editor_frame(unsigned char joy, unsigned char prev)
         }
     }
     if (pressed & JOY_BTN_B_MASK)
-        /* Physical A is the map/transport modifier. INSTR, OPTIONS and
-         * PROJECT consume only its clean-tap action; held chords remain live. */
-        b_used = (screen == SCR_INSTR || screen >= SCR_PROJ);
+        /* Physical A is the map/transport modifier. GROOVE, INSTR, OPTIONS
+         * and PROJECT consume only its clean-tap action; held chords remain
+         * live. */
+        b_used = (screen == SCR_GROOVE || screen == SCR_INSTR
+                  || screen >= SCR_PROJ);
     if ((prev & JOY_BTN_A_MASK) && !(joy & JOY_BTN_A_MASK)) {
         if (!a_used) {
             insert_cell();                   /* clean A tap */

@@ -24,6 +24,12 @@ def audio(path):
     return rate, samples
 
 
+def stereo_audio(path):
+    with wave.open(path, "rb") as wav:
+        raw = wav.readframes(wav.getnframes())
+    return np.frombuffer(raw, dtype="<i2").reshape(-1, 2)
+
+
 def sounding_tail(path):
     rate, samples = audio(path)
     onset = np.flatnonzero(np.abs(samples) > 100)
@@ -103,16 +109,16 @@ def run_vib_continuity(harness, core, rom, build):
 
 
 def run_mod(harness, core, rom, build, label, swp=0, vib=0, trm=0, tsp=0,
-            instrument_type=0):
+            instrument_type=0, pan=0xFF):
     ppm = os.path.join(build, "mod-%s.ppm" % label)
     env = os.environ.copy()
     # sd starts at $D400 and instrs at +$1600 = $EA00.  Sustain instrument
     # 00, set its v4 modulation bytes and v5 TSP byte, then run the stopped
     # audition hook.
     env["RETROSHOT_RAM_POKE"] = (
-        "C02D:A9,EA00:%02X,EA02:00,EA03:00,EA0C:%02X,EA0D:%02X,"
+        "C02D:A9,EA00:%02X,EA02:00,EA03:0F,EA07:%02X,EA0C:%02X,EA0D:%02X,"
         "EA0E:%02X,EA0F:%02X"
-        % (instrument_type, swp, vib, trm, tsp))
+        % (instrument_type, pan, swp, vib, trm, tsp))
     env["RETROSHOT_RAM_POKE_AT"] = "100"
     subprocess.run([harness, core, rom, ppm, "420"], env=env, check=True)
     return ppm + ".wav"
@@ -188,6 +194,22 @@ def main():
         fail("TSP +12 did not transpose the instrument by an octave: %.3f"
              % ratio)
 
+    # PAN zero nibbles use both Lynx II attenuation and MSTEREO's older hard
+    # gates.  This keeps full 16-step levels on later hardware while ensuring
+    # the important 00/F0/0F endpoints remain exact on gate-only stereo units.
+    hard_left = stereo_audio(run_mod(
+        harness, core, test_rom, build, "pan-left", pan=0xF0))
+    hard_right = stereo_audio(run_mod(
+        harness, core, test_rom, build, "pan-right", pan=0x0F))
+    muted = stereo_audio(run_mod(
+        harness, core, test_rom, build, "pan-muted", pan=0x00))
+    if (np.max(np.abs(hard_left[:, 0])) < 1000
+            or np.max(np.abs(hard_left[:, 1])) != 0
+            or np.max(np.abs(hard_right[:, 0])) != 0
+            or np.max(np.abs(hard_right[:, 1])) < 1000
+            or np.max(np.abs(muted)) != 0):
+        fail("PAN hard gates did not produce exact F0/0F/00 stereo endpoints")
+
     # Historical type 01 must remain a byte-compatible alias for LFSR 00:
     # same patch, engine path, register stream, and therefore exact audio.
     legacy_path = run_mod(
@@ -207,7 +229,8 @@ def main():
     env = os.environ.copy()
     env["RETROSHOT_RAM_OUT"] = audition_ram
     # Force every instrument type to LFSR after boot so whichever demo track
-    # the navigation reaches must render the unused shared BANK row blank.
+    # the navigation reaches must render every LFSR row, including PAN in
+    # the former unused shared-BANK position.
     env["RETROSHOT_RAM_POKE"] = ",".join(
         "%04X:00" % (0xEA00 + i * 16) for i in range(32))
     env["RETROSHOT_RAM_POKE_AT"] = "250"
@@ -235,21 +258,18 @@ def main():
         fail("INSTR body did not retain its eight-column left margin")
     if np.count_nonzero(np.any(frame[:6, :body_left] != background, axis=2)) < 6:
         fail("the fixed top bar moved with the INSTR body")
-    # The stable LFSR layout contains every meaningful oscillator field but
-    # leaves the shared BANK row entirely blank.
-    for row in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15):
+    # The stable LFSR layout now fills all fifteen body rows.
+    for row in range(1, 16):
         band = frame[row * 6:(row + 1) * 6, :96]
         if np.count_nonzero(np.any(band != background, axis=2)) < 6:
             fail("INSTR field row %d was not fully rendered" % row)
-    bank_band = frame[13 * 6:14 * 6, :96]
-    if np.count_nonzero(np.any(bank_band != background, axis=2)):
-        fail("LFSR instrument rendered the unused BANK row")
     _, audition = sounding_tail(audition_ppm + ".wav")
     if np.max(np.abs(audition)) < 100:
         fail("physical B tap on stopped INSTR did not audition")
 
     print("LFSR modulation: PASS — TSP/SWP/nonlinear free-running sine-VIB/"
-          "decay-saw TRM audible and stopped INSTR physical-B audition works")
+          "decay-saw TRM, exact PAN hard gates, and stopped INSTR physical-B "
+          "audition work")
 
 
 if __name__ == "__main__":

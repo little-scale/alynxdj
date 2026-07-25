@@ -62,7 +62,9 @@ static void palette_init(void)
 
 static void screen_clear(void)
 {
-    memset(SCREEN, PEN_BG | (PEN_BG << 4), (unsigned int)LINE_BYTES * 102);
+    /* Clear the visible 8160 bytes plus the 32-byte non-visible tail used
+     * by PADRAM editor state. */
+    memset(SCREEN, PEN_BG | (PEN_BG << 4), 0x2000);
 }
 
 /* clear the 16 grid rows (char rows 1..16 = pixel rows 6..101) */
@@ -81,9 +83,11 @@ void clear_grid(void)
 }
 
 /* Draw one glyph at char cell (cx, cy); fg/bg are pen numbers. */
-static unsigned char draw_pump_phase;
+extern unsigned char draw_pump_phase;
+#pragma zpsym("draw_pump_phase")
 unsigned char draw_x_offset;
 extern unsigned char sel_active;
+#pragma zpsym("sel_active")
 #define SEL_FIRST_Y (*(volatile unsigned char *)0xC8FE)
 #define SEL_LAST_Y  (*(volatile unsigned char *)0xC8FF)
 

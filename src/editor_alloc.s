@@ -8,12 +8,16 @@
 
         .export  _find_new_chain, _find_new_phrase, _engine_table_cursor
         .export  _ifield_screen_y, _instr_selector
+        .export  _editor_zp_clear, _command_latch, _command_insert
         .export  _scale_pcm, _pool_trigger, _pool_cancel
         .export  _instr_taps, _reset_instr_taps, _clock_tap_glide
-        .export  _sel_paint
+        .export  _sel_paint, _set_pan
+        .export  _arm_table_override, _resolve_table_override
         .import  _sd, _voices, _live_taps, _ifield_type, aslax4
+        .import  _track_bit
         .import  _edit_instr, _i_row
-        .import  _screen, _s_row, _c_row, _p_row, _sel_anchor
+        .import  _screen, _s_row, _c_row, _p_row, _p_col, _edit_phrase
+        .import  _t_row, _t_col, _edit_table
         .import  _draw_song_screen, _draw_chain_screen, _draw_phrase_screen
         .import  _stream_cancel, _trig_kit, _trig_member
         .import  _dac_mode, _dac_off, _pcm_done, _dac_rate
@@ -23,11 +27,15 @@
 SONG_BYTES   = $0200
 CHAINS_OFF   = $0200
 PHRASES_OFF  = $0600
+TABLES_OFF   = $1800
 CHAIN_SIZE   = 32
 PHRASE_SIZE  = 64
 NCHAINS      = 32
 NPHRASES     = 64
 EMPTY        = $FF
+SCR_PHRASE   = 2
+SCR_TABLE    = 4
+CMD_A        = 1
 INSTRS_OFF   = $1600
 INSTR_TAPSLO = 5
 INSTR_TAPSHI = 9
@@ -40,7 +48,245 @@ VOICE_TPOS     = 30
 VOICE_INUM   = 32
 VOICE_SIZE   = 49
 
+        .segment "APPZP" : zeropage
+        .exportzp _blk_n, _sel_active, _sel_anchor
+        .exportzp _ab_pending, _ab_timer, _tap_was_empty, _last_instr
+        .exportzp _last_cmd, _last_param, _table_override
+        .exportzp _live_q_row, _ph_song, _rep_dir, _rep_timer
+        .exportzp _a_used, _b_used, _o1_used, _clip_chst
+        .exportzp _dac_owner, _dac_stamp, _dac_clock, _stereo_disable
+        .exportzp _live_q, _live_bar, _eng_tick, _row_ticks, _prng
+        .exportzp _draw_pump_phase
+_blk_n:          .res 1
+_sel_active:     .res 1
+_sel_anchor:     .res 1
+_ab_pending:     .res 1
+_ab_timer:       .res 1
+_tap_was_empty:  .res 1
+_last_instr:     .res 1
+_last_cmd:       .res 1
+_last_param:     .res 1
+_live_q_row:     .res 4
+_ph_song:        .res 4
+_rep_dir:        .res 1
+_rep_timer:      .res 1
+_a_used:         .res 1
+_b_used:         .res 1
+_o1_used:        .res 1
+_clip_chst:      .res 2
+EDITOR_ZP_SIZE = * - _blk_n
+_table_override: .res 1
+_dac_owner:      .res 2
+_dac_stamp:      .res 4
+_dac_clock:      .res 2
+_stereo_disable: .res 1
+_live_q:         .res 4
+_live_bar:       .res 1
+_eng_tick:       .res 1
+_row_ticks:      .res 1
+_prng:           .res 2
+_draw_pump_phase:.res 1
+
+        .segment "MIDICODE"
+
+; Return ptr1 at the current PHRASE/TABLE command byte.  Carry is set when
+; the cursor is not in either half of a command pair.
+command_ptr:
+        lda     _screen
+        cmp     #SCR_PHRASE
+        beq     @command_phrase
+        cmp     #SCR_TABLE
+        bne     @command_invalid
+        lda     _t_col
+        cmp     #2
+        bcc     @command_invalid
+        lda     _edit_table
+        ldx     _t_row
+        ldy     #>(_sd + TABLES_OFF)
+        bra     @command_calc
+@command_phrase:
+        lda     _p_col
+        cmp     #2
+        bcc     @command_invalid
+        lda     _edit_phrase
+        ldx     _p_row
+        ldy     #>(_sd + PHRASES_OFF)
+@command_calc:
+        sta     tmp1                    ; object * 64 + row * 4 + CMD offset
+        and     #3
+        asl     a
+        asl     a
+        asl     a
+        asl     a
+        asl     a
+        asl     a
+        sta     ptr1
+        txa
+        asl     a
+        asl     a
+        clc
+        adc     ptr1
+        adc     #2
+        sta     ptr1
+        tya
+        sta     ptr1+1
+        lda     tmp1
+        lsr     a
+        lsr     a
+        clc
+        adc     ptr1+1
+        sta     ptr1+1
+        clc
+        rts
+@command_invalid:
+        sec
+        rts
+
+; Remember the command+parameter after any held-B directional edit.
+_command_latch:
+        jsr     command_ptr
+        bcs     @command_done
+        ldy     #0
+        lda     (ptr1),y
+        beq     @command_done
+        sta     _last_cmd
+        iny
+        lda     (ptr1),y
+        sta     _last_param
+@command_done:
+        rts
+
+; A clean physical-B tap inserts the shared remembered pair into an empty
+; command-letter cell.  TABLE deliberately rejects phrase-only A.
         .segment "CODE"
+_command_insert:
+        lda     _screen
+        cmp     #SCR_PHRASE
+        beq     @insert_col
+        cmp     #SCR_TABLE
+        bne     @insert_no
+@insert_col:
+        cmp     #SCR_TABLE
+        beq     @insert_table_col
+        lda     _p_col
+        bra     @insert_check_col
+@insert_table_col:
+        lda     _t_col
+@insert_check_col:
+        cmp     #2
+        bne     @insert_no
+        jsr     command_ptr
+        ldy     #0
+        lda     (ptr1),y
+        bne     @insert_yes              ; occupied: handled, leave unchanged
+        lda     _last_cmd
+        beq     @insert_yes              ; no remembered real command yet
+        ldx     _screen
+        cpx     #SCR_TABLE
+        bne     @insert_store
+        cmp     #CMD_A
+        beq     @insert_yes
+@insert_store:
+        sta     (ptr1),y
+        iny
+        lda     _last_param
+        sta     (ptr1),y
+        lda     #2
+        rts
+@insert_yes:
+        lda     #1
+        rts
+@insert_no:
+        lda     #0
+        rts
+
+; Phrase A is a one-note table override.  Arming before trigger lets TBS 0
+; compare the selected table with the preceding live table and therefore
+; advance across repeated A commands instead of restarting row zero.
+        .segment "MIDICODE"
+_arm_table_override:
+        sta     ptr1
+        stx     ptr1+1
+        lda     #EMPTY
+        sta     _table_override
+        ldy     #2
+        lda     (ptr1),y
+        cmp     #CMD_A
+        bne     @override_done
+        iny
+        lda     (ptr1),y
+        cmp     #16
+        bcc     @override_store
+        lda     #$FE                    ; explicit A10+ = table off
+@override_store:
+        sta     _table_override
+@override_done:
+        rts
+
+; A = the instrument's stored table. Return the phrase override when armed,
+; otherwise validate and return that stored table. Consume the override.
+_resolve_table_override:
+        tax
+        lda     _table_override
+        ldy     #EMPTY
+        sty     _table_override
+        cmp     #EMPTY
+        bne     @resolve_selected
+        txa
+@resolve_selected:
+        cmp     #16
+        bcc     @resolve_done
+        lda     #EMPTY
+@resolve_done:
+        rts
+
+        .segment "CODE"
+_editor_zp_clear:
+        ldx     #EDITOR_ZP_SIZE-1
+        lda     #0
+@clear_zp:
+        sta     _blk_n,x
+        dex
+        bpl     @clear_zp
+        rts
+
+; void __fastcall__ set_pan(unsigned char ch, unsigned char pan)
+; The later Lynx II ATTEN/MPAN path provides fractional levels.  Also mirror
+; zero nibbles into MSTEREO's older hard switches so 00/F0/0F behave on
+; stereo hardware that implements channel gating but not attenuation.
+_set_pan:
+        sta     tmp1                    ; fastcall PAN
+        jsr     popa                    ; stacked channel
+        tax
+        lda     _track_bit,x
+        sta     tmp2
+        asl     a
+        asl     a
+        asl     a
+        asl     a
+        ora     tmp2
+        trb     _stereo_disable         ; begin with both sides enabled
+        lda     tmp1
+        and     #$F0
+        bne     @pan_right
+        lda     tmp2
+        asl     a
+        asl     a
+        asl     a
+        asl     a
+        tsb     _stereo_disable         ; zero left nibble = hard mute left
+@pan_right:
+        lda     tmp1
+        and     #$0F
+        bne     @pan_write
+        lda     tmp2
+        tsb     _stereo_disable         ; zero right nibble = hard mute right
+@pan_write:
+        lda     tmp1
+        sta     $FD40,x                 ; ATTEN_A + channel
+        lda     _stereo_disable
+        sta     $FD50                   ; global per-channel/side disable bits
+        rts
 
 ; Point ptr1 at the current 16-byte instrument.
 instr_ptr:
@@ -67,12 +313,82 @@ _instr_selector:
         sta     tmp1
         lda     tmp1
         cmp     #EMPTY
-        beq     @normalise
+        bne     :+
+        jmp     @normalise
+:
         lda     _i_row
-        beq     @type
+        bne     :+
+        jmp     @type
+:
         cmp     #1
-        beq     @volume
+        bne     :+
+        jmp     @volume
+:
+        cmp     #11                     ; universal PAN field
+        beq     @pan
+        cmp     #6                      ; LFSR SWP / WAV-KIT bank
+        beq     @swp_or_bank
+        cmp     #12                     ; universal TABLE selector
+        bne     :+
+        jmp     @table
+:
         jmp     @bank
+@swp_or_bank:
+        ldy     #0
+        lda     (ptr1),y
+        and     #3
+        cmp     #2
+        bcc     @swp
+        jmp     @bank
+@swp:
+        ldy     #12                     ; LFSR SWP byte
+        bra     @packed
+
+@pan:
+        ldy     #7
+        lda     (ptr1),y
+        ldx     tmp1
+        beq     @pan_left_up
+        dex
+        beq     @pan_left_down
+        dex
+        beq     @pan_right_down
+        tax
+        and     #$0F
+        cmp     #$0F
+        beq     @packed_done
+        txa
+        inc     a
+        bra     @packed_store
+@pan_right_down:
+        tax
+        and     #$0F
+        beq     @packed_done
+        txa
+        dec     a
+        bra     @packed_store
+@pan_left_up:
+        cmp     #$F0
+        bcs     @packed_done
+        clc
+        adc     #$10
+        bra     @packed_store
+@pan_left_down:
+        cmp     #$10
+        bcc     @packed_done
+        sec
+        sbc     #$10
+@packed_store:
+        sta     (ptr1),y
+@packed_done:
+        rts
+@packed:
+        lda     (ptr1),y
+        ldx     tmp1
+        clc
+        adc     @packed_delta,x
+        sta     (ptr1),y
+        rts
 
 @type:
         ldy     #0                      ; TYPE: previous/next shipped type
@@ -156,6 +472,7 @@ _instr_selector:
         inc     a
         bra     @volume_store
 @volume_fine_down:
+        cmp     #0                      ; DEX left Z set, so retest VOL itself
         beq     @done
         dec     a
         bra     @volume_store
@@ -180,6 +497,12 @@ _instr_selector:
         sta     (ptr1),y
         rts
 
+@table:
+        lda     #2                      ; TABLE shares WAV's --,00-0F steps
+        sta     tmp2
+        ldy     #6
+        bra     @selector_value
+
 @bank:
         ldy     #0
         lda     (ptr1),y
@@ -188,6 +511,7 @@ _instr_selector:
         bcc     @return_bank            ; LFSR has no selector
         sta     tmp2                    ; WAV=2, KIT=3
         ldy     #4
+@selector_value:
         lda     (ptr1),y
         ldx     tmp1
         beq     @bank_up
@@ -225,6 +549,8 @@ _instr_selector:
 @type_step:
         .byte   3, 3, 0, 2              ; previous
         .byte   2, 2, 3, 0              ; next
+@packed_delta:
+        .byte   16, $F0, $FF, 1         ; Up/Down/Left/Right
 
 ; void sel_paint(void)
 ; Publish the visible selection rows for draw_char(), then repaint the
@@ -345,8 +671,8 @@ _ifield_screen_y:
 
         .segment "RODATA"
 @field_layout:
-        .byte   $F2, $F3, $74, $75, $76, $F7, $38, $39
-        .byte   $3A, $3B, $3C, $CD, $7E, $7F, $F1
+        .byte   $F2, $F3, $74, $75, $76, $F7, $F8, $39
+        .byte   $3A, $3B, $3C, $FD, $7E, $7F, $F1
 
         .segment "HICODE1"
 @type_bit:

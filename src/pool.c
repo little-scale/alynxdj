@@ -20,6 +20,7 @@
 
 extern unsigned char *pcm_ptr[NDAC];    /* ring tails (IRQ-owned) */
 #pragma zpsym("pcm_ptr")
+#pragma zpsym("pcm_head")
 
 /* Which stream currently owns the physical cart cursor.  With one active
  * sample, preserving this lets every refill continue sequentially instead

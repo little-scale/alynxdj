@@ -76,6 +76,13 @@ fixed channel-C/channel-D sample-bus details recorded in M7/M8.**
 | M36 | ✅ **LOUD FACTORY SAMPLE MASTERING** — WAV-to-bank conversion retains peak normalization, then applies +12.00 dB (3.981×) into tanh soft saturation before signed 8-bit quantization. The resulting 79,816-byte portable factory bank is mastered offline, so KIT playback gains average body level without spending another Lynx cycle; exact probe bytes pin the gain/order/nonlinearity. The lower 5.208 kHz rate is now confirmed to materially improve real-hardware performance. | Use available offline processing to make the constrained 8-bit sample path confidently loud while preserving the runtime budget |
 | M37 | ✅ **CYCLIC TABLES AT EVERY SPEED** — TBS 0 wraps automatically from table row `0F` to `00` as it advances once per note; timed TBS 1–F now use the same full-table wrap after each N-tick step, matching SMSGGDJ and GENMDDJ rather than ALYNXDJ's accidental stick-at-end divergence. `Hxx` still supplies shorter or non-zero loop points. The TABLE playhead reports the wrapped F state, and engine regressions prove both note- and tick-clock modes run beyond their first pass. | Make tables continuous automation by default while reserving H for intentional loop shape |
 | M38 | ✅ **SIBLING-ORDER J VARIATION** — `Jxy` now matches SMSGGDJ and GENMDDJ: x is the mod-4 phrase-pass mask and y is signed −8…+7 transpose. The demo's `J51/J71` become equivalent `J15/J17`, HELP/manual/contract state the order explicitly, and RAM regressions distinguish selected `J17` from unselected `J27` on pass zero. Command IDs and save structure remain unchanged. | Make command muscle memory and shared song concepts agree across all three trackers |
+| M39 | ✅ **UNIVERSAL INSTRUMENT PAN** — LFSR, WAV, and KIT now expose their existing byte-7 PAN as independent left/right Lynx II level nibbles (`0` mute, `F` full), with Up/Down editing left and Left/Right editing right. The existing `Oxy` command is documented as the matching live per-voice override; the next note restores patch PAN. The WAV/KIT selector and PAN share formerly type-unused form rows, and editor/viewer/HELP regressions preserve the 15-row screen, 16-byte record, and save-format v6. | Give every source type persistent stereo placement while spending no song bytes and no new command ID |
+| M40 | ✅ **LONG-SAMPLE SLICE TO KIT** — the standalone patcher accepts one long WAV, shows draggable region bounds and 1–8 equal divisions, and lets every slice be assigned to a unique pad in the current kit. This path keeps resampled audio floating point through one shared gain/optional-tanh stage and deliberately skips normalization, so fade-off slices concatenate to the exact selected waveform at signed 8-bit resolution. Optional 1/2/5/10 ms end fades reach zero for independent one-shot click control; per-pad and whole-bank capacity are checked before applying. Core regressions pin amplitude preservation, boundary continuity, fade shape, gain-before-tanh order, and the eight-slice/u16 limits. | Turn breaks, loops, and phrases into portable kits without flattening their internal dynamics |
+| M41 | ✅ **PAN HARD-GATE COMPATIBILITY** — every patch PAN and live `Oxy` write continues to program ATTEN/MPAN for 16 levels, while a zero nibble now also updates that channel-side's MSTEREO disable bit. `00` therefore mutes exactly and `F0`/`0F` hard-pan exactly on gate-only stereo paths without sacrificing fractional levels on later hardware. A compact assembly setter and zero-page shadow keep this out of the engine tick and DAC IRQ; stereo audio regressions prove `FF`, `F0`, `0F`, and `00` independently. | Make the musically important mute/hard-pan endpoints reliable across more real hardware without reducing the full panning design |
+| M42 | ✅ **EDITOR LEFT/H00/SLICER RATE CORRECTIONS** — repair the compact VOL fine-decrement flag test and move instrument TABLE stepping into compiler-safe assembly; `H00` now advances immediately to the following chain phrase while retaining local looping for a one-phrase/standalone phrase; and the standalone patcher directly reads PCM/float WAV rates and performs band-limited 5,208.333 Hz conversion. Editor RAM probes, a two-phrase H rig, a 48 kHz→Lynx 440 Hz/duration check, and out-of-band rejection pin all four fixes. | Restore symmetric editing, useful short phrases, and deterministic sliced-sample pitch across browsers |
+| M43 | ✅ **DIRECT SLICE PREVIEW** — every numbered division over the patcher's long-sample waveform is a full-width preview/stop button with hover, focus, and active-playing feedback. It shares the existing processed-slice audition path, so gain/tanh/fade and trim changes are heard exactly as they will be applied; mapping-card audition controls remain available. The standalone DOM regression clicks a slice, proves its playing state, then clicks it again to stop. | Make rhythmic slice checking immediate without forcing repeated pointer travel between the waveform and mapping grid |
+| M44 | ✅ **COMPLETE ZERO-BASED KIT PATCHING** — the standalone patcher always presents KIT `00`–`07` even when a ROM or imported bank declares fewer than eight. Missing banks render as eight explicit empty pads and accept single WAVs, whole-kit replacement, or Slice-to-kit; export expands them into a valid eight-kit `PL` directory using one-byte silence for unfilled pads and retains the shared pool-capacity guard. Core and DOM regressions open a one-kit ROM, verify all eight zero-based tabs, fill KIT `07`, and prove an eight-kit bank is emitted. | Make the patcher match the ROM's complete bank selector instead of hiding usable custom-sample space |
+| M45 | ✅ **COMMAND RECALL + TABLE-A/ENVELOPE POLISH** — PHRASE and TABLE share one last-command/value latch: changing either byte updates the pair and a clean physical-B tap inserts both into an empty command-letter cell without overwriting occupied data; TABLE's alphabet and insertion reject phrase-only A. Phrase `Axx` now selects its override before trigger so repeated same-table notes advance TBS 0 while a changed target restarts; TABLE A bytes are inert. PHRASE→INSTR selects the row patch and lands on the top selector. DCY 0 reaches silence after the trigger tick, leaving HOLD F as the only indefinite patch sustain. Input-driven editor and engine RAM regressions cover every behavior. | Make repeat entry global and predictable, restore useful note-clocked table overrides, and ensure the zero envelope is the shortest sound |
 
 Commit at each milestone boundary. Hardware-verify **M6 (LFSR timbres)** and
 **M7 (PCM feed)** early — Handy is a 20-year-old core; its polynomial-counter
@@ -99,9 +106,9 @@ second-opinion core.
   list only after silicon listening.
 - **cc65 editor sluggishness (D2)** — if screen paints lag, move the dirty-
   cell renderer fully to asm before blaming the design.
-- **64 KB code packing** — SONG remains exact; MAIN has 54 bytes, HICODE1 has
-  3 bytes, HICODE3 has 1 byte, HICODE2 has 3, HELPCODE has 29, and the
-  expanded `$C100` cold/live helper overlay has 4. The C stack remains 512 bytes.
+- **64 KB code packing** — SONG remains exact; MAIN has 72 bytes, HICODE1 has
+  10 bytes, HICODE3 has 1, HICODE2 has 19, HELPCODE has 29, and the
+  expanded `$C100` cold/live helper overlay has 35. The C stack remains 512 bytes.
   Growth needs measured placement and must
   respect the MIDI/save-buffer and MIDI/phrase-counter overlay lifetimes.
 - **Scope creep** — echo (`Q`), user instrument bank, ComLynx song exchange
@@ -110,11 +117,12 @@ second-opinion core.
 
 ## Status
 
-**M0–M38 implemented as of 2026-07-25.** The tracker has all eleven screens,
+**M0–M45 implemented as of 2026-07-25.** The tracker has all eleven screens,
 the full command/editor workflow, ComLynx OUT/IN/IN24, packed 93C86 persistence,
 four genuinely symmetric logical/hardware tracks, receive-only USB-MIDI-over-
 ComLynx takeover, persistent TSP on every
-instrument type, LFSR SWP/sine-VIB/TRM patch modulation, and static KIT
+instrument type, universal Lynx II instrument
+PAN, LFSR SWP/sine-VIB/TRM patch modulation, and static KIT
 PCM gain. Two sampled
 voices are the deliberate CPU cap,
 not fixed channel roles. Remaining 1.0 work is the focused two-stream/LFSR/

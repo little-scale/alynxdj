@@ -79,19 +79,31 @@ struct voice voices[NCH];              /* assembly G clock shares this array */
 #pragma bss-name (push, "MIRRORRAM")
 static unsigned char play_cnt[NPHRASES];
 #pragma bss-name (pop)
-static unsigned char dac_owner[NDAC];      /* slot -> logical/physical track */
-static unsigned dac_stamp[NDAC];           /* oldest-voice stealing (D6) */
-static unsigned dac_clock;
+extern unsigned char table_override;       /* phrase A: $FF none, $FE off */
+#pragma zpsym("table_override")
+void __fastcall__ arm_table_override(struct step *s);
+unsigned char __fastcall__ resolve_table_override(unsigned char table);
+extern unsigned char dac_owner[NDAC];      /* slot -> logical/physical track */
+extern unsigned dac_stamp[NDAC];           /* oldest-voice stealing (D6) */
+extern unsigned dac_clock;
+extern unsigned char stereo_disable;       /* MSTEREO hard gates, 1 = muted */
+#pragma zpsym("dac_owner")
+#pragma zpsym("dac_stamp")
+#pragma zpsym("dac_clock")
+#pragma zpsym("stereo_disable")
 
 /* ATK/DCY nibble -> per-tick level step. Time-semantic: higher nibble =
  * longer stage (~ticks: -,1,2,3,4,5,6,8,11,16,21,26,32,43,64,127 =
- * 17 ms .. 2.1 s at the 60 Hz tick). Index 0 = instant attack / sustain. */
+ * 17 ms .. 2.1 s at the 60 Hz tick). Index 0 is the instant endpoint:
+ * attack begins at peak and decay cuts on its first decay tick. */
 const unsigned char env_rate[16] = {
     0, 127, 64, 43, 32, 26, 22, 16, 12, 8, 6, 5, 4, 3, 2, 1,
 };
 
-unsigned char live_q[NCH];      /* LIVE: queued chain, $FF none, $FE stop */
-static unsigned char live_bar;  /* global 16-row bar counter (LIVE grid) */
+extern unsigned char live_q[NCH]; /* LIVE: queued chain, $FF none, $FE stop */
+extern unsigned char live_bar;    /* global 16-row bar counter (LIVE grid) */
+#pragma zpsym("live_q")
+#pragma zpsym("live_bar")
 #define eng_playing (eng_mode)
 
 /* Stable harness mirrors for the symmetric-DAC regression test. */
@@ -104,8 +116,10 @@ static unsigned char live_bar;  /* global 16-row bar counter (LIVE grid) */
 #define MIRROR_TRIG1      (*(volatile unsigned char *)0xC02C)
 #define MIRROR_DAC_TRACE  ((volatile unsigned char *)0xC030)
 
-static unsigned char eng_tick;
-static unsigned char row_ticks;         /* this row's length (W overrides) */
+extern unsigned char eng_tick;
+extern unsigned char row_ticks;         /* this row's length (W overrides) */
+#pragma zpsym("eng_tick")
+#pragma zpsym("row_ticks")
 #pragma bss-name (push, "TAPRAM")
 static unsigned char tap_wait[NCH];      /* independent signed G countdowns */
 #pragma bss-name (pop)
@@ -116,8 +130,15 @@ static volatile struct _mikey_audio *const CHAN[NCH] = {
 };
 #pragma rodata-name (pop)
 #pragma rodata-name (push, "HICODE1")
-static const unsigned char track_bit[NCH] = { 1, 2, 4, 8 };
+const unsigned char track_bit[NCH] = { 1, 2, 4, 8 };
 #pragma rodata-name (pop)
+
+/* ATTEN/MPAN supplies the Lynx II's 16 levels per side.  Some stereo hardware
+ * predates those later registers but still implements MSTEREO's per-side
+ * channel switches.  Mirror every zero PAN nibble into that older hard gate:
+ * 00 is reliably silent and F0/0F remain useful hard pans, while nonzero
+ * nibbles continue through ATTEN at their full resolution where available. */
+void __fastcall__ set_pan(unsigned char ch, unsigned char pan);
 
 /* --- symmetric DAC ownership (D1/D5/D6) --- */
 
@@ -311,11 +332,6 @@ static void exec_cmd(unsigned char ch, unsigned char cmd, unsigned char param)
     struct voice *v = &voices[ch];
 
     switch (cmd) {
-    case CMD_A:
-        v->table = (param < NTABLES) ? param : EMPTY;
-        v->tpos = 0x10;                 /* row zero, armed immediately */
-        v->tbl_tsp = 0;
-        break;
     case CMD_C:
         if (param) {
             v->chord[0] = 0;
@@ -359,7 +375,7 @@ static void exec_cmd(unsigned char ch, unsigned char cmd, unsigned char param)
         break;
     case CMD_O:
         v->sh_pan = param;
-        (&MIKEY.attena)[ch] = param;
+        set_pan(ch, param);
         break;
     case CMD_P:
         v->bend_rate = (signed char)param;
@@ -463,10 +479,8 @@ static void table_step(unsigned char ch)
         table_volume(v, tr->vol);
         v->tbl_tsp = tr->tsp;
     }
-    if (tr->cmd && tr->cmd != CMD_H)
+    if (tr->cmd && tr->cmd != CMD_H && tr->cmd != CMD_A)
         exec_cmd(ch, tr->cmd, tr->param);
-    if (tr->cmd == CMD_A)               /* A armed its new row 0 (even same #) */
-        return;
     if (row < PHRASE_ROWS - 1)
         ++row;
     else
@@ -502,7 +516,7 @@ static void trigger(unsigned char ch, unsigned char note, unsigned char inum)
         v->kill_in = EMPTY;
         v->rt_rate = v->rt_fade = v->rt_cnt = 0;
         v->sh_pan = in->pan;
-        (&MIKEY.attena)[ch] = in->pan;
+        set_pan(ch, in->pan);
         v->dirty = 0;
         pool_trigger(slot, in->wave < 8 ? in->wave : 0,
                      ((note - 1) % 12) & 7);
@@ -552,7 +566,7 @@ static void trigger(unsigned char ch, unsigned char note, unsigned char inum)
     v->chord_pos = 0;
     v->kill_in = EMPTY;
     v->rt_rate = 0;
-    v->table = (in->table < NTABLES) ? in->table : EMPTY;
+    v->table = resolve_table_override(in->table);
     if (!(in->hold & 0xF0) && v->table == old_table)
         v->tpos = (old_tpos & 0x0F) | 0x10; /* TBS 0: next row per note */
     else
@@ -570,7 +584,7 @@ static void trigger(unsigned char ch, unsigned char note, unsigned char inum)
         wave_rate(slot, wave_clock[note - 1], wave_bkup[note - 1],
                   wave_step[note - 1]);
         v->sh_pan = in->pan;
-        (&MIKEY.attena)[ch] = in->pan;
+        set_pan(ch, in->pan);
         v->dirty = 0;
         return;
     }
@@ -629,9 +643,7 @@ static void envelope(unsigned char ch)
             --v->hold_left;
         return;
     case 3:
-        if (v->e_dcy == 0)
-            return;
-        if (l <= v->e_dcy) {
+        if (v->e_dcy == 0 || l <= v->e_dcy) {
             l = 0;
             v->env_phase = 0;
         } else
@@ -693,7 +705,7 @@ static void flush(unsigned char ch)
         h->count = v->sh_bkup;
         h->reload = v->sh_bkup;
         h->volume = (eng_mute & track_bit[ch]) ? 0 : lfsr_level(v);
-        (&MIKEY.attena)[ch] = v->sh_pan;
+        set_pan(ch, v->sh_pan);
         h->control = v->sh_ctl;
         return;
     }
@@ -808,7 +820,8 @@ static void walk_advance(unsigned char ch)
     }
 }
 /* 16-bit Galois LFSR, taps $B400 (the sibling's Z roll) */
-static unsigned prng;
+extern unsigned prng;
+#pragma zpsym("prng")
 #pragma code-name (push, "HICODE1")
 static unsigned char rand8(void)
 {
@@ -833,7 +846,18 @@ static void row_start(unsigned char ch)
     if (s->cmd == CMD_H) {
         /* H is a pre-row branch: never trigger the marker row itself. */
         ++play_cnt[w->phrase];
-        w->prow = s->param & 0x0F;
+        if (!s->param && eng_mode != MODE_PHRASE) {
+            /* H00 is an early phrase boundary when a chain owns this
+             * phrase. Reuse the ordinary boundary walker so a following
+             * chain phrase starts immediately; a one-phrase chain naturally
+             * returns to its first phrase. Standalone PHRASE audition keeps
+             * H00's useful local row-00 loop. */
+            w->prow = PHRASE_ROWS - 1;
+            walk_advance(ch);
+            if (!w->active)
+                return;
+        } else
+            w->prow = s->param & 0x0F;
         s = &sd.phrases[w->phrase][w->prow];
     }
     if (s->cmd == CMD_H)                 /* chained/cyclic H stays silent */
@@ -870,14 +894,17 @@ static void row_start(unsigned char ch)
         return;
     }
     prev_pitch = (int)v->base_note * 16 + v->bend + v->slide_off;
-    if (n)
+    if (n) {
+        arm_table_override(s);
         trigger(ch, n, s->instr);
+    }
     if (s->cmd == CMD_L && n) {
         /* glide in from wherever the voice just was */
         v->slide_off = prev_pitch - (int)v->base_note * 16;
         v->slide_rate = s->param ? s->param : 1;
     } else if (s->cmd && s->cmd != CMD_D && s->cmd != CMD_H
-               && s->cmd != CMD_Z && s->cmd != CMD_I && s->cmd != CMD_J)
+               && s->cmd != CMD_Z && s->cmd != CMD_I && s->cmd != CMD_J
+               && s->cmd != CMD_A)
         exec_cmd(ch, s->cmd, s->param);
 }
 
@@ -1082,7 +1109,7 @@ void __fastcall__ engine_midi_note_off(unsigned char track)
             v->env_phase = 3;           /* release through patch DECAY */
             v->hold_left = 0;
         } else {
-            v->env_phase = 0;           /* DCY 0 sustains: Note Off cuts */
+            v->env_phase = 0;           /* DCY 0 is the immediate endpoint */
             v->env_level = 0;
         }
         v->dirty = 1;
@@ -1117,6 +1144,7 @@ void engine_init(void)
 
     memset(voices, 0, sizeof(voices));
     memset(eng_walk, 0, sizeof(eng_walk));
+    table_override = EMPTY;
     for (slot = 0; slot < NDAC; ++slot) {
         dac_owner[slot] = EMPTY;
         dac_off[slot] = slot << 3;

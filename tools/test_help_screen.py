@@ -83,6 +83,10 @@ def main(harness, core, rom, build_dir, help_path):
     instrument_rows = pages[3]
     if "TYPE       LFSR / WAV / KIT" not in instrument_rows:
         fail("instrument HELP does not expose the LFSR/WAV/KIT type set")
+    if "PAN        L/R LEVELS 0 MUTE, F FULL" not in instrument_rows:
+        fail("instrument HELP does not document universal PAN")
+    if "O XY  L/R 0 MUTE, F FULL (LYNX II)" not in pages[6]:
+        fail("command HELP does not document O's panning levels")
     if ("VOL 6-/7- FULL; 2--5- HALF" not in pages[4]
             or "VOL 1- QUARTER; 0- MUTE; FINE LOCKED" not in pages[4]):
         fail("KIT HELP does not document its blocked coarse PCM gain")

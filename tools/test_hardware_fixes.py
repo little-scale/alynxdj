@@ -21,11 +21,14 @@ TABLES = SD + 0x1800
 GROOVES = SD + 0x1C00
 VOICE0 = SD + 0x1E00 + 4 * 7
 WALK0 = SD + 0x1E00
+W_CPOS = WALK0 + 3
+W_PHRASE = WALK0 + 4
 W_PROW = WALK0 + 6
 V_ENV_PHASE = VOICE0 + 2
 V_ENV_LEVEL = VOICE0 + 3
 V_BASE_NOTE = VOICE0
 V_TAP_CUR = VOICE0 + 20
+V_TABLE = VOICE0 + 29
 V_TPOS = VOICE0 + 30
 G_WAIT0 = 0xC0FC
 PCM_UNDERRUN = 0xC027
@@ -170,6 +173,32 @@ def main():
              "expected $%02X" %
              (ram[W_PROW], ram[V_TPOS], expected_tpos))
 
+    # Repeating the same phrase A override at TBS 0 advances that selected
+    # table once per note. It must not restart row zero on every A command.
+    p = rig_pokes(hold=0x0F, table=0)
+    phrase = PHRASES + 63 * 64
+    for row in range(16):
+        put(p, phrase + row * 4, (37, 31, 1, 1))
+    put(p, TABLES + 64, bytes(64))
+    ram, _ = run(harness, core, rom, build, "tbs-note-a-override", p)
+    expected_tpos = (ram[W_PROW] + 1) & 0x0F
+    if ram[V_TABLE] != 1 or ram[V_TPOS] != expected_tpos:
+        fail("TBS 0 A01 override is table %02X state %02X at phrase row %d, "
+             "expected table 01 state %02X" %
+             (ram[V_TABLE], ram[V_TPOS], ram[W_PROW], expected_tpos))
+
+    # A is phrase-only. Historical/corrupt A data in TABLE is ignored and
+    # the currently running table continues to its next row.
+    p = rig_pokes(hold=0x1F, table=0)
+    table = bytearray(64)
+    table[2:4] = bytes((1, 1))
+    put(p, TABLES, table)
+    put(p, TABLES + 64, bytes(64))
+    ram, _ = run(harness, core, rom, build, "table-a-ignored", p)
+    if ram[V_TABLE] != 0:
+        fail("TABLE A switched the voice to table %02X instead of being ignored"
+             % ram[V_TABLE])
+
     # J matches SMSGGDJ/GENMDDJ: high nibble is the mod-4 pass mask and
     # low nibble is signed transpose. On pass zero J17 applies +7, while
     # J27 leaves the note unchanged because mask bit zero is clear.
@@ -231,6 +260,15 @@ def main():
         fail("table VOL kept envelope alive (phase %d, level %d)" %
              (ram[V_ENV_PHASE], ram[V_ENV_LEVEL]))
 
+    # Zero attack/hold/decay is the shortest audible envelope: trigger at
+    # peak for one engine tick, then cut on the first decay tick.
+    ram, _ = run(harness, core, rom, build, "zero-ahd",
+                 rig_pokes(hold=0, env=0, table=0xFF), tail_frames=4)
+    if ram[V_ENV_PHASE] or ram[V_ENV_LEVEL]:
+        fail("AHD 0/0/0 sustained instead of ending immediately "
+             "(phase %d, level %d)" %
+             (ram[V_ENV_PHASE], ram[V_ENV_LEVEL]))
+
     # HOLD F is the one indefinite value; K remains its explicit timed exit.
     ram, _ = run(harness, core, rom, build, "hold-sustain",
                  rig_pokes(hold=0x0F, env=0x01, table=0xFF))
@@ -258,6 +296,26 @@ def main():
     if ram[PCM_TRIGGERED] or ram[PCM_TRIGGERED + 1]:
         fail("H00 marker row triggered its KIT note: %d/%d"
              % (ram[PCM_TRIGGERED], ram[PCM_TRIGGERED + 1]))
+
+    # In a chain, H00 is an early phrase boundary rather than a local row-00
+    # loop. The following phrase must begin on the same boundary without
+    # sounding the H marker's note. A one-phrase chain still naturally loops.
+    p = rig_pokes()
+    chain, first_phrase, next_phrase, instr = 31, 62, 63, 31
+    put(p, CHAINS + chain * 32, bytes([0xFF] * 32))
+    put(p, CHAINS + chain * 32, (first_phrase, 0, next_phrase, 0))
+    put(p, PHRASES + first_phrase * 64, bytes(64))
+    put(p, PHRASES + first_phrase * 64, (57, instr, 5, 0))
+    put(p, PHRASES + next_phrase * 64, bytes(64))
+    put(p, PHRASES + next_phrase * 64, (42, instr, 0, 0))
+    ram, _ = run(harness, core, rom, build, "phrase-h-next", p,
+                 tail_frames=10)
+    if ram[W_CPOS] != 1 or ram[W_PHRASE] != next_phrase:
+        fail("chain H00 stayed at cpos/phrase %d/%d instead of 1/%d"
+             % (ram[W_CPOS], ram[W_PHRASE], next_phrase))
+    if ram[V_BASE_NOTE] != 42:
+        fail("chain H00 did not trigger the following phrase row 0 "
+             "(base note %d)" % ram[V_BASE_NOTE])
 
     # SONG cells separated by an empty row are independent vertical groups.
     # Starting at rows 2-3 must loop that pair, never wrap into row 0's group.
@@ -545,10 +603,11 @@ def main():
              "started %r" % (triggered, started))
 
     print("hardware fixes: PASS — sibling-order J variation, wrapping TBS "
-          "note/tick clocks and "
+          "note/tick clocks including phrase-A note mode, TABLE-A rejection, "
+          "zero-AHD shortest decay, and "
           "selected-track TABLE playhead, finite table VOL "
           "envelope, HOLD-F sustain/K exit, "
-          "pre-row phrase H, independent "
+          "pre-row phrase H with H00 chain advance, independent "
           "contiguous SONG groups, signed tick/row G periods with note "
           "continuity, cumulative signed B taps/reset, portable-bank sample "
           "lengths, signed-shift KIT gain, exact "

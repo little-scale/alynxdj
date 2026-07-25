@@ -5,8 +5,12 @@
 
 void sound_init(void)
 {
+    extern unsigned char stereo_disable;
+#pragma zpsym("stereo_disable")
+
     /* crt0 muted everything: MSTEREO=$FF (all channel/side disables set),
        volumes 0. Open the gates; keep volumes per-note. */
+    stereo_disable = 0;
     MIKEY.mstereo = 0x00;
     MIKEY.attena = 0xFF;
     MIKEY.attenb = 0xFF;

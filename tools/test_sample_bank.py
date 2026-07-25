@@ -40,7 +40,7 @@ def main(rom_path, bank_path, browser_path, midi_path, help_code_path,
          help_data_path):
     bank = open(bank_path, "rb").read()
     kits, used = validate(bank)
-    assert kits == 8 and used == len(bank)
+    assert 1 <= kits <= 8 and used == len(bank)
     assert bank[3] == RATE_ID and abs(rate_for_bank(bank) - 5208.333333) < 0.001
     assert POOL_CAPACITY == POOL_END - POOL_OFFSET == 209920
 
@@ -118,11 +118,14 @@ def main(rom_path, bank_path, browser_path, midi_path, help_code_path,
 
     browser = open(browser_path, encoding="utf-8").read()
     for contract in ("const RATE_ID = 1", "const PCM_RATE = 1000000 / 192",
+                     "const MAX_KITS = 8", "function expandKits(kits)",
                      "const SLOT_CAP = 65535", "const POOL_END = 64 + 250 * 1024",
                      "const PRE_HELP_POOL_END = 64 + 254 * 1024",
                      'hasMagic(bytes,HELP_DATA_OFFSET,"AHD1")',
                      "patched.fill(0,POOL_OFFSET,source.poolEnd)", "function parseBank(input)",
                      "function prepareSample(source", "data-trim-start", "data-trim-end",
+                     "function convertChannelsForSlicing", "function sliceSample(source",
+                     "Normalization off.", "data-slice-pad", "data-slice-fade",
                      "Download sample bank", "Import sample bank"):
         assert contract in browser, "browser contract missing: " + contract
 

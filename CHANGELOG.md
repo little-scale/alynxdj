@@ -2,6 +2,59 @@
 
 ## Unreleased
 
+- Make command entry consistent across PHRASE and TABLE. Editing either
+  command letter or value remembers the complete pair globally; tapping B on
+  an empty command-letter cell inserts both bytes, while occupied cells remain
+  unchanged. TABLE skips phrase-only `A`.
+- Make PHRASE `Axx` work with note-clocked TBS 0 tables: repeated selection of
+  the same table advances it once per note, while a new table target restarts
+  from row 0. Historical `A` bytes inside TABLE are ignored.
+- Make DCY `0` an immediate decay, so AHD `0/0/0` produces one audible engine
+  tick instead of sustaining indefinitely. HOLD `F` remains the sole
+  indefinite patch sustain.
+- Enter INSTR from PHRASE at the top selector, using the row's instrument when
+  present, rather than retaining a stale middle/lower field cursor.
+- Make the standalone sample patcher expose all eight software banks as
+  zero-based KIT `00`–`07`, independent of how many kits the loaded factory
+  bank declares. Missing kits display as empty, accept individual WAVs,
+  whole-kit replacement, or slicing, and export with minimal one-byte silent
+  pads wherever they remain unfilled; the existing shared-capacity check
+  still gates ROM output.
+- Keep a clean or held physical-A press inert on GROOVE. Releasing it no
+  longer invokes the generic detail-screen back action and jumps to FILES;
+  A-held directional map navigation remains unchanged.
+- Fix physical-B + Left editing for full-resolution instrument VOL and TABLE.
+  VOL now decrements by one as intended, and TABLE decrements `05→04` instead
+  of jumping to `--`; targeted editor regressions cover both directions.
+- Make phrase `H00` an early phrase boundary in CHAIN/SONG/LIVE playback.
+  When another phrase follows in the chain it begins immediately; one-phrase
+  chains and standalone PHRASE playback retain their row-00 loop. `H01`–`H0F`
+  remain local pre-row branches.
+- Make sample-patcher rate conversion deterministic. The standalone file now
+  parses PCM/float RIFF/WAVE rates directly and uses band-limited resampling
+  to 5,208.333 Hz, preserving duration and pitch while filtering aliases that
+  previously sounded like false low-frequency/low-pitch content. The slicer
+  displays the source→Lynx rate and before/after duration.
+- Make every numbered slice region in the patcher's waveform directly
+  clickable for preview. The active region is highlighted and clicking it
+  again stops playback; the existing mapping-card audition buttons remain.
+- Add a universal **PAN** field to LFSR, WAV, and KIT instruments using the
+  existing save-format byte. `xy` sets the Lynx II left/right output levels
+  (`0` mute, `F` full); Up/Down edits the left nibble and Left/Right edits the
+  right nibble. New instruments retain the existing centred/full `FF` default.
+  The existing `Oxy` command uses the same encoding as a live per-voice
+  override, with the instrument PAN restored at the next note trigger.
+  Zero nibbles now also drive Mikey's older MSTEREO channel-side gates, making
+  `00` an exact mute and `F0`/`0F` exact hard pans on hardware paths that do
+  not honor the later fractional attenuation registers.
+- Add **Slice to kit** to the standalone sample patcher. One longer WAV can be
+  region-trimmed, divided into 1–8 equal slices, reordered onto unique pads,
+  auditioned, and inserted into the current kit. This path deliberately skips
+  peak normalization and applies one shared gain/tanh stage so adjacent slices
+  retain their relative level and waveform continuity. An optional 1/2/5/10 ms
+  per-slice fade-out reduces end clicks for independent one-shots; it defaults
+  off for continuous material.
+
 ## v0.54 — 2026-07-25
 
 - Align `Jxy` with SMSGGDJ and GENMDDJ: high nibble `x` is the four-pass

@@ -28,7 +28,7 @@ action.** No simultaneous-press timing windows.
 | **B** double-tap | paste the clipboard; with nothing cut: mint the next free chain/phrase on an empty cell, or slim-clone a populated one |
 | **B** held + **A** tap | cut the field under the cursor into the clipboard |
 | **B** held + **A** long-hold | **block SELECT** (SONG/CHAIN/PHRASE): anchors at the cursor and inverts every field on each selected row; ↑/↓ extend; **B** = copy, **B**-held+**A** = cut, **A** = cancel; paste with B double-tap (rows land at the cursor) |
-| **A** tap | back where applicable on detail/utility screens; deliberately does nothing on CHAIN, PHRASE, INSTR, OPTIONS, or PROJECT |
+| **A** tap | back where applicable on detail/utility screens; deliberately does nothing on CHAIN, PHRASE, INSTR, GROOVE, OPTIONS, or PROJECT |
 | **A** hold + d-pad | move around the screen map (see below); A+↑ from TABLE opens HELP and A+↓ returns |
 | **A** held + **B** | play / stop — contextual: SONG plays from the cursor row, CHAIN loops the chain, PHRASE and INSTR loop the phrase last viewed (audition while editing the instrument) |
 | **Option 1** tap | toggle all-track transport: during PLAY or WAIT, stop; while stopped, start **all four tracks** from the current context (SONG row, plus CHAIN position and PHRASE row where visible) |
@@ -150,13 +150,14 @@ renderer temporarily reuses the now-idle sample-ring RAM.
 | VOL | LFSR/WAV envelope peak, `$00`–`$7F`; KIT displays only its coarse nibble: `6-`/`7-` full, `2-`–`5-` half, `1-` quarter, `0-` mute. On KIT, Up/Down changes the coarse digit and Left/Right does nothing |
 | ATK | attack **time**, 0–F: 0 = instant, F ≈ 2 s (higher = slower) |
 | HOLD | peak hold: `0`–`E` timed ticks; `F` sustains until the next note, a `K` command, transport stop, or live MIDI Note Off |
-| DCY | decay **time**, 0–F: 0 = sustain until the next note, 1 = instant-ish, F ≈ 2 s |
+| DCY | decay **time**, 0–F: 0 = immediate decay (one audible ~16.7 ms engine tick), 1 = very short, F ≈ 2 s |
 | **TSP** | signed instrument transpose in semitones; Left/Right ±1, Up/Down ±12. Applies to LFSR/WAV pitch and KIT pad selection |
+| **PAN** | Lynx II left/right output levels packed as `xy`: `0` hard-mutes a side and `F` is full level. Up/Down edits left `x`; Left/Right edits right `y`. Default `FF`. Lynx I remains mono |
 | **SWP** | LFSR pitch sweep, signed 1/16 semitone per tick with period-style direction: `$01`–`$7F` falls, `$FF`–`$80` rises, `00` = off |
 | **VIB** | LFSR sine vibrato, packed speed·depth nibbles; speed 0–F ≈ 0.47–7.49 Hz. Depth uses SMSGGDJ's nonlinear response, from 1/16 semitone at `1` through 10/16 at `8` to 60/16 (±3.75 semitones) at `F`. Phase continues across notes and resets with transport |
 | **TRM** | LFSR repeating decay saw, packed speed·depth nibbles. Each cycle starts at the AHD level, ramps downward, then snaps back to the top like a repeating envelope |
 | **TAPS** | the raw 9-bit tap mask for the 12-bit LFSR — see below |
-| WAVE / KIT | The shared BANK row is labelled by type. WAV selects wavetable 0–7 (`--` = hardware triangle); KIT selects sample bank `00`–`07`, defaults to `00`, and cannot show `--`. This row is blank and skipped for LFSR |
+| WAVE / KIT | The shared selector is labelled by type. WAV selects wavetable 0–7 (`--` = hardware triangle); KIT selects sample bank `00`–`07`, defaults to `00`, and cannot show `--`. This row is replaced by SWP on LFSR |
 | **SEED** | the shifter start state, $000–$FFF |
 | TABLE | macro table to run on every note (`--` = none) |
 | **TBS** | table speed: `0` advances one row per triggered note; `1` is one row per engine tick; `2`–`F` wait that many ticks per row. Every mode wraps after row `0F` |
@@ -165,9 +166,9 @@ The cursor visits only parameters used by the current type:
 
 | Type | Visible editable fields |
 |---|---|
-| **LFSR** | INSTR, TYPE, VOL, ATK, HOLD, DCY, TSP, SWP, VIB, TRM, TAPS, SEED, TABLE, TBS |
-| **WAV** | INSTR, TYPE, VOL, ATK, HOLD, DCY, TSP, WAVE, TABLE, TBS |
-| **KIT** | INSTR, TYPE, VOL, TSP, KIT |
+| **LFSR** | INSTR, TYPE, VOL, ATK, HOLD, DCY, TSP, SWP, VIB, TRM, TAPS, SEED, PAN, TABLE, TBS |
+| **WAV** | INSTR, TYPE, VOL, ATK, HOLD, DCY, TSP, WAVE, PAN, TABLE, TBS |
+| **KIT** | INSTR, TYPE, VOL, TSP, KIT, PAN |
 
 Omitted rows are blank and skipped completely; there are no invisible cursor
 stops. TSP clamps at the playable note limits rather than wrapping.
@@ -178,7 +179,13 @@ last-entered note. This works even when OPTIONS → PRELIS is off and does not
 start the sequencer; A-held+B retains the separate phrase-loop transport.
 Instrument VIB and the phrase/table `V` command share the same free-running
 per-track phase. A zero depth is completely off; it does not alter tuning or
-advance the phase.
+advance the phase. `Oxy` temporarily overrides the playing voice's PAN using
+the same left/right encoding; the next note restores the instrument PAN.
+Zero PAN nibbles additionally use Mikey's hard channel-side gate, so `00` is
+silent and `F0`/`0F` are exact left/right endpoints even where fractional
+attenuation is unavailable. Judge stereo through a Lynx II stereo headphone
+output: the built-in speaker and a mono cable cannot present left/right
+position.
 
 TRM's high nibble is directly tick-derived, not row- or tempo-derived. For
 speed `x`, the 6-bit saw phase advances by `x+1` once per ~59.9 Hz engine
@@ -259,24 +266,24 @@ CPU budget allows **two simultaneous timer-fed DAC voices** across those
 types; a third trigger steals the oldest. Hardware LFSR/integrate-WAV
 voices do not consume this two-voice budget.
 
-## Commands (PHRASE and TABLE command columns)
+## Commands
 
 | Cmd | Name | Param |
 |---|---|---|
-| `A xx` | table | run table xx on this note (one-shot) |
+| `A xx` | table | PHRASE only: run table xx on this note; repeated notes selecting the same table continue a TBS 0 table, while changing the table restarts it |
 | `B xx` | taps accumulator | nonzero values add signed `xx` to the current LFSR taps (`01` = +1, `FF` = −1), cumulatively wrapping 0–511; `00` restores the active instrument's TAPS |
 | `C xy` | chord | loop +0, +x, +y semitones per tick |
 | `D xx` | delay | trigger after xx ticks |
 | `E xy` | envelope | re-slope live: attack x, decay y (times, like the INSTR fields; current stage and level untouched) |
 | `F xx` | finetune | signed offset in 1/16 semitones (one-shot) |
 | `G xx` | glide | reset to the active instrument's stored TAPS, then use signed `xx`: magnitudes 1–7 are ticks per step; magnitude 8+ is magnitude−7 rows per step (`01` = +1/tick, `07` = +1/7 ticks, `08` = +1/row, `0B` = +1/4 rows; negative values reverse direction; `00` = reset and stop; wraps 0–511 without reseeding) |
-| `H xx` | hop | phrase: before this marker row would play, jump to row x (the H row itself is not heard); table: loop to row x |
+| `H xx` | hop | phrase: the marker row is not heard; `H00` ends the current phrase early and starts the next phrase in its chain (a one-phrase chain or standalone phrase loops to row 00), while `H01`–`H0F` jump within the phrase; table: loop to row x |
 | `I xx` | iterate | play this note only on phrase passes whose bit (pass count mod 8) is set — `I55` = even passes, `IFF` = always |
 | `J xy` | vary | x is the four-pass mask; transpose this note by signed nibble y on the selected passes — `J17` = +7 on the first of every four passes, `JF2` = +2 every pass |
 | `K xx` | kill | cut the note after xx ticks (00 = instant) |
 | `L xx` | slide | glide into this row's note from the previous pitch, xx/16 semitone per tick |
 | `N xx` | taps | live LFSR-taps morph: bits 0–5 = taps 0–5, 6 = tap 7, 7 = tap 10 |
-| `O xy` | pan | attenuation left x / right y (Lynx II stereo) |
+| `O xy` | pan | set live Lynx II left/right levels: `0` hard mute, `F` full; the next note restores instrument PAN |
 | `P xx` | pitch | bend, signed, 1/16 semitone per tick |
 | `R xy` | retrig | re-fire the note every y ticks, peak −8·x per fire (KIT refires the sample) |
 | `S xx` | rate | live KIT/table-WAV timer reload (smaller = faster/higher) |
@@ -289,23 +296,30 @@ voices do not consume this two-voice budget.
 The **full SMSGGDJ-family command set is in.** `I`/`J`/`Z` are the
 deterministic-variation trio: phrase variation without cloning. Pass
 counts accumulate across the whole arrangement and reset at play-start.
-When editing either a PHRASE or TABLE command field, left/down and right/up
-move backward and forward through the alphabetical order shown above. The
-empty command wraps between `Z` and `A`.
+When editing a PHRASE command field, left/down and right/up move backward and
+forward through the alphabetical order shown above, with empty between `Z`
+and `A`. TABLE uses the same order but skips phrase-only `A`, so its empty
+position sits between `Z` and `B`.
+
+After a command letter or value is changed in either screen, ALYNXDJ remembers
+the complete command/value pair globally. Tap B on an empty command-letter
+cell in PHRASE or TABLE to insert both remembered bytes. An occupied cell is
+left unchanged, and TABLE will not insert a remembered `A`.
 
 ## Tables (TABLE screen)
 
 16 rows × {volume, transpose, command, param}. **TBS** controls the clock:
-`0` preserves the playhead and advances exactly once per triggered note.
+`0` preserves the playhead and advances exactly once per triggered note,
+including successive phrase notes carrying the same `Axx` table override.
 `1` is the fastest at one row per ~59.9 Hz tick; `2`–`F` are progressively
 slower and restart at row 0 on a new note. Every mode automatically wraps
 row `0F` to `00`; `H` defines a shorter or non-zero loop point. Attach via
-the instrument's TABLE field or a
-phrase `A` command. Table volume may reshape attack/hold, but once decay
+the instrument's TABLE field or a PHRASE
+`A` command. `A` is not valid inside a table. Table volume may reshape attack/hold, but once decay
 starts the envelope owns the level and always reaches its normal end.
-When an empty TABLE command field is edited, it first repeats the nearest
-previous command letter **and value** found in that table. If the table has no
-command to inherit, normal alphabetical entry begins.
+The shared remembered command/value pair described above also supplies the
+first edit of an empty TABLE command field; if no pair has been established,
+normal alphabetical entry begins at `B`.
 On the TABLE command-letter column, B-held+A deletes only the command and
 parameter; volume and transpose on that row are preserved.
 During playback, the current macro row number is accented when the viewed
