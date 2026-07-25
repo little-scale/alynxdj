@@ -505,12 +505,13 @@ def main():
              (long_dur, short_dur, long_expected, short_expected))
 
     # KIT reuses TSP as source stepping while the DAC timer remains fixed:
-    # FF repeats every byte, 00 consumes every byte, 01 skips one, and 02
-    # skips three. A slow groove keeps the half-rate one-shot clear of the
-    # phrase loop; 4x also proves the five-piece refill budget holds.
+    # FF repeats every byte and 00-03 consume one through four bytes. A slow
+    # groove keeps the half-rate one-shot clear of the phrase loop; 4x also
+    # proves the six-piece refill budget holds.
     for tsp, multiplier, label in (
             (-1, 2.0, "half"), (0, 1.0, "normal"),
-            (1, 0.5, "double"), (2, 0.25, "quad")):
+            (1, 0.5, "double"), (2, 1.0 / 3.0, "triple"),
+            (3, 0.25, "quad")):
         expected = long_expected * multiplier
         p = rig_pokes(note=37 + long_member, itype=3, bank=0, tsp=tsp)
         put(p, GROOVES, (30,) + (0,) * 15)
@@ -654,7 +655,8 @@ def main():
           "pre-row phrase H with H00 chain advance, independent "
           "contiguous SONG groups, signed tick/row G periods with note "
           "continuity, cumulative signed B taps/reset, portable-bank sample "
-          "lengths, half/normal/double/quad KIT source rates and bounded S "
+          "lengths, half/normal/double/triple/quad KIT source rates and "
+          "bounded S "
           "overrides, "
           "signed-shift KIT gain, exact "
           "F4 streaming, and uninterrupted sustained/redraw KIT + G08/SWP")

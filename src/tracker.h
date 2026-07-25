@@ -94,7 +94,7 @@ struct instr {
     unsigned char vib;       /* LFSR: speed high nibble, depth low */
     unsigned char trm;       /* LFSR: speed high nibble, depth low */
     signed char   tsp;       /* LFSR/WAV semitones; KIT source rate:
-                                FF=.5x, 00=1x, 01=2x, 02=4x */
+                                FF=.5x, 00..03=1x..4x */
 };
 
 #define TAPS_SQUARE 0x001   /* tap 0 only: the proven square */

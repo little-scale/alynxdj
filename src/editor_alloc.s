@@ -252,12 +252,12 @@ kit_rate_edit:
         beq     @kit_rate_up
         cmp     #$FF
         beq     @kit_rate_done
-        dec     a                       ; 02->01->00->FF
+        dec     a                       ; 03->02->01->00->FF
         bra     @kit_rate_store
 @kit_rate_up:
-        cmp     #2
+        cmp     #3
         beq     @kit_rate_done
-        inc     a                       ; FF->00->01->02
+        inc     a                       ; FF->00->01->02->03
 @kit_rate_store:
         sta     (ptr1),y
 @kit_rate_done:
@@ -788,10 +788,13 @@ _pool_trigger:
         asl     a
         sta     tmp1
         lda     _voices+VOICE_TBLTSP,y
-        inc     a                       ; FF/00/01/02 -> lookup 0/1/2/3
-        and     #3                      ; legacy outliers fold to a safe rate
-        tay
-        lda     @kit_rate_bits,y
+        inc     a                       ; FF/00..03 -> stride 0/1..4
+        cmp     #5
+        bcc     :+
+        lda     #1                      ; legacy outliers fold to safe 1x
+:       asl     a
+        asl     a
+        asl     a                       ; pack stride above three pad bits
         sta     tmp2
         plx                             ; DAC slot
         stz     _stream_cancel,x
@@ -811,10 +814,6 @@ _pool_trigger:
         .segment "MIDICODE"
 @voice_offset:
         .byte   0, VOICE_SIZE, VOICE_SIZE*2, VOICE_SIZE*3
-
-        .segment "HICODE2"
-@kit_rate_bits:
-        .byte   0, 8, 16, 32
 
         .segment "CODE"
 

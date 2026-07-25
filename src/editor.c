@@ -47,6 +47,10 @@ static const unsigned char cmd_next_order[NCMDS] = {
     CMD_T, CMD_NONE, CMD_F, CMD_V, CMD_J, CMD_K, CMD_C,
 };
 
+#pragma rodata-name (push, "HICODE2")
+static const char empty_note[] = "---";
+#pragma rodata-name (pop)
+
 #pragma code-name (push, "HICODE1")
 static unsigned char cmd_next(unsigned char c)
 {
@@ -400,7 +404,7 @@ static void draw_phrase_row(unsigned char r, unsigned char cursor_here)
         draw_hex8(9, y, s->instr, inv1 ? PEN_BG : PEN_TEXT,
                   inv1 ? PEN_TEXT : PEN_BG);
     } else {
-        draw_text(4, y, "---", inv0 ? PEN_BG : PEN_DIM,
+        draw_text(4, y, empty_note, inv0 ? PEN_BG : PEN_DIM,
                   inv0 ? PEN_TEXT : PEN_BG);
         draw_text(9, y, "--", inv1 ? PEN_BG : PEN_DIM,
                   inv1 ? PEN_TEXT : PEN_BG);
@@ -449,7 +453,9 @@ static const char itype_wav[] = "WAV";
 #pragma rodata-name (push, "HICODE3")
 static const char itype_lfsr[] = "LFSR";
 #pragma rodata-name (pop)
-static const char itype_kit[] = "KIT ";
+#pragma rodata-name (push, "HICODE1")
+static const char itype_kit[] = "KIT";
+#pragma rodata-name (pop)
 static const char *const itype_name[4] = {
     itype_lfsr, itype_lfsr, itype_wav, itype_kit
 };

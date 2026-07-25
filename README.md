@@ -56,7 +56,7 @@ decision log):
   quality, kit-per-instrument. The
   factory bank is one reusable `.bin`, and custom banks carry between releases.
   KIT VOL provides full, half, quarter, and mute levels using signed PCM
-  shifts outside the audio interrupt. KIT TSP selects 0.5×, 1×, 2×, or 4×
+  shifts outside the audio interrupt. KIT TSP selects 0.5× or exact 1×–4×
   playback by repeating/skipping source bytes without raising the DAC IRQ rate.
   `Sxx` temporarily overrides that source speed with its low-two-bit
   1×/2×/4×/0.5× state, still without changing the interrupt rate.
@@ -122,8 +122,8 @@ then exports a hardware-ready 2,048-byte save-format-v6 file. All processing is
 local and offline. Its patch editor offers LFSR/WAV/KIT; imported legacy type
 `01` patches are identified as LFSR and preserved unless deliberately changed.
 KIT bank is always `00`–`07` and initializes to `00`; WAV alone can use `--`
-for the hardware triangle. For KIT, instrument byte 15 is a four-state source
-rate (`FF` 0.5×, `00` 1×, `01` 2×, `02` 4×); the viewer presents those states
+for the hardware triangle. For KIT, instrument byte 15 is a five-state source
+rate (`FF` 0.5×, `00`–`03` 1×–4×); the viewer presents those states
 instead of signed transpose.
 
 ## Pico USB-MIDI bridge

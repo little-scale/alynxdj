@@ -83,8 +83,9 @@ fixed channel-C/channel-D sample-bus details recorded in M7/M8.**
 | M43 | ✅ **DIRECT SLICE PREVIEW** — every numbered division over the patcher's long-sample waveform is a full-width preview/stop button with hover, focus, and active-playing feedback. It shares the existing processed-slice audition path, so gain/tanh/fade and trim changes are heard exactly as they will be applied; mapping-card audition controls remain available. The standalone DOM regression clicks a slice, proves its playing state, then clicks it again to stop. | Make rhythmic slice checking immediate without forcing repeated pointer travel between the waveform and mapping grid |
 | M44 | ✅ **COMPLETE ZERO-BASED KIT PATCHING** — the standalone patcher always presents KIT `00`–`07` even when a ROM or imported bank declares fewer than eight. Missing banks render as eight explicit empty pads and accept single WAVs, whole-kit replacement, or Slice-to-kit; export expands them into a valid eight-kit `PL` directory using one-byte silence for unfilled pads and retains the shared pool-capacity guard. Core and DOM regressions open a one-kit ROM, verify all eight zero-based tabs, fill KIT `07`, and prove an eight-kit bank is emitted. | Make the patcher match the ROM's complete bank selector instead of hiding usable custom-sample space |
 | M45 | ✅ **COMMAND RECALL + TABLE-A/ENVELOPE POLISH** — PHRASE and TABLE share one last-command/value latch: changing either byte updates the pair and a clean physical-B tap inserts both into an empty command-letter cell without overwriting occupied data; TABLE's alphabet and insertion reject phrase-only A. Phrase `Axx` now selects its override before trigger so repeated same-table notes advance TBS 0 while a changed target restarts; TABLE A bytes are inert. PHRASE→INSTR selects the row patch and lands on the top selector. DCY 0 reaches silence after the trigger tick, leaving HOLD F as the only indefinite patch sustain. Input-driven editor and engine RAM regressions cover every behavior. | Make repeat entry global and predictable, restore useful note-clocked table overrides, and ensure the zero envelope is the shortest sound |
-| M46 | ✅ **FIXED-IRQ KIT SOURCE RATE** — KIT reuses TSP as four source strides: `FF` repeats bytes for 0.5×, `00` is 1×, `01` skips one for 2×, and `02` skips three for 4×. The timer stays at 5,208.333 Hz and the WAV slot step/phase bytes are reused, so the feature adds no RAM and does not multiply IRQ load. Two ordinary five-piece service points per display frame sustain 4×, with the same limit giving triggers a 320-byte prefill; final lengths align to four bytes so the consumer cannot leap over the published ring head. Note/`R` restores patch stride; M47 replaces S's historical timer layer with a bounded stride override. KIT notes no longer use instrument transpose for pad choice; chain/phrase transpose remains. Duration/underrun regressions and the SRAM viewer cover all four states without changing save v6. | Add useful sample pitch/rate variation while preserving the real-hardware performance win of the lower canonical IRQ rate |
+| M46 | ✅ **FIXED-IRQ KIT SOURCE RATE** — KIT reuses TSP as four source strides: `FF` repeats bytes for 0.5×, `00` is 1×, `01` skips one for 2×, and `02` skips three for 4×. The timer stays at 5,208.333 Hz and the WAV slot step/phase bytes are reused, so the feature adds no RAM and does not multiply IRQ load. M48's ordinary six-piece service points sustain 4×, with the same limit giving triggers a 384-byte prefill. Note/`R` restores patch stride; M47 replaces S's historical timer layer with a bounded stride override. KIT notes no longer use instrument transpose for pad choice; chain/phrase transpose remains. Duration/underrun regressions and the SRAM viewer cover all four states without changing save v6. | Add useful sample pitch/rate variation while preserving the real-hardware performance win of the lower canonical IRQ rate |
 | M47 | ✅ **BOUNDED S SOURCE-SPEED OVERRIDE** — `Sxx` now uses its low two bits as the sibling-compatible KIT walk rates `0`=1×, `1`=2×, `2`=4×, `3`=0.5×. It updates active and same-row pending KIT streams, is ignored by LFSR/WAV, and is replaced by the instrument TSP rate on the next note or `R` retrigger. The Mikey reload remains fixed at 191, removing the old `S00` 1 MHz IRQ hazard. Four conflicting-patch duration rigs prove the override order and zero-underrun behavior without changing command IDs or save v6. | Keep live sample-rate automation while making its CPU cost bounded and consistent with the tracker family |
+| M48 | ✅ **DENSE, SAFE KIT RATE RANGE** — KIT TSP now reads `FF`=0.5× and `00`–`03`=1×–4×, adding exact 3× while moving 4× to `03`. Six-piece frame/render refills sustain that range, and a low-cost IRQ proximity path clamps odd strides and live rate changes at the published head. Duration and zero-underrun rigs cover all five exposed states. A measured 5× implementation repeatedly exhausted the serial-cart stream on the longest factory sample (~26 KB/s demand), so `04` is deliberately rejected rather than exposed as hardware-dependent “sometimes” behavior. Save v6 is structurally unchanged; legacy KIT `$02` now means 3× by explicit pre-adoption policy. | Prefer a dense musical control that remains dependable under the hardware workloads which motivated the lower sample rate |
 
 Commit at each milestone boundary. Hardware-verify **M6 (LFSR timbres)** and
 **M7 (PCM feed)** early — Handy is a 20-year-old core; its polynomial-counter
@@ -108,11 +109,11 @@ second-opinion core.
   list only after silicon listening.
 - **cc65 editor sluggishness (D2)** — if screen paints lag, move the dirty-
   cell renderer fully to asm before blaming the design.
-- **64 KB code packing** — SONG remains exact; MAIN has 5 bytes, HICODE1 has
-  7 bytes, HICODE3 has 1; HICODE2 and the
+- **64 KB code packing** — SONG and MAIN are exact; HICODE3 has 1 byte;
+  HICODE1, HICODE2, and the
   expanded `$C100` cold/live helper overlay are full at `$C8FC`. The C stack remains 512 bytes.
-  HELPCODE has 29 bytes; its three-block compressed text image also has only
-  a few bytes, with the exact margin varying with the build stamp.
+  HELPCODE has 29 bytes; its three-block compressed text image has 3 bytes
+  in this build, with the exact margin varying with the build stamp.
   Growth needs measured placement and must
   respect the MIDI/save-buffer and MIDI/phrase-counter overlay lifetimes.
 - **Scope creep** — echo (`Q`), user instrument bank, ComLynx song exchange
@@ -121,7 +122,7 @@ second-opinion core.
 
 ## Status
 
-**M0–M47 implemented as of 2026-07-25.** The tracker has all eleven screens,
+**M0–M48 implemented as of 2026-07-25.** The tracker has all eleven screens,
 the full command/editor workflow, ComLynx OUT/IN/IN24, packed 93C86 persistence,
 four genuinely symmetric logical/hardware tracks, receive-only USB-MIDI-over-
 ComLynx takeover, LFSR/WAV TSP plus KIT source RATE, universal Lynx II instrument

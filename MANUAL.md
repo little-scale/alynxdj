@@ -151,7 +151,7 @@ renderer temporarily reuses the now-idle sample-ring RAM.
 | ATK | attack **time**, 0–F: 0 = instant, F ≈ 2 s (higher = slower) |
 | HOLD | peak hold: `0`–`E` timed ticks; `F` sustains until the next note, a `K` command, transport stop, or live MIDI Note Off |
 | DCY | decay **time**, 0–F: 0 = immediate decay (one audible ~16.7 ms engine tick), 1 = very short, F ≈ 2 s |
-| **TSP** | LFSR/WAV: signed instrument transpose in semitones; Left/Right ±1, Up/Down ±12. KIT: source rate `FF`=0.5×, `00`=1×, `01`=2×, `02`=4×; every direction steps one position |
+| **TSP** | LFSR/WAV: signed instrument transpose in semitones; Left/Right ±1, Up/Down ±12. KIT: source rate `FF`=0.5× and `00`–`03`=1×–4×; every direction steps one position |
 | **PAN** | Lynx II left/right output levels packed as `xy`: `0` hard-mutes a side and `F` is full level. Up/Down edits left `x`; Left/Right edits right `y`. Default `FF`. Lynx I remains mono |
 | **SWP** | LFSR pitch sweep, signed 1/16 semitone per tick with period-style direction: `$01`–`$7F` falls, `$FF`–`$80` rises, `00` = off |
 | **VIB** | LFSR sine vibrato, packed speed·depth nibbles; speed 0–F ≈ 0.47–7.49 Hz. Depth uses SMSGGDJ's nonlinear response, from 1/16 semitone at `1` through 10/16 at `8` to 60/16 (±3.75 semitones) at `F`. Phase continues across notes and resets with transport |
@@ -172,7 +172,7 @@ The cursor visits only parameters used by the current type:
 
 Omitted rows are blank and skipped completely; there are no invisible cursor
 stops. LFSR/WAV TSP clamps at the playable note limits rather than wrapping;
-KIT TSP/RATE clamps between `FF` and `02`.
+KIT TSP/RATE clamps between `FF` and `03`.
 Switching TYPE to KIT normalizes an unset BANK to `00`, and moving down/left
 from KIT `00` remains at `00`. With the transport stopped, tap
 physical **B** anywhere on INSTR to trigger the selected instrument at the
@@ -249,8 +249,8 @@ the point.
   606, four speech banks) as 5,208.333 Hz signed 8-bit PCM. This lower
   feeder rate is deliberate hardware headroom for two simultaneous streams.
   KIT TSP controls source stepping without increasing the IRQ rate:
-  `FF` repeats every byte (0.5×), `00` uses every byte (1×), `01` outputs one
-  and skips one (2×), and `02` outputs one and skips three (4×). Phrase/chain
+  `FF` repeats every byte (0.5×); `00`, `01`, `02`, and `03` advance one,
+  two, three, or four source bytes per output tick (1×–4×). Phrase/chain
   transpose can still select another pad; instrument TSP no longer does.
   The `S` command temporarily replaces that stride: its low two bits select
   1×, 2×, 4×, or 0.5×. The next KIT note or `R` retrigger restores the

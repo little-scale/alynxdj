@@ -180,7 +180,7 @@ _dac_source_rate_set:
         jsr     popa
         tax
         lda     _dac_mode,x
-        cmp     #1                      ; KIT only; table-WAV keeps its pitch
+        dec     a                       ; KIT(1) only; WAV(2) stays nonzero
         beq     :+
         pla
         rts
@@ -196,12 +196,10 @@ _dac_source_rate_set:
         asl     a                       ; pack step above pad bits
         asl     a
         asl     a
-        pha
+        sta     tmp_step
         lda     _trig_member,x
         and     #7
-        sta     _trig_member,x
-        pla
-        ora     _trig_member,x
+        ora     tmp_step
         sta     _trig_member,x
         rts
 
@@ -287,13 +285,14 @@ _wave_stop:
 
 handler:
         pha
+        phx
+        phy
         lda     INTSET
         and     #$10            ; timer 4 -> MIDI UART receive
         beq     @slot0check
         lda     SERCTL
         and     #$40            ; level IRQ can outlive RX ready by a cycle
         beq     @serialspurious
-        phx
         lda     SERDAT          ; reading promptly prevents UART overrun
         pha                     ; level IRQ: drain RX before acknowledging it
         lda     #$10
@@ -315,7 +314,6 @@ handler:
 @serialfull:
         inc     SYNC_RX_OVERRUN
 @serialdone:
-        plx
         bra     @slot0check
 @clockrx:
         ldx     CLOCK_RX_HEAD
@@ -331,7 +329,6 @@ handler:
 @clockfull:
         inc     CLOCK_RX_OVERRUN
 @clockdone:
-        plx
         bra     @slot0check
 @serialspurious:
         lda     #$10
@@ -339,8 +336,7 @@ handler:
 @slot0check:
         lda     INTSET
         and     #$80            ; timer 7 -> DAC slot 0
-        bne     @slot0
-        jmp     @slot1
+        beq     @slot1
 @slot0:
         sta     INTRST
         lda     _dac_mode
@@ -368,13 +364,10 @@ handler:
 @s0finish:
         stz     TIM7CTLA
         stz     _dac_mode
-        phx
         ldx     _dac_off
         stz     AUD0DAC,x
-        plx
         bra     @slot1
 @s0feed:
-        phx
         lda     _dac_muted
         bne     @s0zero
         lda     (_pcm_ptr)
@@ -384,16 +377,11 @@ handler:
 @s0write:
         ldx     _dac_off
         sta     AUD0DAC,x
-        phy
         ldx     #0
         jsr     @sample_advance
-        ply
-        plx
         bra     @slot1
 
 @s0wave:
-        phx
-        phy
         ldy     wav_pos
         lda     (wav_ptr0),y
         ldx     _dac_muted
@@ -406,8 +394,6 @@ handler:
         adc     wav_step
         and     #$1F
         sta     wav_pos
-        ply
-        plx
 
 @slot1:
         lda     INTSET
@@ -441,13 +427,10 @@ handler:
 @s1finish:
         stz     TIM5CTLA
         stz     _dac_mode+1
-        phx
         ldx     _dac_off+1
         stz     AUD0DAC,x
-        plx
         jmp     @vbl
 @s1feed:
-        phx
         lda     _dac_muted+1
         bne     @s1zero
         lda     (_pcm_ptr+2)
@@ -457,16 +440,11 @@ handler:
 @s1write:
         ldx     _dac_off+1
         sta     AUD0DAC,x
-        phy
         ldx     #2
         jsr     @sample_advance
-        ply
-        plx
         bra     @vbl
 
 @s1wave:
-        phx
-        phy
         ldy     wav_pos+1
         lda     (wav_ptr1),y
         ldx     _dac_muted+1
@@ -479,14 +457,13 @@ handler:
         adc     wav_step+1
         and     #$1F
         sta     wav_pos+1
-        ply
-        plx
         bra     @vbl
 
-; Advance one KIT source cursor. _dac_step is 1/2/4 for normal/double/quad;
+; Advance one KIT source cursor. _dac_step is 1-4 for normal through 4x;
 ; zero is the half-rate sentinel and repeats each source byte once. X is the
-; pointer-byte offset (0 for slot 0, 2 for slot 1). Each 512-byte ring spans
-; two adjacent pages, so a low-byte carry only needs to toggle high bit 0.
+; pointer-byte offset (0 for slot 0, 2 for slot 1). Walk at most four bytes
+; and clamp on the published head so odd strides and live rate changes cannot
+; leap over the end of available/sample data.
 @sample_advance:
         txa
         lsr     a
@@ -499,6 +476,34 @@ handler:
         bne     @advance_done
         inc     a                       ; second half-rate tick advances one
 @advance_add:
+        pha
+        dec     a
+        beq     @advance_fast           ; one byte can never leap over head
+        lda     _pcm_head,x
+        sec
+        sbc     _pcm_ptr,x              ; low-byte forward distance
+        cmp     #5
+        bcs     @advance_fast           ; head cannot be crossed this tick
+        pla
+        tay
+@advance_byte:
+        inc     _pcm_ptr,x
+        bne     :+
+        lda     _pcm_ptr+1,x
+        eor     #1
+        sta     _pcm_ptr+1,x
+:       lda     _pcm_ptr,x
+        cmp     _pcm_head,x
+        bne     :+
+        lda     _pcm_ptr+1,x
+        cmp     _pcm_head+1,x
+        beq     @advance_done
+:       dey
+        bne     @advance_byte
+@advance_done:
+        rts
+@advance_fast:
+        pla
         clc
         adc     _pcm_ptr,x
         sta     _pcm_ptr,x
@@ -506,7 +511,6 @@ handler:
         lda     _pcm_ptr+1,x
         eor     #1
         sta     _pcm_ptr+1,x
-@advance_done:
         rts
 
 @vbl:
@@ -520,8 +524,6 @@ handler:
 :       lda     in_tick
         bne     @out
         inc     in_tick
-        phx
-        phy
         ldx     #zpspace-1
 @save:  lda     sp,x
         sta     zpbuf,x
@@ -535,9 +537,9 @@ handler:
         sta     sp,x
         dex
         bpl     @rest
-        ply
-        plx
         stz     in_tick
 @out:
+        ply
+        plx
         pla
         rti

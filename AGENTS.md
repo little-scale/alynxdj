@@ -15,7 +15,7 @@ later hardware). The ROM and project name is **ALYNXDJ**.
 
 **DESIGN.md is the contract** (with a §0 decision log — read it before design
 decisions, don't re-litigate settled ones); **PLAN.md** holds the milestone
-history through M47. Key settled decisions: 4 identical
+history through M48. Key settled decisions: 4 identical
 tracks each playing LFSR/WAV/KIT (D1/D35), cc65 C editor + ca65 asm
 driver/IRQ/render (D2), 59.9 Hz VBlank engine tick with no region split (D3),
 flat RAM song block but **packed/RLE EEPROM save — 2 KB 93C86 is the whole
@@ -24,7 +24,7 @@ persistence budget** (D4/D10), per-channel timer-IRQ PCM capped at 2 voices
 target the owning channel A–D; there are no fixed sample buses. LFSR patches
 (including legacy stored type `$01`) persist TSP/SWP/VIB/TRM plus TBS in
 save-format v6 (D15–D17/D35); WAV retains signed TSP, while KIT reuses byte
-15 as D46's source RATE (`FF` 0.5×, `00` 1×, `01` 2×, `02` 4×). VIB is a
+15 as D48's source RATE (`FF` 0.5×, `00`–`03` 1×–4×). VIB is a
 centred ~0.47–7.49 Hz sine whose phase free-runs across notes and resets at
 the transport boundary. TBS 0 is a per-note table cycle and TBS 1–F are
 tick-clocked; every mode wraps `0F→00`, while `H` sets a custom loop. KIT VOL
@@ -45,7 +45,7 @@ per u16-sized slot. The builder handles 8/16/24/32-bit integer WAV sources;
 older experimental rate IDs are intentionally rejected. D40 factory
 conversion peak-normalizes, then applies +12.00 dB into a tanh soft limiter
 before signed 8-bit quantization; the processing is baked into the bank.
-KIT RATE repeats or skips ring bytes while keeping reload 191, so 2×/4× do
+KIT RATE repeats or skips ring bytes while keeping reload 191, so 2×–4× do
 not raise IRQ frequency. `Sxx` is D47's bounded KIT source-rate override:
 its low two bits select 1×/2×/4×/0.5× without changing the timer, and every
 note/`R` restores the instrument stride. KIT pad selection ignores instrument
@@ -157,8 +157,8 @@ using a virtual environment.
   visible block-selection rows. Reloading the full two-block helper window
   resets all three bytes; the selection bounds are ignored while SELECT is
   inactive.
-  Fixed live bytes occupy
-  `$C004-$C016`. Preserve the post-pack
+  Fixed live bytes occupy `$C004-$C01F`; `$C01E/$C01F` hold the two KIT
+  stream gain shifts. Preserve the post-pack
   reloads and these mutual-exclusion rules.
 - Cart sample seeks use a software 16-bit bytes-remaining counter. Its low
   byte must be tested before decrement so `$0400` borrows to `$03FF`; getting
@@ -171,18 +171,18 @@ using a virtual environment.
   must yield every four glyphs, and `clear_grid()` must stay split into sixteen
   six-pixel bands; otherwise rendering can starve a pending trigger or ring.
   KIT gain shifts each signed 64-byte piece before its atomic publication;
-  never move this work into the DAC IRQ. A trigger starts after a 320-byte
-  cushion (~49.2 ms at D39's rate) and the caller's next pump tops up the
+  never move this work into the DAC IRQ. A trigger starts after a 384-byte
+  cushion (~73.7 ms at D39's rate) and the caller's next pump tops up the
   remaining ring headroom.
   Same-track KIT retriggers leave the old stream live until `do_trigger()` has
   prepared the replacement. A single long chunk or a one-sided ring refill
   causes the IRQ to hold the last DAC value.
   KIT source RATE reuses the slot's WAV position/step bytes: step `0` repeats
-  each byte once, while `1/2/4` advances normally or skips source bytes.
-  The two ordinary pump calls may publish ten 64-byte pieces per display
-  frame, sustaining 4×'s ~20.8 KB/s source consumption with short
-  five-piece refill bursts; stream lengths are aligned down to four
-  bytes before playback so a stepped tail cannot leap over `pcm_head`.
+  each byte once, while `1`–`4` advances normally or skips source bytes.
+  The frame pump and render-time service points sustain 4×'s ~20.8 KB/s
+  source consumption in short six-piece refill bursts. The IRQ clamps a
+  stride that would cross `pcm_head`, so odd 3× steps and live rate changes
+  cannot leap into unpublished/stale bytes.
   `$C027/$C028` are saturating slot-underrun counters; isolated and sustained
   sample/redraw rigs must complete at `00/00` in `test_hardware_fixes.py`;
   `$C02E/$C02F` count successfully started streams.

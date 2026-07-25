@@ -16,7 +16,7 @@
 #define RING1      ((unsigned char *)0xD200)
 #define RING_SIZE  512u
 #define PUMP_CHUNK 64
-#define PUMP_PASSES 5
+#define PUMP_PASSES 6
 
 extern unsigned char *pcm_ptr[NDAC];    /* ring tails (IRQ-owned) */
 #pragma zpsym("pcm_ptr")
@@ -44,7 +44,10 @@ volatile unsigned char trig_member[NDAC];
 /* Power-of-two attenuation is applied after each cart read, before the
  * completed piece is published to the IRQ.  0 is full level, 1-2 are
  * arithmetic right shifts, and 4 is mute. */
+/* Two fixed live bytes outside the song/overlay windows. */
+#pragma bss-name (push, "STREAMRAM")
 static unsigned char stream_shift[NDAC];
+#pragma bss-name (pop)
 
 void __fastcall__ position_cart(unsigned char voice); /* cart.s */
 void __fastcall__ scale_pcm(unsigned char *dst, unsigned char n,
@@ -187,7 +190,7 @@ static void do_trigger(unsigned char voice, unsigned char kit,
     pcm_done[voice] = 0;
     pcm_ptr[voice] = base;
     pcm_head[voice] = base;
-    /* Prepare 320 bytes before starting (~61 ms at the KIT rate).  The
+    /* Prepare 384 bytes before starting (~74 ms at the KIT rate).  The
      * caller immediately pumps again after the timer starts, restoring the
      * full cushion without delaying the audible trigger behind all 511
      * bytes of optional headroom. */

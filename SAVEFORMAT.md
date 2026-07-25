@@ -82,8 +82,8 @@ universal across LFSR/WAV/KIT, default `$FF`), 8 fine,
 13 **VIB** (speed/depth nibbles), 14 **TRM** (speed/depth nibbles; repeating
 descending volume saw),
 15 **TSP/RATE**. For LFSR/WAV it is signed semitone transpose. For KIT it is
-a source-step selector: `$FF` repeats each byte (0.5×), `$00` consumes every
-byte (1×), `$01` skips one byte (2×), and `$02` skips three (4×). KIT pad
+a source-step selector: `$FF` repeats each byte (0.5×), while `$00`–`$03`
+advance one through four source bytes per output tick (1×–4×). KIT pad
 selection follows the phrase/chain-transposed note and does not use byte 15.
 SWP/VIB/TRM are v4 and apply to LFSR, including the legacy type `$01` alias;
 TSP is v5. Reinterpreting its existing KIT meaning as RATE does not change
