@@ -302,7 +302,7 @@ void song_demo(void)
     sd.phrases[28][0].note = N(4,0);  sd.phrases[28][0].instr = 14;
     sd.phrases[28][6].note = N(4,4);  sd.phrases[28][6].instr = 14;
     sd.phrases[28][12].note = N(4,7); sd.phrases[28][12].instr = 14;
-    sd.phrases[28][12].cmd = CMD_S;   sd.phrases[28][12].param = 0x60;
+    sd.phrases[28][12].cmd = CMD_S;   sd.phrases[28][12].param = 0x01;
 
     /* p29 plucks: the seed timbre, morphing taps live */
     for (i = 0; i < 16; i += 3) {
@@ -403,7 +403,7 @@ void song_demo(void)
     /* ph13 S: kit BD normal / double-rate */
     sd.phrases[13][0].note = N(4,0); sd.phrases[13][0].instr = 3;
     sd.phrases[13][8].note = N(4,0); sd.phrases[13][8].instr = 3;
-    sd.phrases[13][8].cmd = CMD_S;   sd.phrases[13][8].param = 63;
+    sd.phrases[13][8].cmd = CMD_S;   sd.phrases[13][8].param = 0x01;
     /* ph14 Z: coin-flip note on every row */
     for (i = 0; i < 16; ++i) {
         sd.phrases[14][i].note = N(4,0);
@@ -440,7 +440,7 @@ void song_demo(void)
     sd.phrases[30][0].note = N(4,0); sd.phrases[30][0].instr = 12;
     sd.phrases[30][0].cmd = CMD_R;   sd.phrases[30][0].param = 0x02;
     sd.phrases[31][0].note = N(4,2); sd.phrases[31][0].instr = 12;
-    sd.phrases[31][0].cmd = CMD_S;   sd.phrases[31][0].param = 63;
+    sd.phrases[31][0].cmd = CMD_S;   sd.phrases[31][0].param = 0x01;
     sd.phrases[32][1].note = N(4,4); sd.phrases[32][1].instr = 12;
     sd.phrases[33][2].note = N(4,6); sd.phrases[33][2].instr = 12;
 

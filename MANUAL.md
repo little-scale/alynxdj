@@ -94,7 +94,7 @@ OPTIONS settings persist in the cart EEPROM alongside the song.
 
 In **MIDI** takeover, the sequencer stays stopped and incoming USB MIDI from a
 ComLynx bridge plays the tracker directly: MIDI channels 1–4 use tracks 1–4
-and instruments 01–04. Notes use the normal instrument path, including TSP,
+and instruments 01–04. Notes use the normal instrument path, including TSP/RATE,
 SWP/VIB/TRM, tables, envelopes, WAV and KIT routing. Each MIDI channel is
 monophonic. Note Off releases through DECAY (DCY 0 cuts); KIT stops. Velocity
 is currently used only to distinguish Note On from velocity-zero Note Off.
@@ -151,7 +151,7 @@ renderer temporarily reuses the now-idle sample-ring RAM.
 | ATK | attack **time**, 0–F: 0 = instant, F ≈ 2 s (higher = slower) |
 | HOLD | peak hold: `0`–`E` timed ticks; `F` sustains until the next note, a `K` command, transport stop, or live MIDI Note Off |
 | DCY | decay **time**, 0–F: 0 = immediate decay (one audible ~16.7 ms engine tick), 1 = very short, F ≈ 2 s |
-| **TSP** | signed instrument transpose in semitones; Left/Right ±1, Up/Down ±12. Applies to LFSR/WAV pitch and KIT pad selection |
+| **TSP** | LFSR/WAV: signed instrument transpose in semitones; Left/Right ±1, Up/Down ±12. KIT: source rate `FF`=0.5×, `00`=1×, `01`=2×, `02`=4×; every direction steps one position |
 | **PAN** | Lynx II left/right output levels packed as `xy`: `0` hard-mutes a side and `F` is full level. Up/Down edits left `x`; Left/Right edits right `y`. Default `FF`. Lynx I remains mono |
 | **SWP** | LFSR pitch sweep, signed 1/16 semitone per tick with period-style direction: `$01`–`$7F` falls, `$FF`–`$80` rises, `00` = off |
 | **VIB** | LFSR sine vibrato, packed speed·depth nibbles; speed 0–F ≈ 0.47–7.49 Hz. Depth uses SMSGGDJ's nonlinear response, from 1/16 semitone at `1` through 10/16 at `8` to 60/16 (±3.75 semitones) at `F`. Phase continues across notes and resets with transport |
@@ -171,7 +171,8 @@ The cursor visits only parameters used by the current type:
 | **KIT** | INSTR, TYPE, VOL, TSP, KIT, PAN |
 
 Omitted rows are blank and skipped completely; there are no invisible cursor
-stops. TSP clamps at the playable note limits rather than wrapping.
+stops. LFSR/WAV TSP clamps at the playable note limits rather than wrapping;
+KIT TSP/RATE clamps between `FF` and `02`.
 Switching TYPE to KIT normalizes an unset BANK to `00`, and moving down/left
 from KIT `00` remains at `00`. With the transport stopped, tap
 physical **B** anywhere on INSTR to trigger the selected instrument at the
@@ -246,8 +247,14 @@ the point.
   note's semitone picks the kit slot (C=1, C#=2, …) and **KIT picks the
   kit** — the cart ships all eight `samples/` folders (808, 909, C78,
   606, four speech banks) as 5,208.333 Hz signed 8-bit PCM. This lower
-  feeder rate is deliberate hardware headroom for two simultaneous streams;
-  the `S` command may override a playing voice until its next KIT trigger.
+  feeder rate is deliberate hardware headroom for two simultaneous streams.
+  KIT TSP controls source stepping without increasing the IRQ rate:
+  `FF` repeats every byte (0.5×), `00` uses every byte (1×), `01` outputs one
+  and skips one (2×), and `02` outputs one and skips three (4×). Phrase/chain
+  transpose can still select another pad; instrument TSP no longer does.
+  The `S` command temporarily replaces that stride: its low two bits select
+  1×, 2×, 4×, or 0.5×. The next KIT note or `R` retrigger restores the
+  instrument TSP rate. The timer always remains at the canonical rate.
   Factory WAVs are peak-normalized and then driven **+12.00 dB through tanh
   soft saturation** during conversion, producing a loud bank without adding
   any processing cost to playback.
@@ -285,8 +292,8 @@ voices do not consume this two-voice budget.
 | `N xx` | taps | live LFSR-taps morph: bits 0–5 = taps 0–5, 6 = tap 7, 7 = tap 10 |
 | `O xy` | pan | set live Lynx II left/right levels: `0` hard mute, `F` full; the next note restores instrument PAN |
 | `P xx` | pitch | bend, signed, 1/16 semitone per tick |
-| `R xy` | retrig | re-fire the note every y ticks, peak −8·x per fire (KIT refires the sample) |
-| `S xx` | rate | live KIT/table-WAV timer reload (smaller = faster/higher) |
+| `R xy` | retrig | re-fire the note every y ticks, peak −8·x per fire (KIT refires the sample and restores patch RATE) |
+| `S xx` | rate | KIT source-speed override: low two bits `0`=1×, `1`=2×, `2`=4×, `3`=0.5×; next note/`R` restores instrument TSP |
 | `T xx` | tempo | set the active groove flat to hex BPM xx (flattens swing — that's the point of T) |
 | `V xy` | vibrato | speed x, nonlinear depth y (1/16-semitone curve; `8` = 10/16, `F` = 60/16) |
 | `W xx` | wait | shorten this row to xx ticks |

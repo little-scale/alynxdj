@@ -129,7 +129,7 @@ static volatile struct _mikey_audio *const CHAN[NCH] = {
     &MIKEY.channel_a, &MIKEY.channel_b, &MIKEY.channel_c, &MIKEY.channel_d,
 };
 #pragma rodata-name (pop)
-#pragma rodata-name (push, "HICODE1")
+#pragma rodata-name (push, "HICODE2")
 const unsigned char track_bit[NCH] = { 1, 2, 4, 8 };
 #pragma rodata-name (pop)
 
@@ -411,9 +411,9 @@ static void exec_cmd(unsigned char ch, unsigned char cmd, unsigned char param)
         break;
     case CMD_S:
         if (v->dac_slot < NDAC) {
-            dac_rate_set(v->dac_slot, param);
+            dac_source_rate_set(v->dac_slot, param);
             MIRROR_DAC_S_SLOT = v->dac_slot;
-            MIRROR_DAC_S_RATE = param;
+            MIRROR_DAC_S_RATE = param & 3;
         }
         break;
     case CMD_E:
@@ -496,10 +496,6 @@ static void trigger(unsigned char ch, unsigned char note, unsigned char inum)
     struct instr *in = &sd.instrs[inum < NINSTR ? inum : 0];
     unsigned char slot, old_table = v->table, old_tpos = v->tpos;
 
-    /* Instrument transpose is resolved once at key-on, before a KIT note is
-     * mapped to a pad and before either WAV pitch path is selected. */
-    note = transpose_note(note, in->tsp);
-
     if (in->type == IT_KIT) {
         /* Every track owns its physical channel's DAC.  Two timer-fed
          * streams may run at once; the third trigger steals the oldest. */
@@ -510,6 +506,7 @@ static void trigger(unsigned char ch, unsigned char note, unsigned char inum)
         v->type = IT_KIT;
         v->inum = inum;
         v->base_note = note;
+        v->tbl_tsp = in->tsp;           /* KIT source rate, reused by R */
         v->env_peak = 0;
         v->env_phase = 0;
         v->env_level = in->vol;         /* static PCM gain, reused by R */
@@ -523,6 +520,8 @@ static void trigger(unsigned char ch, unsigned char note, unsigned char inum)
         return;
     }
 
+    /* KIT reuses TSP as a source-rate control; LFSR/WAV retain semitones. */
+    note = transpose_note(note, in->tsp);
     if (v->dac_slot < NDAC)
         dac_release(ch);
     v->base_note = note;
@@ -1148,7 +1147,6 @@ void engine_init(void)
     for (slot = 0; slot < NDAC; ++slot) {
         dac_owner[slot] = EMPTY;
         dac_off[slot] = slot << 3;
-        dac_rate[slot] = 191;
     }
     stop_nolock();
 }

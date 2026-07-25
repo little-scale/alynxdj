@@ -48,6 +48,9 @@ if (!html.includes("LFSR · legacy $01"))
   throw new Error("viewer does not identify legacy type 01 as LFSR");
 if (!html.includes("KIT: 6-/7- full · 2-–5- half · 1- quarter · 0- mute"))
   throw new Error("viewer does not document the KIT VOL gain states");
+if (!html.includes('FF · 0.5×') || !html.includes('02 · 4×')
+    || !html.includes("Source stepping: repeat / every byte / skip 1 / skip 3"))
+  throw new Error("viewer does not expose the KIT TSP source-rate states");
 if (!html.includes('"PAN left"') || !html.includes('"PAN right"')
     || !html.includes("Lynx II level: 0 mute · F full"))
   throw new Error("viewer does not expose the universal PAN nibbles");
@@ -81,9 +84,14 @@ assert(elements.get("content").innerHTML.includes('value="00" data-ifield="bank"
   "changing an instrument to KIT did not initialise/render bank 00");
 assert(elements.get("content").innerHTML.includes('<option value="7" selected>7-</option>'),
   "KIT volume does not block its fine nibble");
+assert(elements.get("content").innerHTML.includes('<option value="0" selected>00 · 1×</option>'),
+  "changing an instrument to KIT did not expose the normal source rate");
 const kitVolEdit=element();
 kitVolEdit.value="4"; kitVolEdit.dataset={ifield:"vol"};
 elements.get("content").dispatch("change",{target:kitVolEdit});
+const kitRateEdit=element();
+kitRateEdit.value="2"; kitRateEdit.dataset={ifield:"tsp"};
+elements.get("content").dispatch("change",{target:kitRateEdit});
 const panLeftEdit=element();
 panLeftEdit.value="8"; panLeftEdit.dataset={ifield:"panLeft"};
 elements.get("content").dispatch("change",{target:panLeftEdit});
@@ -95,6 +103,8 @@ assert(elements.get("content").innerHTML.includes("1600  03 40"),
   "KIT coarse volume edit did not store a zero fine nibble");
 assert(elements.get("content").innerHTML.includes("1600  03 40 05 05 00 01 FF 83"),
   "universal PAN edit did not pack left/right nibbles into byte 7");
+assert(elements.get("content").innerHTML.includes("00 00 00 00 00 00 00 02"),
+  "KIT 4x source-rate edit did not store 02 in instrument byte 15");
 const songEdit=element();
 songEdit.value="1A"; songEdit.dataset={byte:"0",mode:"hex",max:"31",ff:"1"};
 elements.get("content").dispatch("change",{target:songEdit});

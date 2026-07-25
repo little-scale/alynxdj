@@ -9,7 +9,7 @@
         .export         _frames
         .export         _pcm_stop
         .export         _dac_stop
-        .export         _dac_rate_set
+        .export         _dac_source_rate_set
         .export         _wave_start
         .export         _wave_rate
         .export         _wave_stop
@@ -20,9 +20,11 @@
         .export         _dac_mode
         .export         _dac_off
         .export         _dac_muted
-        .export         _dac_rate
+        .export         _dac_phase
+        .export         _dac_step
         .import         _sd
         .import         _engine_tick
+        .import         _trig_member
         .import         popa
 
         .include        "zeropage.inc"
@@ -65,14 +67,14 @@ _pcm_done: .res 2
 _dac_mode: .res 2               ; DAC_NONE / DAC_SAMPLE / DAC_WAVE
 _dac_off: .res 2                ; owning channel * 8
 _dac_muted: .res 2              ; consume normally, write zero when muted
-_dac_rate: .res 2               ; sampled-voice timer reload
 in_tick:  .res 1                ; VBL tick re-entrancy guard
 zpbuf:    .res 32               ; cc65 runtime zp save (tick runs C in IRQ)
-wav_pos:  .res 2
-wav_step: .res 2
+_dac_phase:
+wav_pos:  .res 2               ; WAV position / KIT half-rate phase
+_dac_step:
+wav_step: .res 2               ; WAV step / KIT source-byte stride
 tmp_slot: .res 1
 tmp_w:    .res 1
-tmp_rate: .res 1
 tmp_clock:.res 1
 tmp_bkup: .res 1
 tmp_step: .res 1
@@ -126,7 +128,14 @@ _pcm_stop:
 
 ; void __fastcall__ pcm_ring_start(unsigned char slot);
 _pcm_ring_start:
-        cmp     #0
+        tax
+        stz     _dac_phase,x
+        lda     _trig_member,x
+        lsr     a
+        lsr     a
+        lsr     a
+        sta     _dac_step,x
+        txa
         bne     @one
         stz     TIM7CTLA
         phx
@@ -139,7 +148,7 @@ _pcm_ring_start:
         sta     _pcm_ptr+1
         lda     #1
         sta     _dac_mode
-        lda     _dac_rate
+        lda     #191                    ; fixed 5,208.333 Hz KIT timer
         sta     TIM7BKUP
         lda     #PCM_CTLA
         sta     TIM7CTLA
@@ -155,30 +164,46 @@ _pcm_ring_start:
         sta     _pcm_ptr+3
         lda     #1
         sta     _dac_mode+1
-        lda     _dac_rate+1
+        lda     #191                    ; fixed 5,208.333 Hz KIT timer
         sta     TIM5BKUP
         lda     #PCM_CTLA
         sta     TIM5CTLA
         rts
 
-; void __fastcall__ dac_rate_set(unsigned char slot, unsigned char rate);
-; Store even before a deferred cart trigger starts, so same-row S survives.
-_dac_rate_set:
-        sta     tmp_rate
+; void __fastcall__ dac_source_rate_set(unsigned char slot,
+;                                        unsigned char rate);
+; S uses its low two bits as 1x/2x/4x/.5x. Update both the active cursor and
+; the pending trigger latch: a same-row S therefore survives cart prefill,
+; while the next note/R overwrites the latch from the instrument's KIT TSP.
+_dac_source_rate_set:
+        pha
         jsr     popa
         tax
-        lda     tmp_rate
-        sta     _dac_rate,x
         lda     _dac_mode,x
-        beq     @done
-        cpx     #0
-        bne     @one
-        lda     tmp_rate
-        sta     TIM7BKUP
+        cmp     #1                      ; KIT only; table-WAV keeps its pitch
+        beq     :+
+        pla
         rts
-@one:   lda     tmp_rate
-        sta     TIM5BKUP
-@done:  rts
+:       pla
+        and     #3
+        inc     a                       ; 0/1/2/3 -> step 1/2/4/0
+        and     #3
+        cmp     #3
+        bne     :+
+        inc     a
+:       sta     _dac_step,x
+        stz     _dac_phase,x
+        asl     a                       ; pack step above pad bits
+        asl     a
+        asl     a
+        pha
+        lda     _trig_member,x
+        and     #7
+        sta     _trig_member,x
+        pla
+        ora     _trig_member,x
+        sta     _trig_member,x
+        rts
 
 ; void __fastcall__ wave_start(unsigned char slot, unsigned char w);
 _wave_start:
@@ -359,15 +384,10 @@ handler:
 @s0write:
         ldx     _dac_off
         sta     AUD0DAC,x
-        inc     _pcm_ptr
-        bne     @s0done
-        inc     _pcm_ptr+1
-        lda     _pcm_ptr+1
-        cmp     #RING1_HI
-        bne     @s0done
-        lda     #RING0_HI
-        sta     _pcm_ptr+1
-@s0done:
+        phy
+        ldx     #0
+        jsr     @sample_advance
+        ply
         plx
         bra     @slot1
 
@@ -425,7 +445,7 @@ handler:
         ldx     _dac_off+1
         stz     AUD0DAC,x
         plx
-        bra     @vbl
+        jmp     @vbl
 @s1feed:
         phx
         lda     _dac_muted+1
@@ -437,15 +457,10 @@ handler:
 @s1write:
         ldx     _dac_off+1
         sta     AUD0DAC,x
-        inc     _pcm_ptr+2
-        bne     @s1done
-        inc     _pcm_ptr+3
-        lda     _pcm_ptr+3
-        cmp     #$D4
-        bne     @s1done
-        lda     #RING1_HI
-        sta     _pcm_ptr+3
-@s1done:
+        phy
+        ldx     #2
+        jsr     @sample_advance
+        ply
         plx
         bra     @vbl
 
@@ -466,6 +481,33 @@ handler:
         sta     wav_pos+1
         ply
         plx
+        bra     @vbl
+
+; Advance one KIT source cursor. _dac_step is 1/2/4 for normal/double/quad;
+; zero is the half-rate sentinel and repeats each source byte once. X is the
+; pointer-byte offset (0 for slot 0, 2 for slot 1). Each 512-byte ring spans
+; two adjacent pages, so a low-byte carry only needs to toggle high bit 0.
+@sample_advance:
+        txa
+        lsr     a
+        tay                             ; slot 0/1
+        lda     _dac_step,y
+        bne     @advance_add
+        lda     _dac_phase,y
+        eor     #1
+        sta     _dac_phase,y
+        bne     @advance_done
+        inc     a                       ; second half-rate tick advances one
+@advance_add:
+        clc
+        adc     _pcm_ptr,x
+        sta     _pcm_ptr,x
+        bcc     @advance_done
+        lda     _pcm_ptr+1,x
+        eor     #1
+        sta     _pcm_ptr+1,x
+@advance_done:
+        rts
 
 @vbl:
         lda     INTSET

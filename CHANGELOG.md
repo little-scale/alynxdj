@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- Replace `Sxx`'s unsafe raw Mikey timer reload with a bounded KIT source-rate
+  override matching the sibling trackers. The low two bits select
+  `0`=1×, `1`=2×, `2`=4×, or `3`=0.5×; the fixed 5,208.333 Hz interrupt
+  never changes, table-WAV ignores S, and the next KIT note or `R` retrigger
+  restores the instrument TSP rate. Same-row duration and underrun
+  regressions cover all four overrides.
+- Reuse KIT instrument `TSP` as a four-position source-rate control:
+  `FF` repeats each PCM byte for 0.5×, `00` plays every byte at 1×, `01`
+  skips one byte for 2×, and `02` skips three for 4×. The DAC timer stays at
+  the low-overhead 5,208.333 Hz rate, while each note/`R` retrigger restores
+  the patch setting.
+  The two normal foreground service points can refill ten 64-byte pieces
+  per display frame; measured duration and redraw/stress regressions complete all four rates with zero
+  underruns. LFSR/WAV retain signed-semitone TSP, KIT pad selection now follows
+  only the phrase/chain note, and the SRAM viewer exposes the same four states.
 - Make command entry consistent across PHRASE and TABLE. Editing either
   command letter or value remembers the complete pair globally; tapping B on
   an empty command-letter cell inserts both bytes, while occupied cells remain

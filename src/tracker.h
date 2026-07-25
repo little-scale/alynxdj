@@ -33,8 +33,8 @@
 #define CMD_N    14     /* N xx  live LFSR taps override: bits 0-5 = taps
                                  0-5, 6 = tap 7, 7 = tap 10 (D11 morph) */
 #define CMD_R    15     /* R xy  retrig every y ticks, peak -8x per fire */
-#define CMD_S    16     /* S xx  live sampled-voice timer reload (KIT or
-                                 table-WAV; smaller = faster) */
+#define CMD_S    16     /* S xx  KIT source-rate override, low 2 bits:
+                                 0=1x, 1=2x, 2=4x, 3=.5x */
 #define CMD_Z    17     /* Z xx  probability: note plays if rand8 < xx */
 #define CMD_E    18     /* E xy  re-slope the envelope live: ATK x, DCY y
                                  nibbles (current stage + level untouched) */
@@ -93,7 +93,8 @@ struct instr {
     signed char   swp;       /* LFSR: signed 1/16-semi pitch/tick */
     unsigned char vib;       /* LFSR: speed high nibble, depth low */
     unsigned char trm;       /* LFSR: speed high nibble, depth low */
-    signed char   tsp;       /* signed instrument transpose, semitones */
+    signed char   tsp;       /* LFSR/WAV semitones; KIT source rate:
+                                FF=.5x, 00=1x, 01=2x, 02=4x */
 };
 
 #define TAPS_SQUARE 0x001   /* tap 0 only: the proven square */
@@ -174,12 +175,13 @@ void sound_init(void);
 extern volatile unsigned char dac_mode[NDAC];
 extern volatile unsigned char dac_off[NDAC]; /* channel * 8, for AUD0+x */
 extern volatile unsigned char dac_muted[NDAC];
-extern volatile unsigned char dac_rate[NDAC];
+extern volatile unsigned char dac_phase[NDAC];
+extern volatile unsigned char dac_step[NDAC];
 #define dac_underrun ((volatile unsigned char *)0xC027)
 #define dac_started  ((volatile unsigned char *)0xC02E)
 void pcm_stop(void);                      /* stop both slots */
 void __fastcall__ dac_stop(unsigned char slot);
-void __fastcall__ dac_rate_set(unsigned char slot, unsigned char rate);
+void __fastcall__ dac_source_rate_set(unsigned char slot, unsigned char rate);
 void __fastcall__ pcm_ring_start(unsigned char slot);
 
 /* cart streaming (src/cart.s) + sample pool (src/pool.c) */

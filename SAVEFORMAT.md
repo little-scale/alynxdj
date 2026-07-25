@@ -81,9 +81,13 @@ universal across LFSR/WAV/KIT, default `$FF`), 8 fine,
 11 seed bits 11-8, 12 **SWP** (signed 1/16-semitone per tick; positive falls),
 13 **VIB** (speed/depth nibbles), 14 **TRM** (speed/depth nibbles; repeating
 descending volume saw),
-15 **TSP** (signed semitones). SWP/VIB/TRM are v4 and apply to LFSR,
-including the legacy type `$01` alias;
-TSP is v5 and applies to every instrument type before pitch/pad selection.
+15 **TSP/RATE**. For LFSR/WAV it is signed semitone transpose. For KIT it is
+a source-step selector: `$FF` repeats each byte (0.5×), `$00` consumes every
+byte (1×), `$01` skips one byte (2×), and `$02` skips three (4×). KIT pad
+selection follows the phrase/chain-transposed note and does not use byte 15.
+SWP/VIB/TRM are v4 and apply to LFSR, including the legacy type `$01` alias;
+TSP is v5. Reinterpreting its existing KIT meaning as RATE does not change
+save-format v6.
 TBS is v6: 0 advances one table row per triggered note, including repeated
 PHRASE `Axx` selections of the same live table; 1–15 advance every N engine
 ticks. Every mode wraps row 15 to row 0 by default, while `H` defines
@@ -109,6 +113,12 @@ only its high nibble is interpreted. `$6x`–`$7x` is full level,
 and `$0x` is mute. The low nibble is preserved in the save byte but ignored
 by KIT playback; INSTR displays it as `-`. This reuses the existing VOL byte
 and therefore does not change save-format v6.
+
+KIT RATE changes source consumption, not the Mikey timer reload: the canonical
+interrupt remains 5,208.333 Hz. `Sxx` is a live KIT stride override whose low
+two bits select 1×/2×/4×/0.5×; it does not change the timer and is ignored by
+LFSR/WAV. Every note and KIT `R` retrigger restores the instrument's stored
+stride. The command ID and serialized phrase/table bytes are unchanged.
 
 **v1 → v2 migration** (done automatically at load when the header version
 is 1): the old per-tick ATK/DCY rate bytes fold onto the nearest

@@ -6,6 +6,7 @@ import shutil
 import struct
 import subprocess
 import sys
+import time
 import wave
 
 
@@ -21,17 +22,23 @@ def main():
                          "tests", "dac")
     shutil.rmtree(build, ignore_errors=True)
     os.makedirs(build)
-    test_rom = os.path.join(build, "alynxdj-dac-test.lnx")
+    namespace = "%d-%d" % (os.getpid(), time.time_ns())
+    kit_rom = os.path.join(build, "alynxdj-dac-kit-%s.lnx" % namespace)
+    wave_rom = os.path.join(build, "alynxdj-dac-wave-%s.lnx" % namespace)
     ppm = os.path.join(build, "dac-test.ppm")
     ram_path = os.path.join(build, "dac-test.ram")
-    shutil.copyfile(rom, test_rom)  # separate EEPROM namespace from the app
+    # Handy keys EEPROM persistence by ROM basename. Give both rigs fresh,
+    # independent names so an earlier test or the KIT pass cannot autoload
+    # state into the table-WAV pass.
+    shutil.copyfile(rom, kit_rom)
+    shutil.copyfile(rom, wave_rom)
 
     env = os.environ.copy()
     env["RETROSHOT_RAM_OUT"] = ram_path
     env["RETROSHOT_RAM_POKE"] = "C02D:A5"
     env["RETROSHOT_RAM_POKE_AT"] = "100"
     subprocess.run(
-        [harness, core, test_rom, ppm, "300"],
+        [harness, core, kit_rom, ppm, "300"],
         env=env,
         check=True,
     )
@@ -62,8 +69,8 @@ def main():
              % (trace,))
     if any(slot not in (0, 1) for _ch, slot, _dac_off in trace[:4]):
         fail("DAC routing used an invalid slot: %r" % (trace,))
-    if tuple(ram[0xC025:0xC027]) != (1, 63):
-        fail("same-row S command did not reach slot 1 at rate 63")
+    if tuple(ram[0xC025:0xC027]) != (1, 1):
+        fail("same-row S01 command did not reach slot 1")
     trigger_counts = tuple(ram[0xC02B:0xC02D])
     # Slot ownership can legitimately skew once short one-shots finish, but
     # both streamers must have run and R02 must produce repeated triggers.
@@ -84,7 +91,7 @@ def main():
     env["RETROSHOT_RAM_OUT"] = wave_ram_path
     env["RETROSHOT_RAM_POKE"] = "C02D:A8"
     subprocess.run(
-        [harness, core, test_rom, wave_ppm, "300"], env=env, check=True)
+        [harness, core, wave_rom, wave_ppm, "300"], env=env, check=True)
     with open(wave_ram_path, "rb") as f:
         wave_ram = f.read()
     wave_count = wave_ram[0xC022]
@@ -101,7 +108,7 @@ def main():
         fail("captured table-WAV audio is silent")
 
     print("DAC symmetry: PASS — KIT + table-WAV on A/B/C/D, two-slot cap, "
-          "oldest steal, R retrigger, and same-row S rate")
+          "oldest steal, R retrigger, and same-row S source override")
 
 
 if __name__ == "__main__":

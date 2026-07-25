@@ -1240,7 +1240,9 @@ static void edit_instr_cell(unsigned char dir)
         draw_screen();                  /* every displayed value just changed */
         break;
     case IF_TSP:
-        if (dir == 0) in->tsp += 12;
+        if (in->type == IT_KIT)
+            instr_selector(dir);
+        else if (dir == 0) in->tsp += 12;
         else if (dir == 1) in->tsp -= 12;
         else if (dir == 2) --in->tsp;
         else ++in->tsp;

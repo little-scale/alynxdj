@@ -50,7 +50,7 @@ def put(pokes, address, values):
 
 
 def rig_pokes(note=37, cmd=0, param=0, hold=0x0F, env=0,
-              table=0xFF, itype=0, bank=0, vol=0x7F):
+              table=0xFF, itype=0, bank=0, vol=0x7F, tsp=0):
     """One isolated note on track A, safely shorter than its phrase loop."""
     chain = 31
     phrase = 63
@@ -64,7 +64,7 @@ def rig_pokes(note=37, cmd=0, param=0, hold=0x0F, env=0,
     put(pokes, PHRASES + phrase * 64, (note, instr, cmd, param))
     put(pokes, INSTRS + instr * 16,
         (itype, vol, env, hold, bank, 1, table, 0xFF,
-         0, 0, 0, 0, 0, 0, 0, 0))
+         0, 0, 0, 0, 0, 0, 0, tsp & 0xFF))
     put(pokes, GROOVES, (6,) + (0,) * 15)
     return pokes
 
@@ -504,6 +504,50 @@ def main():
              "%.3fs/%.3fs measured, %.3fs/%.3fs expected" %
              (long_dur, short_dur, long_expected, short_expected))
 
+    # KIT reuses TSP as source stepping while the DAC timer remains fixed:
+    # FF repeats every byte, 00 consumes every byte, 01 skips one, and 02
+    # skips three. A slow groove keeps the half-rate one-shot clear of the
+    # phrase loop; 4x also proves the five-piece refill budget holds.
+    for tsp, multiplier, label in (
+            (-1, 2.0, "half"), (0, 1.0, "normal"),
+            (1, 0.5, "double"), (2, 0.25, "quad")):
+        expected = long_expected * multiplier
+        p = rig_pokes(note=37 + long_member, itype=3, bank=0, tsp=tsp)
+        put(p, GROOVES, (30,) + (0,) * 15)
+        rate_ram, rate_wav = run(
+            harness, core, rom, build, "sample-rate-" + label, p,
+            tail_frames=max(90, int(expected * 75) + 30))
+        measured = sample_duration(rate_wav)
+        if abs(measured - expected) > 0.07:
+            fail("KIT TSP %02X %s rate measured %.3fs, expected %.3fs" %
+                 (tsp & 0xFF, label, measured, expected))
+        if rate_ram[PCM_UNDERRUN] or rate_ram[PCM_UNDERRUN + 1]:
+            fail("KIT TSP %02X %s rate underruns: %d/%d" %
+                 (tsp & 0xFF, label, rate_ram[PCM_UNDERRUN],
+                  rate_ram[PCM_UNDERRUN + 1]))
+
+    # S is a same-row, bounded source-step override rather than a raw Mikey
+    # timer reload. Start from a conflicting 4x patch rate to prove S replaces
+    # it with 1x/2x/4x/.5x while the fixed 5,208.333 Hz IRQ remains clean.
+    for srate, multiplier, label in (
+            (0, 1.0, "normal"), (1, 0.5, "double"),
+            (2, 0.25, "quad"), (3, 2.0, "half")):
+        expected = long_expected * multiplier
+        p = rig_pokes(note=37 + long_member, cmd=16, param=srate,
+                      itype=3, bank=0, tsp=2)
+        put(p, GROOVES, (30,) + (0,) * 15)
+        s_ram, s_wav = run(
+            harness, core, rom, build, "sample-s-%s" % label, p,
+            tail_frames=max(90, int(expected * 75) + 30))
+        measured = sample_duration(s_wav)
+        if abs(measured - expected) > 0.07:
+            fail("S%02X %s override measured %.3fs, expected %.3fs" %
+                 (srate, label, measured, expected))
+        if s_ram[PCM_UNDERRUN] or s_ram[PCM_UNDERRUN + 1]:
+            fail("S%02X %s override underruns: %d/%d" %
+                 (srate, label, s_ram[PCM_UNDERRUN],
+                  s_ram[PCM_UNDERRUN + 1]))
+
     # Kit 0 F4 exposed the cart-page seek-borrow bug in the original factory
     # bank. After playback, the ring must still contain the exact final source
     # bytes in their natural modulo-512 positions, regardless of later bank
@@ -610,7 +654,9 @@ def main():
           "pre-row phrase H with H00 chain advance, independent "
           "contiguous SONG groups, signed tick/row G periods with note "
           "continuity, cumulative signed B taps/reset, portable-bank sample "
-          "lengths, signed-shift KIT gain, exact "
+          "lengths, half/normal/double/quad KIT source rates and bounded S "
+          "overrides, "
+          "signed-shift KIT gain, exact "
           "F4 streaming, and uninterrupted sustained/redraw KIT + G08/SWP")
 
 

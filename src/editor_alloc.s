@@ -20,7 +20,7 @@
         .import  _t_row, _t_col, _edit_table
         .import  _draw_song_screen, _draw_chain_screen, _draw_phrase_screen
         .import  _stream_cancel, _trig_kit, _trig_member
-        .import  _dac_mode, _dac_off, _pcm_done, _dac_rate
+        .import  _dac_mode, _dac_off, _pcm_done
         .import  popa, popax, incsp2
         .importzp ptr1, ptr2, sp, tmp1, tmp2
 
@@ -45,6 +45,7 @@ VOICE_ENV      = 2
 VOICE_ENVLEVEL = 3
 VOICE_TABLE    = 29
 VOICE_TPOS     = 30
+VOICE_TBLTSP   = 31
 VOICE_INUM   = 32
 VOICE_SIZE   = 49
 
@@ -240,6 +241,28 @@ _resolve_table_override:
 @resolve_done:
         rts
 
+; Continue instr_selector's KIT TSP edit in the live helper window. ptr1 and
+; tmp1 were prepared by the resident entry point; returning exits to C.
+kit_rate_edit:
+        ldy     #15
+        lda     (ptr1),y
+        ldx     tmp1
+        beq     @kit_rate_up
+        cpx     #3
+        beq     @kit_rate_up
+        cmp     #$FF
+        beq     @kit_rate_done
+        dec     a                       ; 02->01->00->FF
+        bra     @kit_rate_store
+@kit_rate_up:
+        cmp     #2
+        beq     @kit_rate_done
+        inc     a                       ; FF->00->01->02
+@kit_rate_store:
+        sta     (ptr1),y
+@kit_rate_done:
+        rts
+
         .segment "CODE"
 _editor_zp_clear:
         ldx     #EDITOR_ZP_SIZE-1
@@ -323,6 +346,10 @@ _instr_selector:
         cmp     #1
         bne     :+
         jmp     @volume
+:
+        cmp     #5                      ; KIT uses TSP byte as source rate
+        bne     :+
+        jmp     kit_rate_edit
 :
         cmp     #11                     ; universal PAN field
         beq     @pan
@@ -549,8 +576,12 @@ _instr_selector:
 @type_step:
         .byte   3, 3, 0, 2              ; previous
         .byte   2, 2, 3, 0              ; next
+
+        .segment "MIDICODE"
 @packed_delta:
         .byte   16, $F0, $FF, 1         ; Up/Down/Left/Right
+
+        .segment "CODE"
 
 ; void sel_paint(void)
 ; Publish the visible selection rows for draw_char(), then repaint the
@@ -669,12 +700,11 @@ _ifield_screen_y:
         lda     #0
         rts
 
-        .segment "RODATA"
+        .segment "HICODE2"
 @field_layout:
         .byte   $F2, $F3, $74, $75, $76, $F7, $F8, $39
         .byte   $3A, $3B, $3C, $FD, $7E, $7F, $F1
 
-        .segment "HICODE1"
 @type_bit:
         .byte   $10, $20, $40, $80
 
@@ -724,7 +754,9 @@ _scale_pcm:
 ; void __fastcall__ pool_trigger(unsigned char voice, unsigned char kit,
 ;                                unsigned char member)
 ; IRQ-context latch. Resolve the slot's owner/instrument VOL, convert it to
-; 0/1/2 arithmetic shifts (or 4=mute), pack it above kit, publish last.
+; 0/1/2 arithmetic shifts (or 4=mute), and pack the KIT source stride above
+; the pad number. Playback consumes that latch only after the old stream has
+; retired, so a same-track retrigger never changes the outgoing sample rate.
 _pool_trigger:
         pha                             ; member (slots are internal 0/1 only)
         ldy     #1
@@ -755,15 +787,20 @@ _pool_trigger:
         asl     a
         asl     a
         sta     tmp1
+        lda     _voices+VOICE_TBLTSP,y
+        inc     a                       ; FF/00/01/02 -> lookup 0/1/2/3
+        and     #3                      ; legacy outliers fold to a safe rate
+        tay
+        lda     @kit_rate_bits,y
+        sta     tmp2
         plx                             ; DAC slot
         stz     _stream_cancel,x
         stz     _pcm_done,x
-        lda     #191                    ; canonical 5,208.333 Hz KIT rate
-        sta     _dac_rate,x             ; same-row S may override it
         lda     #1
         sta     _dac_mode,x             ; reserve until cart pump starts
         inc     $C02B,x
         pla                             ; member
+        ora     tmp2
         sta     _trig_member,x
         ldy     #0
         lda     (sp),y
@@ -771,8 +808,13 @@ _pool_trigger:
         sta     _trig_kit,x             ; publish last
         jmp     incsp2
 
+        .segment "MIDICODE"
 @voice_offset:
         .byte   0, VOICE_SIZE, VOICE_SIZE*2, VOICE_SIZE*3
+
+        .segment "HICODE2"
+@kit_rate_bits:
+        .byte   0, 8, 16, 32
 
         .segment "CODE"
 

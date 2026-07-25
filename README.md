@@ -39,7 +39,8 @@ decision log):
   selected-track TABLE play indicator; engine tick in the VBlank IRQ
   (tempo is render-independent)
 - All three voice types, with the **12-bit LFSR fully exposed** (raw taps
-  + seed per instrument), per-instrument TSP, LFSR SWP/free-running
+  + seed per instrument), LFSR/WAV transpose plus KIT source RATE in TSP,
+  LFSR SWP/free-running
   sine-VIB/repeating-decay TRM
   modulation, universal left/right PAN,
   and 32-byte wavetables; everything verified by
@@ -55,7 +56,10 @@ decision log):
   quality, kit-per-instrument. The
   factory bank is one reusable `.bin`, and custom banks carry between releases.
   KIT VOL provides full, half, quarter, and mute levels using signed PCM
-  shifts outside the audio interrupt.
+  shifts outside the audio interrupt. KIT TSP selects 0.5×, 1×, 2×, or 4×
+  playback by repeating/skipping source bytes without raising the DAC IRQ rate.
+  `Sxx` temporarily overrides that source speed with its low-two-bit
+  1×/2×/4×/0.5× state, still without changing the interrupt rate.
   KIT and table-WAV playback can target **any of the four tracks**; two
   timer-fed DAC voices may run concurrently, and a third steals the oldest.
   Full screen redraws cooperatively service their cart rings, so navigation
@@ -118,7 +122,9 @@ then exports a hardware-ready 2,048-byte save-format-v6 file. All processing is
 local and offline. Its patch editor offers LFSR/WAV/KIT; imported legacy type
 `01` patches are identified as LFSR and preserved unless deliberately changed.
 KIT bank is always `00`–`07` and initializes to `00`; WAV alone can use `--`
-for the hardware triangle.
+for the hardware triangle. For KIT, instrument byte 15 is a four-state source
+rate (`FF` 0.5×, `00` 1×, `01` 2×, `02` 4×); the viewer presents those states
+instead of signed transpose.
 
 ## Pico USB-MIDI bridge
 
@@ -198,7 +204,7 @@ scripting, and toolchain gotchas.
 - On stopped **INSTR**, tap **B** to audition the current instrument
 - **INSTR** hides and skips fields unused by the selected LFSR/WAV/KIT
   type; KIT bank defaults to `00`, while KIT VOL shows only its meaningful
-  coarse digit (`0-`–`7-`)
+  coarse digit (`0-`–`7-`) and KIT TSP steps through the four source rates
 - **Option 1 + B/A/←→** mute / solo / track select
 
 ## License / credits

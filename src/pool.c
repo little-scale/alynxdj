@@ -16,7 +16,7 @@
 #define RING1      ((unsigned char *)0xD200)
 #define RING_SIZE  512u
 #define PUMP_CHUNK 64
-#define PUMP_PASSES 4
+#define PUMP_PASSES 5
 
 extern unsigned char *pcm_ptr[NDAC];    /* ring tails (IRQ-owned) */
 #pragma zpsym("pcm_ptr")
@@ -169,6 +169,9 @@ static void do_trigger(unsigned char voice, unsigned char kit,
     cart_stream = EMPTY;                /* directory seek leaves sample data */
     cart_seek(POOL_BLOCK, 4 + kit * 40 + (member & 7) * 5);
     cart_read(e, 5);
+    /* All rates stop on a four-byte boundary. The discarded zero-to-three
+     * tail bytes are inaudible and prevent 2x/4x from leaping over head. */
+    e[3] &= 0xFC;
     len = e[3] | ((unsigned)e[4] << 8);
     if (!len) {
         dac_stop(voice);
@@ -184,7 +187,7 @@ static void do_trigger(unsigned char voice, unsigned char kit,
     pcm_done[voice] = 0;
     pcm_ptr[voice] = base;
     pcm_head[voice] = base;
-    /* Prepare 256 bytes before starting (~49 ms at the KIT rate).  The
+    /* Prepare 320 bytes before starting (~61 ms at the KIT rate).  The
      * caller immediately pumps again after the timer starts, restoring the
      * full cushion without delaying the audible trigger behind all 511
      * bytes of optional headroom. */
