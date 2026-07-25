@@ -24,6 +24,7 @@ WALK0 = SD + 0x1E00
 W_PROW = WALK0 + 6
 V_ENV_PHASE = VOICE0 + 2
 V_ENV_LEVEL = VOICE0 + 3
+V_BASE_NOTE = VOICE0
 V_TAP_CUR = VOICE0 + 20
 V_TPOS = VOICE0 + 30
 G_WAIT0 = 0xC0FC
@@ -33,7 +34,7 @@ PCM_TRIGGERED = 0xC02B
 RING0 = 0xD000
 RING_SIZE = 512
 POOL_FILE_OFFSET = 64 + 45 * 1024
-PCM_RATE = 7812.5
+PCM_RATE = 1_000_000 / 192
 
 
 def fail(message):
@@ -99,10 +100,19 @@ def sample_duration(path):
         rate = wav.getframerate()
         samples = np.frombuffer(wav.readframes(wav.getnframes()), "<i2")
     samples = samples.reshape(-1, 2).mean(axis=1)
-    active = np.flatnonzero(np.abs(samples) > 100)
+    active = np.flatnonzero(np.abs(samples) > 20)
     if not len(active):
         fail("sample capture %s is silent" % os.path.basename(path))
     return (active[-1] - active[0] + 1) / rate
+
+
+def packed_duration(sample):
+    """Audible span after signed 8-bit quantization (ignore ±1 LSB tails)."""
+    values = np.frombuffer(sample, np.int8).astype(np.int16)
+    active = np.flatnonzero(np.abs(values) > 1)
+    if not len(active):
+        return 0
+    return (active[-1] - active[0] + 1) / PCM_RATE
 
 
 def pool_sample(rom, kit, member):
@@ -134,12 +144,45 @@ def main():
         fail("TBS 0 advanced to table state $%02X, expected row 1" %
              ram[V_TPOS])
 
-    # TBS 1 is the fastest tick mode and reaches/sticks at row F.
+    # TBS 1 is the fastest tick mode and must run beyond row F rather than
+    # sticking there. The deterministic tail spans more than one table pass.
     p = rig_pokes(hold=0x1F, table=0)
     put(p, TABLES, bytes(64))
     ram, _ = run(harness, core, rom, build, "tbs-fast", p)
-    if (ram[V_TPOS] & 0x0F) != 15:
-        fail("TBS 1 did not advance to table row F: $%02X" % ram[V_TPOS])
+    if (ram[V_TPOS] & 0x0F) == 15:
+        fail("TBS 1 stuck at table row F instead of wrapping: $%02X" %
+             ram[V_TPOS])
+
+    # TBS 0 is a note-clocked cycle: after a complete 16-note pass it wraps
+    # F->0 without needing H. Timed TBS 1-F use the same full-table wrap.
+    p = rig_pokes(hold=0x0F, table=0)
+    put(p, TABLES, bytes(64))
+    phrase = PHRASES + 63 * 64
+    for row in range(16):
+        put(p, phrase + row * 4, (37, 31, 0, 0))
+    ram, _ = run(harness, core, rom, build, "tbs-note-loop", p,
+                 tail_frames=165)
+    if ram[0xC048 + 63] < 1:
+        fail("TBS 0 loop rig did not complete a phrase pass")
+    expected_tpos = (ram[W_PROW] + 1) & 0x0F
+    if ram[V_TPOS] != expected_tpos:
+        fail("TBS 0 stuck after its first pass: row %d, state $%02X, "
+             "expected $%02X" %
+             (ram[W_PROW], ram[V_TPOS], expected_tpos))
+
+    # J matches SMSGGDJ/GENMDDJ: high nibble is the mod-4 pass mask and
+    # low nibble is signed transpose. On pass zero J17 applies +7, while
+    # J27 leaves the note unchanged because mask bit zero is clear.
+    ram, _ = run(harness, core, rom, build, "jump-mask-first",
+                 rig_pokes(cmd=21, param=0x17))
+    if ram[V_BASE_NOTE] != 44:
+        fail("J17 produced note %d, expected 37 + 7 = 44 "
+             "(mask/transpose nibbles reversed?)" % ram[V_BASE_NOTE])
+    ram, _ = run(harness, core, rom, build, "jump-mask-clear",
+                 rig_pokes(cmd=21, param=0x27))
+    if ram[V_BASE_NOTE] != 37:
+        fail("J27 transposed pass zero to note %d despite mask bit zero "
+             "being clear" % ram[V_BASE_NOTE])
 
     # TABLE follows the selected top-bar track and accents its active macro
     # row. Drill SONG -> CHAIN -> PHRASE -> INSTR, start the phrase there,
@@ -381,8 +424,8 @@ def main():
     kit0 = [pool_sample(rom, 0, member) for member in range(8)]
     long_member = max(range(8), key=lambda member: len(kit0[member]))
     short_member = min(range(8), key=lambda member: len(kit0[member]))
-    long_expected = len(kit0[long_member]) / PCM_RATE
-    short_expected = len(kit0[short_member]) / PCM_RATE
+    long_expected = packed_duration(kit0[long_member])
+    short_expected = packed_duration(kit0[short_member])
     long_p = rig_pokes(note=37 + long_member, itype=3, bank=0)
     short_p = rig_pokes(note=37 + short_member, itype=3, bank=0)
     # Fifteen-tick rows keep the 16-row phrase loop beyond even the current
@@ -446,7 +489,7 @@ def main():
 
     # Sustained hardware-listening workload: the longest kit-0 sample is
     # retriggered every four six-tick rows while a separate LFSR voice runs
-    # patch SWP plus row-rate G08. This keeps the 7.8 kHz stream continuously
+    # patch SWP plus row-rate G08. This keeps the 5.208 kHz stream continuously
     # active and is the case that justified removing channel metering.
     p = {}
     put(p, SONG, (31, 30, 0xFF, 0xFF,
@@ -501,8 +544,10 @@ def main():
         fail("screen redraws lost/deferred KIT starts: triggered %r, "
              "started %r" % (triggered, started))
 
-    print("hardware fixes: PASS — TBS note/tick clocks and selected-track "
-          "TABLE playhead, finite table VOL envelope, HOLD-F sustain/K exit, "
+    print("hardware fixes: PASS — sibling-order J variation, wrapping TBS "
+          "note/tick clocks and "
+          "selected-track TABLE playhead, finite table VOL "
+          "envelope, HOLD-F sustain/K exit, "
           "pre-row phrase H, independent "
           "contiguous SONG groups, signed tick/row G periods with note "
           "continuity, cumulative signed B taps/reset, portable-bank sample "

@@ -71,6 +71,11 @@ fixed channel-C/channel-D sample-bus details recorded in M7/M8.**
 | M31 | ✅ **FULL-ROW BLOCK SELECTION FEEDBACK** — SONG, CHAIN, and PHRASE now invert every rendered field on each selected row instead of marking only its index. One shared glyph-level selection rule keeps the three hierarchy renderers consistent, using two transient bytes beside the HELP page rather than song/save state. Captured-image regressions enter and extend block mode on all three screens and verify that every field is highlighted while the next row remains ordinary. | Multi-row edits read as ranges at a glance without changing clipboard semantics |
 | M32 | ✅ **TOTAL KIT BANK SELECTION** — KIT bank now always resolves to `00`–`07`: changing TYPE to KIT initializes an unset selector to `00`, viewing a historical KIT-with-`FF` repairs it, and decrementing `00` clamps rather than exposing `--`. WAV preserves `--` as its hardware-triangle mode. The standalone SRAM viewer mirrors the ROM rule, and editor/browser regressions pin both initialization and the lower bound without changing save-format v6. | Every visible KIT state names a real sample bank |
 | M33 | ✅ **COARSE-ONLY KIT VOLUME UI** — KIT VOL now renders as `0-`–`7-`, blocks Left/Right fine editing, and uses Up/Down for the meaningful high nibble. Playback classifies gain from that nibble alone, making all sixteen hidden low-nibble values exactly equivalent; `0-` is mute, `1-` quarter, `2-`–`5-` half, and `6-`/`7-` full. The SRAM viewer presents the same eight-position selector, while editor and exact ring-byte regressions cover editing plus low-nibble invariance. | The screen exposes only resolution the cheap PCM scaler can actually produce |
+| M34 | ✅ **LOW-IRQ FACTORY SAMPLE FORMAT** — KIT's canonical rate is now 5,208.333 Hz (1 MHz timer reload 191), reducing its timer-IRQ load by one third and extending a u16 slot to ~12.58 seconds. `PL` header byte 3 identifies the new single supported format; ROM builds and the standalone browser reject mismatched banks, and each trigger restores the canonical rate before same-row `S`. The factory bank is regenerated from the current WAV tree at 79,816 bytes. Its new kit-00 sources exposed and fixed a latent converter bug: 24-bit PCM is now decoded as one signed sample per three bytes rather than three bogus 8-bit samples; 8/16/32-bit integer WAVs are also explicit. | Spend sample bandwidth only where hardware listening proves it useful |
+| M35 | ✅ **OPTION-1 TRANSPORT TOGGLE** — A clean Option-1 tap now stops an active PLAY or WAIT transport; while stopped it retains the contextual all-track SONG/CHAIN/PHRASE start introduced in M24. Option-1 track select, mute, and solo remain held actions and suppress the release-time toggle. A scripted RAM regression covers start followed by stop. | Give the dedicated all-track gesture conventional one-button transport behavior without disturbing its modifier layer |
+| M36 | ✅ **LOUD FACTORY SAMPLE MASTERING** — WAV-to-bank conversion retains peak normalization, then applies +12.00 dB (3.981×) into tanh soft saturation before signed 8-bit quantization. The resulting 79,816-byte portable factory bank is mastered offline, so KIT playback gains average body level without spending another Lynx cycle; exact probe bytes pin the gain/order/nonlinearity. The lower 5.208 kHz rate is now confirmed to materially improve real-hardware performance. | Use available offline processing to make the constrained 8-bit sample path confidently loud while preserving the runtime budget |
+| M37 | ✅ **CYCLIC TABLES AT EVERY SPEED** — TBS 0 wraps automatically from table row `0F` to `00` as it advances once per note; timed TBS 1–F now use the same full-table wrap after each N-tick step, matching SMSGGDJ and GENMDDJ rather than ALYNXDJ's accidental stick-at-end divergence. `Hxx` still supplies shorter or non-zero loop points. The TABLE playhead reports the wrapped F state, and engine regressions prove both note- and tick-clock modes run beyond their first pass. | Make tables continuous automation by default while reserving H for intentional loop shape |
+| M38 | ✅ **SIBLING-ORDER J VARIATION** — `Jxy` now matches SMSGGDJ and GENMDDJ: x is the mod-4 phrase-pass mask and y is signed −8…+7 transpose. The demo's `J51/J71` become equivalent `J15/J17`, HELP/manual/contract state the order explicitly, and RAM regressions distinguish selected `J17` from unselected `J27` on pass zero. Command IDs and save structure remain unchanged. | Make command muscle memory and shared song concepts agree across all three trackers |
 
 Commit at each milestone boundary. Hardware-verify **M6 (LFSR timbres)** and
 **M7 (PCM feed)** early — Handy is a 20-year-old core; its polynomial-counter
@@ -84,7 +89,8 @@ second-opinion core.
   FILES meter and PURGE workflow honest; never truncate. Physical carts must
   actually provide/emulate a 93C86; the 128-byte-93C46-only ElCheapoSD can run
   ALYNXDJ but cannot persist its songs.
-- **PCM IRQ jitter/cost (Q2)** — 2 voices at 8 kHz ≈ 20 % CPU in IRQs on a
+- **PCM IRQ jitter/cost (Q2)** — 2 KIT voices at 5.208 kHz are approximately
+  12 % CPU in IRQs on a
   4 MHz 6502; display DMA steals make jitter worse. Mitigate: asm handler,
   two asm-fed rings; the policy/regression is fixed, final margin is a
   hardware stress pass.
@@ -93,9 +99,9 @@ second-opinion core.
   list only after silicon listening.
 - **cc65 editor sluggishness (D2)** — if screen paints lag, move the dirty-
   cell renderer fully to asm before blaming the design.
-- **64 KB code packing** — SONG and MAIN remain exact; HICODE1 is exact,
-  HICODE3 has 1 byte, HICODE2 has 3, HELPCODE has 29, and the expanded
-  `$C100` cold/live helper overlay has 1. The C stack remains 512 bytes.
+- **64 KB code packing** — SONG remains exact; MAIN has 54 bytes, HICODE1 has
+  3 bytes, HICODE3 has 1 byte, HICODE2 has 3, HELPCODE has 29, and the
+  expanded `$C100` cold/live helper overlay has 4. The C stack remains 512 bytes.
   Growth needs measured placement and must
   respect the MIDI/save-buffer and MIDI/phrase-counter overlay lifetimes.
 - **Scope creep** — echo (`Q`), user instrument bank, ComLynx song exchange
@@ -104,7 +110,7 @@ second-opinion core.
 
 ## Status
 
-**M0–M33 implemented as of 2026-07-25.** The tracker has all eleven screens,
+**M0–M38 implemented as of 2026-07-25.** The tracker has all eleven screens,
 the full command/editor workflow, ComLynx OUT/IN/IN24, packed 93C86 persistence,
 four genuinely symmetric logical/hardware tracks, receive-only USB-MIDI-over-
 ComLynx takeover, persistent TSP on every

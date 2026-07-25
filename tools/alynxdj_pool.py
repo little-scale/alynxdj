@@ -2,11 +2,16 @@
 """Build and validate portable ALYNXDJ sample banks (DESIGN §10).
 
 Scans the sample kit directories (8 WAVs each, sorted), converts to mono
-8-bit signed PCM at PCM_RATE, and emits a self-contained ``.bin`` bank:
+8-bit signed PCM at PCM_RATE, peak-normalizes, applies +12 dB into a tanh
+soft limiter, and emits a self-contained ``.bin`` bank:
 
-    +0  'P' 'L'  nkits  pad
+    +0  'P' 'L'  nkits  rate-id
     +4  nkits * 8 * { u24 offset-from-pool-start, u16 length }
     ..  sample bytes
+
+Rate ID 1 is the canonical 5,208.333... Hz format (1 MHz timer clock,
+reload 191). Other rate IDs are deliberately rejected so a mismatched bank
+cannot play at the wrong pitch.
 
 The Makefile injects this bank verbatim at cart block 45.  The same file can
 be imported/exported by sample-patch-browser.html and supplied to a later ROM
@@ -22,10 +27,39 @@ import wave
 
 import numpy as np
 
-PCM_RATE = 7812.5
-SLOT_CAP = 65535            # u16 directory length; ~8.39 s at PCM_RATE
+RATE_ID = 1
+PCM_RATE = 1_000_000 / 192
+SLOT_CAP = 65535            # u16 directory length; ~12.58 s at PCM_RATE
 POOL_CAPACITY = (250 - 45) * 1024
 TRIM_DB = -48.0
+FACTORY_GAIN_DB = 12.0
+FACTORY_GAIN = 10 ** (FACTORY_GAIN_DB / 20)
+
+
+def decode_pcm(raw, sample_width):
+    """Decode little-endian integer WAV PCM to normalized float32."""
+    if sample_width == 1:
+        return (np.frombuffer(raw, np.uint8).astype(np.float32) - 128) / 128.0
+    if sample_width == 2:
+        return np.frombuffer(raw, "<i2").astype(np.float32) / 32768.0
+    if sample_width == 3:
+        octets = np.frombuffer(raw, np.uint8).reshape(-1, 3).astype(np.int32)
+        values = octets[:, 0] | octets[:, 1] << 8 | octets[:, 2] << 16
+        values = (values ^ 0x800000) - 0x800000
+        return values.astype(np.float32) / 8388608.0
+    if sample_width == 4:
+        return np.frombuffer(raw, "<i4").astype(np.float32) / 2147483648.0
+    raise ValueError("unsupported %d-bit PCM WAV" % (sample_width * 8))
+
+
+def master_pcm(samples):
+    """Peak-normalize, apply the canonical factory gain, and tanh-limit."""
+    peak = np.abs(samples).max() if len(samples) else 0.0
+    if not peak:
+        peak = 1.0
+    normalized = samples / peak * (120.0 / 127.0)
+    driven = np.tanh(normalized * FACTORY_GAIN)
+    return np.clip(np.round(driven * 127), -127, 127).astype(np.int8)
 
 
 def load(path):
@@ -33,10 +67,7 @@ def load(path):
     n, ch, sw, fr = (w.getnframes(), w.getnchannels(),
                      w.getsampwidth(), w.getframerate())
     raw = w.readframes(n)
-    if sw == 2:
-        d = np.frombuffer(raw, np.int16).astype(np.float32) / 32768.0
-    else:
-        d = (np.frombuffer(raw, np.uint8).astype(np.float32) - 128) / 128.0
+    d = decode_pcm(raw, sw)
     if ch > 1:
         d = d.reshape(-1, ch).mean(axis=1)
     t = np.arange(int(len(d) * PCM_RATE / fr)) * (fr / PCM_RATE)
@@ -46,8 +77,7 @@ def load(path):
     if len(keep):
         d = d[: min(keep[-1] + int(0.01 * PCM_RATE), len(d))]
     d = d[:SLOT_CAP]
-    peak = np.abs(d).max() or 1.0
-    return np.clip(np.round(d / peak * 120), -127, 127).astype(np.int8)
+    return master_pcm(d)
 
 
 def build(root, out):
@@ -69,7 +99,7 @@ def build(root, out):
     off = dirsize
     hdr = bytearray(b"PL")
     hdr.append(nk)
-    hdr.append(0)
+    hdr.append(RATE_ID)
     data = bytearray()
     for row in slots:
         for s in row:
@@ -81,8 +111,9 @@ def build(root, out):
     validate(bank, POOL_CAPACITY)
     with open(out, "wb") as f:
         f.write(bank)
-    print("sample bank: %d kits (%s), %d bytes" %
-          (nk, ", ".join(kits), off))
+    print("sample bank: %d kits (%s), %d bytes at %.3f Hz, "
+          "+%.2f dB tanh mastered" %
+          (nk, ", ".join(kits), off, PCM_RATE, FACTORY_GAIN_DB))
 
 
 def _u16(data, pos):
@@ -100,6 +131,8 @@ def validate(data, capacity=POOL_CAPACITY):
     nk = data[2]
     if not 1 <= nk <= 8:
         raise ValueError("sample bank must declare 1 to 8 kits")
+    if data[3] != RATE_ID:
+        raise ValueError("sample bank has unsupported PCM rate id %d" % data[3])
     directory_size = 4 + nk * 8 * 5
     if len(data) < directory_size:
         raise ValueError("sample-bank directory is truncated")
@@ -128,6 +161,12 @@ def validate(data, capacity=POOL_CAPACITY):
     return nk, len(data)
 
 
+def rate_for_bank(data, capacity=POOL_CAPACITY):
+    """Return the PCM rate declared by a validated PL bank."""
+    validate(data, capacity)
+    return PCM_RATE
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("samplesroot", nargs="?")
@@ -139,9 +178,11 @@ def main():
         if args.samplesroot or args.output:
             parser.error("--validate cannot be combined with build paths")
         with open(args.validate, "rb") as source:
-            kits, used = validate(source.read(), args.capacity)
-        print("sample bank valid: %d kits, %d bytes / %d capacity" %
-              (kits, used, args.capacity))
+            data = source.read()
+        kits, used = validate(data, args.capacity)
+        rate = rate_for_bank(data, args.capacity)
+        print("sample bank valid: %d kits, %d bytes / %d capacity, %.3f Hz" %
+              (kits, used, args.capacity, rate))
     else:
         if not args.samplesroot or not args.output:
             parser.error("provide <samplesroot> <out.bin>, or --validate <bank.bin>")

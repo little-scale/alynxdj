@@ -16,7 +16,7 @@
         .import  _screen, _s_row, _c_row, _p_row, _sel_anchor
         .import  _draw_song_screen, _draw_chain_screen, _draw_phrase_screen
         .import  _stream_cancel, _trig_kit, _trig_member
-        .import  _dac_mode, _dac_off, _pcm_done
+        .import  _dac_mode, _dac_off, _pcm_done, _dac_rate
         .import  popa, popax, incsp2
         .importzp ptr1, ptr2, sp, tmp1, tmp2
 
@@ -289,8 +289,9 @@ _sel_paint:
 
 ; unsigned char __fastcall__ engine_table_cursor(unsigned table_track)
 ; AX arrives as table:track.  tpos normally points one step beyond the row
-; most recently applied, so fold it back for the display.  Row F sticks and
-; is therefore kept as F.  Return $FF if this track/table is not sounding.
+; most recently applied, so fold it back for the display.  Low row zero is
+; the full-table F->0 wrap for every clock mode.  Return $FF if this
+; track/table is not sounding.
 _engine_table_cursor:
         stx     ptr1+1                  ; requested table
         ldx     $C011                   ; eng_mode
@@ -315,9 +316,10 @@ _engine_table_cursor:
         bne     @no_table
         lda     _voices+VOICE_TPOS,y
         and     #$0F
-        beq     @done
-        cmp     #$0F
-        beq     @done
+        bne     @nonzero
+        lda     #$0F                    ; every mode just applied row F
+        rts
+@nonzero:
         dec     a
 @done:
         rts
@@ -398,13 +400,11 @@ _scale_pcm:
 ; IRQ-context latch. Resolve the slot's owner/instrument VOL, convert it to
 ; 0/1/2 arithmetic shifts (or 4=mute), pack it above kit, publish last.
 _pool_trigger:
-        sta     tmp2                    ; member
+        pha                             ; member (slots are internal 0/1 only)
         ldy     #1
         lda     (sp),y
-        cmp     #2
-        bcs     @kit_done
         tax                             ; voice
-        stx     ptr2                    ; retain DAC slot
+        phx                             ; retain DAC slot
         lda     _dac_off,x
         lsr     a
         lsr     a
@@ -429,19 +429,20 @@ _pool_trigger:
         asl     a
         asl     a
         sta     tmp1
-        ldx     ptr2                    ; DAC slot
+        plx                             ; DAC slot
         stz     _stream_cancel,x
         stz     _pcm_done,x
+        lda     #191                    ; canonical 5,208.333 Hz KIT rate
+        sta     _dac_rate,x             ; same-row S may override it
         lda     #1
         sta     _dac_mode,x             ; reserve until cart pump starts
         inc     $C02B,x
-        lda     tmp2
+        pla                             ; member
         sta     _trig_member,x
         ldy     #0
         lda     (sp),y
         ora     tmp1
         sta     _trig_kit,x             ; publish last
-@kit_done:
         jmp     incsp2
 
 @voice_offset:

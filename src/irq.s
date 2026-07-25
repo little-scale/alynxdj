@@ -65,7 +65,7 @@ _pcm_done: .res 2
 _dac_mode: .res 2               ; DAC_NONE / DAC_SAMPLE / DAC_WAVE
 _dac_off: .res 2                ; owning channel * 8
 _dac_muted: .res 2              ; consume normally, write zero when muted
-_dac_rate: .res 2               ; KIT timer reload (default 127)
+_dac_rate: .res 2               ; sampled-voice timer reload
 in_tick:  .res 1                ; VBL tick re-entrancy guard
 zpbuf:    .res 32               ; cc65 runtime zp save (tick runs C in IRQ)
 wav_pos:  .res 2

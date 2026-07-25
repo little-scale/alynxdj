@@ -231,7 +231,7 @@
     const OFF = { song:0, chains:512, phrases:1536, instruments:5632, tables:6144, grooves:7168, waves:7424 };
     const SIZES = { song:512, chains:1024, phrases:4096, instruments:512, tables:1024, grooves:256, waves:256 };
     const COMMANDS = ["—","A","C","D","G","H","K","O","P","V","W","X","F","L","N","R","S","Z","E","T","I","J","B"];
-    const COMMAND_NAMES = ["None","Run table","Chord","Delay","Tap glide","Halt / loop","Kill","Pan","Pitch bend","Vibrato","Row length","Volume","Finetune","Slide","Taps override","Retrigger","Sample rate","Probability","Envelope","Tempo","Iteration","Variation","Taps offset"];
+    const COMMAND_NAMES = ["None","Run table","Chord","Delay","Tap glide","Halt / loop","Kill","Pan","Pitch bend","Vibrato","Row length","Volume","Finetune","Slide","Taps override","Retrigger","Sample rate","Probability","Envelope","Tempo","Iteration","Variation: mask x / signed transpose y","Taps offset"];
     const TYPES = [[0,"LFSR"],[2,"WAV"],[3,"KIT"]];
     const ENV_RATE = [0,127,64,43,32,26,22,16,12,8,6,5,4,3,2,1];
     const state = { fileName:"", original:null, data:null, sourceVersion:6, sourcePacked:0, decodedLength:0, sourceChecksum:0, dirty:false, migrated:false, config:null, tab:"overview", selection:{chains:0,phrases:0,instruments:0,tables:0,grooves:0,waves:0} };

@@ -468,7 +468,9 @@ static void table_step(unsigned char ch)
     if (tr->cmd == CMD_A)               /* A armed its new row 0 (even same #) */
         return;
     if (row < PHRASE_ROWS - 1)
-        ++row;                           /* stick at the last row */
+        ++row;
+    else
+        row = 0;                         /* every table clock cycles 0F->00 */
     v->tpos = row | (tbs << 4);
 }
 
@@ -502,7 +504,6 @@ static void trigger(unsigned char ch, unsigned char note, unsigned char inum)
         v->sh_pan = in->pan;
         (&MIKEY.attena)[ch] = in->pan;
         v->dirty = 0;
-        dac_rate_set(slot, 127);         /* S on this row may override it */
         pool_trigger(slot, in->wave < 8 ? in->wave : 0,
                      ((note - 1) % 12) & 7);
         return;
@@ -854,8 +855,8 @@ static void row_start(unsigned char ch)
         && !(s->param & (1 << (play_cnt[w->phrase] & 7))))
         n = 0;                                  /* not this pass */
     if (s->cmd == CMD_J && n
-        && (s->param & (1 << (play_cnt[w->phrase] & 3)))) {
-        unsigned char x = s->param >> 4;
+        && ((s->param >> 4) & (1 << (play_cnt[w->phrase] & 3)))) {
+        unsigned char x = s->param & 0x0F;
         int jn = (int)n + ((x < 8) ? (int)x : (int)x - 16);
         if (jn >= NOTE_MIN && jn <= NOTE_MAX)
             n = (unsigned char)jn;
@@ -1119,7 +1120,7 @@ void engine_init(void)
     for (slot = 0; slot < NDAC; ++slot) {
         dac_owner[slot] = EMPTY;
         dac_off[slot] = slot << 3;
-        dac_rate[slot] = 127;
+        dac_rate[slot] = 191;
     }
     stop_nolock();
 }

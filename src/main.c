@@ -228,7 +228,7 @@ void song_demo(void)
     sd.phrases[20][3].cmd = CMD_Z;    sd.phrases[20][3].param = 0x90;
     sd.phrases[20][6].note = N(2,4);  sd.phrases[20][6].instr = 10;
     sd.phrases[20][8].note = N(2,9);  sd.phrases[20][8].instr = 10;
-    sd.phrases[20][8].cmd = CMD_J;    sd.phrases[20][8].param = 0x51;
+    sd.phrases[20][8].cmd = CMD_J;    sd.phrases[20][8].param = 0x15;
     sd.phrases[20][11].note = N(2,7); sd.phrases[20][11].instr = 10;
     sd.phrases[20][14].note = N(2,9); sd.phrases[20][14].instr = 10;
     sd.phrases[20][14].cmd = CMD_Z;   sd.phrases[20][14].param = 0x70;
@@ -422,7 +422,7 @@ void song_demo(void)
     sd.phrases[17][0].note = N(4,0); sd.phrases[17][0].instr = 0;
     sd.phrases[17][0].cmd = CMD_I;  sd.phrases[17][0].param = 0x55;
     sd.phrases[18][0].note = N(4,0); sd.phrases[18][0].instr = 5;
-    sd.phrases[18][0].cmd = CMD_J;  sd.phrases[18][0].param = 0x71;
+    sd.phrases[18][0].cmd = CMD_J;  sd.phrases[18][0].param = 0x17;
 
     /* Symmetric-DAC regression rig (song row 29).  Tracks 1/2 start two
      * simultaneous KIT streams; tracks 3/4 then force oldest-first steals.

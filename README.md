@@ -26,8 +26,8 @@ as a multi-drop sync bus.
 
 ## Status
 
-**V0.53 — LFSR identity and focused instrument/editor polish** (runs on a real
-Atari Lynx),
+**V0.54 — lower-overhead samples and sequencer compatibility polish** (runs
+on a real Atari Lynx),
 feature-complete against the design brief with an editor/UX pass on top
 (see [CHANGELOG.md](CHANGELOG.md) for what changed, [PLAN.md](PLAN.md) for
 the milestone table, [DESIGN.md](DESIGN.md) for the design contract and
@@ -90,8 +90,9 @@ set per-sample gain from −24 to +24 dB, optionally apply tanh soft saturation,
 drag non-destructive IN/OUT points over each waveform to trim it,
 import/export a complete portable sample-bank `.bin`, and save a new `.lnx`
 image. Processing affects browser audition, bank export, and the patched
-7.8125 kHz signed 8-bit PCM; no files are uploaded. Each slot can be up to
-65,535 bytes (~8.39 seconds), while the complete bank has 209,920 bytes.
+5,208.333 Hz signed 8-bit PCM; no files are uploaded. The converter accepts
+8/16/24/32-bit integer WAVs. Each slot can be up to 65,535 bytes
+(~12.58 seconds), while the complete bank has 209,920 bytes.
 
 ## Song file viewer
 
@@ -139,6 +140,10 @@ make test     # ROM, sound, editor, HELP, save/viewer, samples, and MIDI/sync
 make pico     # companion RP2040 UF2; requires PICO_SDK_PATH + Arm toolchain
 ```
 
+Factory sample conversion resamples to 5,208.333 Hz, peak-normalizes, then
+applies **+12.00 dB into tanh soft saturation** before signed 8-bit
+quantization. The processing is baked into the bank and has no runtime cost.
+
 The standard image remains 256 KB: it provides 209,920 bytes for sample-bank
 data, followed by the protected HELP and MIDI blocks.
 Although Lynx carts can be 512 KB, that size uses 2 KB cart blocks instead of
@@ -163,8 +168,8 @@ scripting, and toolchain gotchas.
 - **D-pad** move cursor · **B** edit/insert
 - **A held + d-pad** screen map · **A held + B** play/stop
 - **A held + Up from TABLE** HELP · plain d-pad turns pages · **A+Down** returns
-- **Option 1 tap** restart all four tracks from the selected
-  SONG/CHAIN/PHRASE context
+- **Option 1 tap** stop active/WAIT transport, or while stopped start all four
+  tracks from the selected SONG/CHAIN/PHRASE context
 - **B held + d-pad** edit value · **B held + A** cut · **B double-tap** paste,
   mint the next blank/unreferenced object on an empty SONG/CHAIN cell, or
   slim-clone an occupied one

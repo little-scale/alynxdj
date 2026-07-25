@@ -196,8 +196,9 @@
     const PRE_HELP_POOL_END = 64 + 254 * 1024; // v0.51 layout, before HELP
     const HELP_DATA_OFFSET = 64 + 251 * 1024;
     const POOL_CAPACITY = POOL_END - POOL_OFFSET;
-    const PCM_RATE = 7812.5;
-    const SLOT_CAP = 65535;                    // u16 sample length, about 8.39 s
+    const RATE_ID = 1;
+    const PCM_RATE = 1000000 / 192;             // timer reload 191
+    const SLOT_CAP = 65535;                     // u16 sample length, about 12.58 s
     const GAIN_MIN = -24;
     const GAIN_MAX = 24;
     const KIT_NAMES = ["808","909","C78","606","Speech 1","Speech 2","Speech 3","Speech 4"];
@@ -225,6 +226,8 @@
         fail(`No ALYNXDJ PL sample bank was found in ${sourceName}.`);
       const kitCount = bytes[poolOffset+2];
       if (kitCount < 1 || kitCount > 8) fail(`${sourceName} declares ${kitCount} sample kits; ALYNXDJ supports 1–8.`);
+      if (bytes[poolOffset+3] !== RATE_ID)
+        fail(`${sourceName} does not use ALYNXDJ's 5,208.333 Hz sample-bank format.`);
       const directorySize = 4 + kitCount * 8 * 5;
       if (directorySize > capacity) fail(`${sourceName}'s sample directory is truncated.`);
       const kits = [];
@@ -286,7 +289,7 @@
       if (used > capacity)
         fail(`The sample pool needs ${formatBytes(used)}, but the ROM has ${formatBytes(capacity)} available.`);
       const pool = new Uint8Array(used);
-      pool.set([80,76,kits.length,0]);
+      pool.set([80,76,kits.length,RATE_ID]);
       let entry=4, sampleOffset=directorySize;
       for (const kit of kits) for (const sample of kit) {
         writeU24(pool,entry,sampleOffset); writeU16(pool,entry+3,sample.length);
@@ -375,7 +378,7 @@
     function bankOutputName(name) { return `${name.replace(/\.(?:lnx|bin)$/i,"")||"alynxdj"}-samples.bin` }
 
     globalThis.ALynxSamplePatcherCore = {
-      ROM_BYTES,POOL_OFFSET,LEGACY_POOL_END,POOL_END,PRE_HELP_POOL_END,POOL_CAPACITY,PCM_RATE,SLOT_CAP,GAIN_MIN,GAIN_MAX,
+      ROM_BYTES,POOL_OFFSET,LEGACY_POOL_END,POOL_END,PRE_HELP_POOL_END,POOL_CAPACITY,RATE_ID,PCM_RATE,SLOT_CAP,GAIN_MIN,GAIN_MAX,
       parseRom,parseBank,buildPool,patchRom,convertChannels,processSample,prepareSample
     };
     if (typeof document === "undefined") return;
@@ -444,7 +447,7 @@
           ${input(".lnx,application/octet-stream","romInput")}
         </div>
         <div class="spec-row">
-          <span><b>64</b> sample slots</span><span><b>7.8125 kHz</b> signed 8-bit PCM</span><span><b>8.388 s</b> maximum per slot</span>
+          <span><b>64</b> sample slots</span><span><b>5.208 kHz</b> signed 8-bit PCM</span><span><b>12.583 s</b> maximum per slot</span>
         </div>
       </section>`;
     }
@@ -506,7 +509,7 @@
       app.innerHTML=`<header class="hero"><div><p class="eyebrow">ALYNXDJ / CART LAB</p><h1>Sample Patch Browser</h1><p class="lede">Load a built ROM, import or export a portable sample bank, replace or process its samples, and download a new cartridge image.</p></div><div class="local-badge"><span></span>Runs entirely in your browser</div></header>
         ${renderSteps()}${state.rom?renderRomBar(pool)+renderWorkspace(kits)+renderExport(pool):renderLoad()}
         <div class="notice ${state.error?"error":""}" role="status" aria-live="polite"><span>${state.error?"!":"·"}</span>${html(state.error||state.message)}</div>
-        <footer><span>ALYNXDJ SAMPLE PATCH BROWSER</span><span>WAV → MONO → 7.8125 KHZ → GAIN / TANH → SIGNED 8-BIT PCM</span><span>No files leave this page</span></footer>`;
+        <footer><span>ALYNXDJ SAMPLE PATCH BROWSER</span><span>WAV → MONO → 5.208 KHZ → GAIN / TANH → SIGNED 8-BIT PCM</span><span>No files leave this page</span></footer>`;
     }
     function clearNotices() { state.error="" }
     function report(problem,fallback) { state.error=problem instanceof Error?problem.message:fallback; state.busy=false; render() }

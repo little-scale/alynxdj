@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+## v0.54 — 2026-07-25
+
+- Align `Jxy` with SMSGGDJ and GENMDDJ: high nibble `x` is the four-pass
+  mask and low nibble `y` is signed transpose. The factory demo's J values
+  are nibble-swapped to preserve their existing musical behavior.
+- Make every table speed cycle automatically from row `0F` back to `00`,
+  matching SMSGGDJ and GENMDDJ. TBS 0 advances once per triggered note;
+  TBS 1–F advance on their tick periods, and `Hxx` defines shorter/custom
+  loops for either clock mode.
+- Make a clean Option-1 tap a true all-track transport toggle: PLAY and WAIT
+  stop immediately; while stopped, the existing contextual SONG/CHAIN/PHRASE
+  start behavior is retained. Held track-select, mute, and solo actions are
+  unchanged.
+- Master factory WAV conversion through +12.00 dB of gain followed by tanh
+  soft saturation. The processing is baked into the portable sample bank,
+  yielding louder samples without adding any Lynx playback work.
+- Lower the canonical KIT sample rate from 7,812.5 Hz to 5,208.333 Hz
+  (timer reload 191), reducing each feeder's interrupt load by one third.
+  `PL` header byte 3 is now rate ID `1`; the ROM builder and standalone
+  patcher reject mismatched banks, and each KIT trigger restores the new
+  default before a same-row `S` override.
+- Rebuild the complete factory bank from the current `samples/` tree at the
+  new rate (79,816 bytes). The WAV converter now correctly decodes signed
+  24-bit PCM, as used by the new kit 00, plus 8/16/32-bit integer PCM.
+
 ## v0.53 — 2026-07-25
 
 - Block KIT VOL's inaudible fine nibble on INSTR. It now displays `0-`–`7-`,

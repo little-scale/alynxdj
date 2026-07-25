@@ -2,7 +2,7 @@
 
 A pocket groovebox for the Atari Lynx in the LSDJ tradition. If you know
 LSDJ or SMSGGDJ, you already know most of this. This manual describes
-ALYNXDJ v0.53.
+ALYNXDJ v0.54.
 
 ## The idea
 
@@ -31,7 +31,7 @@ action.** No simultaneous-press timing windows.
 | **A** tap | back where applicable on detail/utility screens; deliberately does nothing on CHAIN, PHRASE, INSTR, OPTIONS, or PROJECT |
 | **A** hold + d-pad | move around the screen map (see below); A+↑ from TABLE opens HELP and A+↓ returns |
 | **A** held + **B** | play / stop — contextual: SONG plays from the cursor row, CHAIN loops the chain, PHRASE and INSTR loop the phrase last viewed (audition while editing the instrument) |
-| **Option 1** tap | restart arrangement playback on **all four tracks** from the current context: SONG row, plus CHAIN position and PHRASE row where those are visible |
+| **Option 1** tap | toggle all-track transport: during PLAY or WAIT, stop; while stopped, start **all four tracks** from the current context (SONG row, plus CHAIN position and PHRASE row where visible) |
 | **Option 1** + ←/→ | select the current track |
 | **Option 1** + **B** | mute the current track (top-bar `1234` flags) |
 | **Option 1** + **A** | solo the current track / un-solo |
@@ -159,7 +159,7 @@ renderer temporarily reuses the now-idle sample-ring RAM.
 | WAVE / KIT | The shared BANK row is labelled by type. WAV selects wavetable 0–7 (`--` = hardware triangle); KIT selects sample bank `00`–`07`, defaults to `00`, and cannot show `--`. This row is blank and skipped for LFSR |
 | **SEED** | the shifter start state, $000–$FFF |
 | TABLE | macro table to run on every note (`--` = none) |
-| **TBS** | table speed: `0` advances one row per triggered note; `1` is one row per engine tick; `2`–`F` wait that many ticks per row |
+| **TBS** | table speed: `0` advances one row per triggered note; `1` is one row per engine tick; `2`–`F` wait that many ticks per row. Every mode wraps after row `0F` |
 
 The cursor visits only parameters used by the current type:
 
@@ -238,7 +238,13 @@ the point.
 - **KIT** streams samples from the cart through the channel DAC; the
   note's semitone picks the kit slot (C=1, C#=2, …) and **KIT picks the
   kit** — the cart ships all eight `samples/` folders (808, 909, C78,
-  606, four speech banks) at full quality. VOL is a deliberately coarse,
+  606, four speech banks) as 5,208.333 Hz signed 8-bit PCM. This lower
+  feeder rate is deliberate hardware headroom for two simultaneous streams;
+  the `S` command may override a playing voice until its next KIT trigger.
+  Factory WAVs are peak-normalized and then driven **+12.00 dB through tanh
+  soft saturation** during conversion, producing a loud bank without adding
+  any processing cost to playback.
+  VOL is a deliberately coarse,
   low-cost trigger gain: high nibble `6`–`7` plays the stored bytes unchanged,
   `2`–`5` arithmetic-shifts signed PCM right once (half level), `1` shifts
   twice (quarter level), and `0` mutes. The low nibble is ignored, rendered
@@ -266,7 +272,7 @@ voices do not consume this two-voice budget.
 | `G xx` | glide | reset to the active instrument's stored TAPS, then use signed `xx`: magnitudes 1–7 are ticks per step; magnitude 8+ is magnitude−7 rows per step (`01` = +1/tick, `07` = +1/7 ticks, `08` = +1/row, `0B` = +1/4 rows; negative values reverse direction; `00` = reset and stop; wraps 0–511 without reseeding) |
 | `H xx` | hop | phrase: before this marker row would play, jump to row x (the H row itself is not heard); table: loop to row x |
 | `I xx` | iterate | play this note only on phrase passes whose bit (pass count mod 8) is set — `I55` = even passes, `IFF` = always |
-| `J xy` | vary | transpose by x (signed nibble) on passes whose bit (count mod 4) is set in y — `J71` = +7 once every 4 passes |
+| `J xy` | vary | x is the four-pass mask; transpose this note by signed nibble y on the selected passes — `J17` = +7 on the first of every four passes, `JF2` = +2 every pass |
 | `K xx` | kill | cut the note after xx ticks (00 = instant) |
 | `L xx` | slide | glide into this row's note from the previous pitch, xx/16 semitone per tick |
 | `N xx` | taps | live LFSR-taps morph: bits 0–5 = taps 0–5, 6 = tap 7, 7 = tap 10 |
@@ -290,10 +296,11 @@ empty command wraps between `Z` and `A`.
 ## Tables (TABLE screen)
 
 16 rows × {volume, transpose, command, param}. **TBS** controls the clock:
-`0` preserves the playhead and advances exactly once per triggered note;
+`0` preserves the playhead and advances exactly once per triggered note.
 `1` is the fastest at one row per ~59.9 Hz tick; `2`–`F` are progressively
-slower. Tick modes restart at row 0 on a new note. All modes stick at the
-last row unless `H` loops. Attach via the instrument's TABLE field or a
+slower and restart at row 0 on a new note. Every mode automatically wraps
+row `0F` to `00`; `H` defines a shorter or non-zero loop point. Attach via
+the instrument's TABLE field or a
 phrase `A` command. Table volume may reshape attack/hold, but once decay
 starts the envelope owns the level and always reaches its normal end.
 When an empty TABLE command field is edited, it first repeats the nearest
@@ -357,12 +364,14 @@ inside a vertical run of chains loops only that contiguous run: for example,
 chains on rows 2–3 loop 2→3→2 even if another group exists at row 0. Because
 the delimiter is per track, the four tracks may have different group shapes.
 
-A clean **Option 1** tap provides the all-track cue action. On SONG it starts
-all tracks at the selected song row. On CHAIN it also starts at the selected
-chain position; on PHRASE, INSTR, TABLE, and WAVE it additionally uses the
-selected phrase row last in context. If a parallel track's chain is shorter
-than the chosen chain position, that track starts at its first phrase. With
-`IN` or `IN24`, this cue arms as **WAIT** until the first external row pulse.
+A clean **Option 1** tap stops immediately when transport is in **PLAY** or
+**WAIT**. While stopped, it provides the all-track cue action. On SONG it
+starts all tracks at the selected song row. On CHAIN it also starts at the
+selected chain position; on PHRASE, INSTR, TABLE, and WAVE it additionally
+uses the selected phrase row last in context. If a parallel track's chain is
+shorter than the chosen chain position, that track starts at its first phrase.
+With `IN` or `IN24`, this cue arms as **WAIT** until the first external row
+pulse.
 
 ## Groove (GROOVE screen)
 

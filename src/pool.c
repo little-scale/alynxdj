@@ -183,7 +183,7 @@ static void do_trigger(unsigned char voice, unsigned char kit,
     pcm_done[voice] = 0;
     pcm_ptr[voice] = base;
     pcm_head[voice] = base;
-    /* Prepare 256 bytes before starting (~33 ms at the KIT rate).  The
+    /* Prepare 256 bytes before starting (~49 ms at the KIT rate).  The
      * caller immediately pumps again after the timer starts, restoring the
      * full cushion without delaying the audible trigger behind all 511
      * bytes of optional headroom. */

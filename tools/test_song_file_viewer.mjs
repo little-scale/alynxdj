@@ -42,6 +42,8 @@ const api = window.ALXSongFile;
 if (!api) throw new Error("viewer test API not exposed");
 if (!html.includes('const TYPES = [[0,"LFSR"],[2,"WAV"],[3,"KIT"]]'))
   throw new Error("viewer does not expose only the current LFSR/WAV/KIT types");
+if (!html.includes('"Variation: mask x / signed transpose y"'))
+  throw new Error("viewer does not describe J in sibling mask-first order");
 if (!html.includes("LFSR · legacy $01"))
   throw new Error("viewer does not identify legacy type 01 as LFSR");
 if (!html.includes("KIT: 6-/7- full · 2-–5- half · 1- quarter · 0- mute"))

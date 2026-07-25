@@ -401,6 +401,40 @@ def run_option1_context_case(harness, core, rom, build):
                  % (track, walk, expected))
 
 
+def run_option1_toggle_case(harness, core, rom, build):
+    label = "option1-toggle"
+    test_rom = os.path.join(
+        build, "alynxdj-editor-%s-%d-%d.lnx"
+        % (label, os.getpid(), time.time_ns()))
+    ppm = os.path.join(build, "editor-%s.ppm" % label)
+    ram_path = os.path.join(build, "editor-%s.ram" % label)
+    shutil.copyfile(rom, test_rom)
+
+    pokes = {SONG: 0}
+    put(pokes, CHAINS, bytes([0xFF] * CHAIN_SIZE))
+    put(pokes, CHAINS, (0, 0))
+    put(pokes, PHRASES, (37, 0, 0, 0))
+    put(pokes, GROOVES, (15,) + (0,) * 15)
+    env = os.environ.copy()
+    env["RETROSHOT_RAM_OUT"] = ram_path
+    env["RETROSHOT_RAM_POKE"] = ",".join(
+        "%04X:%02X" % item for item in sorted(pokes.items()))
+    env["RETROSHOT_RAM_POKE_AT"] = "250"
+
+    # First clean tap starts contextual playback; the second clean tap stops.
+    # The gap is long enough to prove this is an active transport, not two
+    # releases coalescing into one input edge.
+    option1 = "400@6,0@80,"
+    script = "0@280," + option1 + "0@40," + option1
+    subprocess.run(
+        [harness, core, test_rom, ppm, "700", script], env=env, check=True)
+    with open(ram_path, "rb") as f:
+        ram = f.read()
+    if len(ram) != 65536 or ram[0xC011] != 0 or ram[0xC016] != 0:
+        fail("second clean OPTION 1 tap did not stop transport: mode %d, "
+             "wait %d" % (ram[0xC011], ram[0xC016]))
+
+
 def run_map_back_tap_case(harness, core, rom, build, project):
     label = "project-a-tap" if project else "options-a-tap"
     expected_screen = 1 if project else 0
@@ -919,6 +953,7 @@ def main():
     run_table_command_latch_case(harness, core, rom, build)
     run_table_command_delete_case(harness, core, rom, build)
     run_option1_context_case(harness, core, rom, build)
+    run_option1_toggle_case(harness, core, rom, build)
     run_instr_follow_case(harness, core, rom, build)
     run_instr_selector_case(harness, core, rom, build)
     run_instr_field_visibility_case(harness, core, rom, build)
@@ -941,8 +976,7 @@ def main():
           "INSTR has an in-page selector and skips fields unused by each "
           "instrument type; hierarchy drill enters row 00; "
           "KIT bank defaults/clamps to 00 and VOL blocks its fine nibble; "
-          "OPTION 1 starts all "
-          "tracks from the selected context; "
+          "OPTION 1 toggles contextual all-track transport; "
           "PHRASE drill follows the selected row's instrument; WAVE number "
           "requires physical A; NEW patch defaults are canonical; "
           "empty boots stay clean; FILES DEMO and overlaid PURGE work; "

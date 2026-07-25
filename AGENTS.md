@@ -15,7 +15,7 @@ later hardware). The ROM and project name is **ALYNXDJ**.
 
 **DESIGN.md is the contract** (with a §0 decision log — read it before design
 decisions, don't re-litigate settled ones); **PLAN.md** holds the milestone
-history through M33. Key settled decisions: 4 identical
+history through M38. Key settled decisions: 4 identical
 tracks each playing LFSR/WAV/KIT (D1/D35), cc65 C editor + ca65 asm
 driver/IRQ/render (D2), 59.9 Hz VBlank engine tick with no region split (D3),
 flat RAM song block but **packed/RLE EEPROM save — 2 KB 93C86 is the whole
@@ -25,7 +25,9 @@ target the owning channel A–D; there are no fixed sample buses. LFSR patches
 (including legacy stored type `$01`) persist TSP/SWP/VIB/TRM plus TBS in
 save-format v6 (D15–D17/D35); VIB is a
 centred ~0.47–7.49 Hz sine whose phase free-runs across notes and resets at
-the transport boundary. KIT VOL is D36's static foreground PCM gain:
+the transport boundary. TBS 0 is a per-note table cycle and TBS 1–F are
+tick-clocked; every mode wraps `0F→00`, while `H` sets a custom loop. KIT VOL
+is D36's static foreground PCM gain:
 high nibble `6`–`7` full, `2`–`5` signed `>>1`, `1` signed `>>2`, and `0`
 mute; its low nibble is ignored and blocked in the UI, while the DAC IRQ
 remains unchanged. D19/D20 add receive-only ComLynx MIDI takeover and
@@ -36,11 +38,20 @@ first row pulse starts that row and changes the transport to `PLAY`. There is
 no heartbeat.
 KIT bank follows D38: it is always `00`–`07`, selecting KIT or viewing an old
 invalid KIT value normalizes it to `00`, and only WAV may display `--`.
+KIT sample banks follow D39: the one supported `PL` format uses rate ID `1`,
+5,208.333 Hz signed 8-bit PCM (timer reload 191), with up to ~12.58 seconds
+per u16-sized slot. The builder handles 8/16/24/32-bit integer WAV sources;
+older experimental rate IDs are intentionally rejected. D40 factory
+conversion peak-normalizes, then applies +12.00 dB into a tanh soft limiter
+before signed 8-bit quantization; the processing is baked into the bank.
 Command values retain their historical/save-format IDs, but PHRASE and TABLE
 selection steps through the implemented letters alphabetically in both
-directions (D21). A clean Option-1 tap starts all four tracks from the
-selected SONG/CHAIN/PHRASE context while its held mute/solo layer remains
-unchanged (D28). Phrase `H` is a pre-row branch and each track loops only its
+directions (D21). `Jxy` follows the sibling mask-first order: x is the
+four-pass mask and y is signed transpose (D41). A clean Option-1 tap stops
+PLAY/WAIT or, while stopped,
+starts all four tracks from the selected SONG/CHAIN/PHRASE context; its held
+mute/solo layer remains unchanged (D28). Phrase `H` is a pre-row branch and
+each track loops only its
 current contiguous vertical SONG group (D29). D31 adds a nine-page,
 build-validated HELP screen above TABLE; it stops transport and cold-loads over
 the idle PCM rings. D32 adds deterministic row-00 hierarchy entry, an in-page
@@ -134,7 +145,8 @@ using a virtual environment.
   six-pixel bands; otherwise rendering can starve a pending trigger or ring.
   KIT gain shifts each signed 64-byte piece before its atomic publication;
   never move this work into the DAC IRQ. A trigger starts after a 256-byte
-  cushion and the caller's next pump tops up the remaining ring headroom.
+  cushion (~49.2 ms at D39's rate) and the caller's next pump tops up the
+  remaining ring headroom.
   Same-track KIT retriggers leave the old stream live until `do_trigger()` has
   prepared the replacement. A single long chunk or a one-sided ring refill
   causes the IRQ to hold the last DAC value.
@@ -199,8 +211,9 @@ stale flashes, and per-region timing tables where applicable.
   - `05 speech 1` … `08 speech 4` — speech/phoneme banks (AA.wav, AE.wav, …).
   - `alynxdj-factory-samples.bin` is the portable, build-ready 64-slot factory
     bank. `tools/alynxdj_pool.py` rebuilds/validates it; the browser imports and
-    exports the same `PL` format. Slots are u16-sized (65,535 bytes maximum),
-    and the 256 KB ROM reserves 209,920 bytes for the complete bank.
+    exports the same rate-ID-1 `PL` format. Slots are u16-sized (65,535 bytes,
+    ~12.58 seconds at 5,208.333 Hz), and the 256 KB ROM reserves 209,920 bytes
+    for the complete bank.
 - `artwork/` — empty; destined for logo/splash art (siblings use an `art/` dir with
   a makelogo.py-style pipeline).
 - `task.txt` — the original project brief.

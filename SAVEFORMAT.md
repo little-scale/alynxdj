@@ -81,9 +81,16 @@ descending volume saw),
 15 **TSP** (signed semitones). SWP/VIB/TRM are v4 and apply to LFSR,
 including the legacy type `$01` alias;
 TSP is v5 and applies to every instrument type before pitch/pad selection.
-TBS is v6: 0 advances one table row per triggered note; 1–15 advance every
-N engine ticks. HOLD-F sustain changes playback semantics only and does not
-change the stored record or format version.
+TBS is v6: 0 advances one table row per triggered note; 1–15 advance every N
+engine ticks. Every mode wraps row 15 to row 0 by default, while `H` defines
+a shorter or non-zero loop point. HOLD-F sustain changes playback semantics
+only and does not change the stored record or format version.
+
+Command IDs and bytes retain their established layout. Current `Jxy`
+semantics match SMSGGDJ/GENMDDJ: high nibble x is a four-pass mask and low
+nibble y is signed transpose (−8…+7). This semantic correction does not
+change save-format v6; J values authored by earlier ALYNXDJ builds need their
+nibbles swapped once.
 
 Type IDs remain `$00` LFSR, `$01` legacy LFSR alias (formerly labelled
 NOISE), `$02` WAV, and `$03` KIT. Current editors emit only `$00/$02/$03`;

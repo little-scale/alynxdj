@@ -1874,7 +1874,6 @@ static void context_play(void)
     if (screen >= SCR_PHRASE)
         prow = p_row;
     engine_play_context(s_row, cpos, prow);
-    transport_label();
 }
 #pragma code-name (pop)
 
@@ -1908,8 +1907,8 @@ void editor_frame(unsigned char joy, unsigned char prev)
     if (a_release_age != 0xFF)
         ++a_release_age;
 
-    /* A clean Option 1 tap is all-track contextual play.  Using its existing
-     * held layer suppresses that release action. */
+    /* A clean Option 1 tap stops active transport or starts all tracks from
+     * context.  Using its existing held layer suppresses that release action. */
     if (pressed & BUTTON_OPTION1)
         o1_used = (joy & (JOYPAD_UP | JOYPAD_DOWN | JOYPAD_LEFT
                           | JOYPAD_RIGHT | JOY_BTN_A_MASK
@@ -1942,8 +1941,13 @@ void editor_frame(unsigned char joy, unsigned char prev)
         return;
     }
     if ((prev & BUTTON_OPTION1) && !(joy & BUTTON_OPTION1)) {
-        if (!o1_used)
-            context_play();
+        if (!o1_used) {
+            if (eng_mode)
+                engine_stop();
+            else
+                context_play();
+            transport_label();
+        }
         return;
     }
 

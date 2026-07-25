@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Sample kit converter (M7: one RAM-resident kit linked into the ROM).
 
-WAV -> mono 8-bit signed PCM at PCM_RATE, silence-trimmed, per-slot and
-total budget capped. Emits a ca65 source with the sample bytes (RODATA)
-and an 8-slot directory (ptr, len) exported as _kit_dir for C.
+WAV -> mono 8-bit signed PCM at PCM_RATE, silence-trimmed, peak-normalized,
+and driven +12 dB into a tanh soft limiter, with per-slot and total budget
+caps. Emits a ca65 source with the sample bytes (RODATA) and an 8-slot
+directory (ptr, len) exported as _kit_dir for C.
 
 Usage: alynxdj_sample.py <kitdir> <out.s>
 """
@@ -13,10 +14,38 @@ import wave
 
 import numpy as np
 
-PCM_RATE = 7812.5           # timer7 @ 1us, BKUP=127
+PCM_RATE = 1_000_000 / 192  # timer7 @ 1us, BKUP=191
 SLOT_CAP = 2600             # bytes per slot
 KIT_CAP = 7700             # total budget (RAM-resident, see DESIGN §13)
 TRIM_DB = -48.0             # trailing-silence threshold
+FACTORY_GAIN_DB = 12.0
+FACTORY_GAIN = 10 ** (FACTORY_GAIN_DB / 20)
+
+
+def decode_pcm(raw, sample_width):
+    """Decode little-endian integer WAV PCM to normalized float32."""
+    if sample_width == 1:
+        return (np.frombuffer(raw, np.uint8).astype(np.float32) - 128) / 128.0
+    if sample_width == 2:
+        return np.frombuffer(raw, "<i2").astype(np.float32) / 32768.0
+    if sample_width == 3:
+        octets = np.frombuffer(raw, np.uint8).reshape(-1, 3).astype(np.int32)
+        values = octets[:, 0] | octets[:, 1] << 8 | octets[:, 2] << 16
+        values = (values ^ 0x800000) - 0x800000
+        return values.astype(np.float32) / 8388608.0
+    if sample_width == 4:
+        return np.frombuffer(raw, "<i4").astype(np.float32) / 2147483648.0
+    raise ValueError("unsupported %d-bit PCM WAV" % (sample_width * 8))
+
+
+def master_pcm(samples):
+    """Peak-normalize, apply the canonical factory gain, and tanh-limit."""
+    peak = np.abs(samples).max() if len(samples) else 0.0
+    if not peak:
+        peak = 1.0
+    normalized = samples / peak * (120.0 / 127.0)
+    driven = np.tanh(normalized * FACTORY_GAIN)
+    return np.clip(np.round(driven * 127), -127, 127).astype(np.int8)
 
 
 def load(path):
@@ -24,10 +53,7 @@ def load(path):
     n, ch, sw, fr = (w.getnframes(), w.getnchannels(),
                      w.getsampwidth(), w.getframerate())
     raw = w.readframes(n)
-    if sw == 2:
-        d = np.frombuffer(raw, np.int16).astype(np.float32) / 32768.0
-    else:
-        d = (np.frombuffer(raw, np.uint8).astype(np.float32) - 128) / 128.0
+    d = decode_pcm(raw, sw)
     if ch > 1:
         d = d.reshape(-1, ch).mean(axis=1)
     # resample (linear)
@@ -40,8 +66,7 @@ def load(path):
     if len(keep):
         d = d[: min(keep[-1] + int(0.01 * PCM_RATE), len(d))]
     d = d[:SLOT_CAP]
-    peak = np.abs(d).max() or 1.0
-    return np.clip(np.round(d / peak * 120), -127, 127).astype(np.int8)
+    return master_pcm(d)
 
 
 def main(kitdir, out):

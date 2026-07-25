@@ -42,8 +42,8 @@
                                  hex BPM (flattens swing by design) */
 #define CMD_I    20     /* I xx  iteration: play this note only on phrase
                                  passes whose bit (count mod 8) is set */
-#define CMD_J    21     /* J xy  variation: transpose x (signed nibble) on
-                                 passes whose bit (count mod 4) is set in y */
+#define CMD_J    21     /* J xy  variation: mask x selects passes mod 4;
+                                 transpose y is a signed nibble */
 #define CMD_B    22     /* B xx  cumulative signed taps; 00 resets patch */
 #define NCMDS    23
 
@@ -78,8 +78,9 @@ struct instr {
     unsigned char env;      /* ATK<<4 | DCY: 4-bit TIMES, higher = longer
                                (0 = instant attack / sustain-forever decay);
                                mapped through env_rate[] in the engine */
-    unsigned char hold;     /* TBS<<4 | HOLD: table ticks/row (0 = per note),
-                               peak ticks in low nibble; F = indefinite */
+    unsigned char hold;     /* TBS<<4 | HOLD: table ticks/row (0 = per-note
+                               wrapping cycle), peak ticks in low nibble;
+                               F = indefinite */
     unsigned char wave;     /* the BANK byte: WAV = wavetable # ($FF =
                                hardware triangle); KIT = pool kit # */
     unsigned char taps_lo;  /* TAPS bits 7..0 */
