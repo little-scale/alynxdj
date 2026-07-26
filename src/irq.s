@@ -6,7 +6,7 @@
 ; symmetry while retaining the measured two-PCM-voice CPU ceiling (D5/D6).
 
         .export         _vbl_install
-        .export         _frames
+        .exportzp       _frames
         .export         _pcm_stop
         .export         _dac_stop
         .export         _dac_source_rate_set
@@ -16,7 +16,7 @@
         .export         _pcm_ring_start
         .export         _pcm_ptr
         .exportzp       _pcm_head
-        .export         _pcm_done
+        .exportzp       _pcm_done
         .export         _dac_mode
         .export         _dac_off
         .export         _dac_muted
@@ -61,24 +61,24 @@ _pcm_ptr: .res 4                ; two ring tails, IRQ-owned
 wav_ptr0: .res 2
 wav_ptr1: .res 2
 _pcm_head: .res 4               ; two ring heads, pump-owned
-
-        .bss
-_pcm_done: .res 2
-_dac_mode: .res 2               ; DAC_NONE / DAC_SAMPLE / DAC_WAVE
-_dac_off: .res 2                ; owning channel * 8
-_dac_muted: .res 2              ; consume normally, write zero when muted
 in_tick:  .res 1                ; VBL tick re-entrancy guard
-zpbuf:    .res 32               ; cc65 runtime zp save (tick runs C in IRQ)
+_frames:  .res 2                ; u16 frame counter (read by C)
+_pcm_done: .res 2
 _dac_phase:
-wav_pos:  .res 2               ; WAV position / KIT half-rate phase
+wav_pos:  .res 2                ; WAV position / KIT half-rate phase
 _dac_step:
-wav_step: .res 2               ; WAV step / KIT source-byte stride
+wav_step: .res 2                ; WAV step / KIT source-byte stride
 tmp_slot: .res 1
 tmp_w:    .res 1
 tmp_clock:.res 1
 tmp_bkup: .res 1
 tmp_step: .res 1
-_frames:  .res 2                ; u16 frame counter (read by C)
+
+        .bss
+_dac_mode: .res 2               ; DAC_NONE / DAC_SAMPLE / DAC_WAVE
+_dac_off: .res 2                ; owning channel * 8
+_dac_muted: .res 2              ; consume normally, write zero when muted
+zpbuf:    .res 32               ; cc65 runtime zp save (tick runs C in IRQ)
 
         .code
 
@@ -89,6 +89,7 @@ _vbl_install:
         sta     $FFFE
         lda     #>handler
         sta     $FFFF
+        stz     in_tick                 ; APPZP is not cleared by crt0 on HW
         stz     _frames
         stz     _frames+1
         stz     PCM_UNDERRUN

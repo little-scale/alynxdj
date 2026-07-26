@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+## v0.56 — 2026-07-26
+
+- Fix phrase playback failing to advance rows on real hardware when uninitialized
+  zero-page RAM left the VBlank re-entry guard nonzero. Startup now explicitly
+  clears the guard before enabling the timer IRQ; the headless harness can seed
+  dirty pre-boot RAM and permanently checks that playback advances.
+- Display LFSR `TAPS` and `SEED` at their exact three-hex-digit widths:
+  `000`–`1FF` and `000`–`FFF`. The nine-bit block map remains beside TAPS,
+  without a redundant leading zero in either field.
+- Restrict TABLE command selection and recall to commands its macro engine
+  actually applies: `B C E F G H K N O P R S T V W X`. The editor now skips
+  `A D I J L Z` in both directions instead of offering commands that would be
+  ignored.
+- Correct four live command behaviours. `Exy` installs both envelope rates and
+  restarts attack so its high nibble is audible; `Nxx` overrides the low eight
+  taps for only the current note without replacing tap 11 or G/B automation;
+  `Pxx` now follows SWP direction (positive down, negative up); and `Rxy`
+  continues counting and restarts an LFSR note after a short envelope has
+  naturally ended, until the next note or `K`.
+- Update the manual, design contract, source guidance, and in-ROM HELP for the
+  revised command set and behaviours. Save format remains v6.
+
 ## v0.55 — 2026-07-26
 
 - Replace `Sxx`'s unsafe raw Mikey timer reload with a bounded KIT source-rate

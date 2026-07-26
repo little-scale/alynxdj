@@ -2,6 +2,7 @@
 """Register/audio regressions for the hardware-fix pass."""
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -26,10 +27,16 @@ W_PHRASE = WALK0 + 4
 W_PROW = WALK0 + 6
 V_ENV_PHASE = VOICE0 + 2
 V_ENV_LEVEL = VOICE0 + 3
+V_ENV_ATK = VOICE0 + 6
+V_BEND = VOICE0 + 8
+V_BEND_RATE = VOICE0 + 10
 V_BASE_NOTE = VOICE0
 V_TAP_CUR = VOICE0 + 20
 V_TABLE = VOICE0 + 29
 V_TPOS = VOICE0 + 30
+V_RT_RATE = VOICE0 + 33
+V_RT_CNT = VOICE0 + 35
+V_SH_FEEDBACK = VOICE0 + 39
 G_WAIT0 = 0xC0FC
 PCM_UNDERRUN = 0xC027
 PCM_STARTED = 0xC02E
@@ -70,7 +77,7 @@ def rig_pokes(note=37, cmd=0, param=0, hold=0x0F, env=0,
 
 
 def run(harness, core, rom, build, label, pokes, tail_frames=60,
-        tail_script=None, pre_script="", pre_frames=0):
+        tail_script=None, pre_script="", pre_frames=0, boot_pokes=None):
     test_rom = os.path.join(
         build, "alynxdj-hw-%s-%d-%d.lnx" %
         (label, os.getpid(), time.time_ns()))
@@ -82,6 +89,9 @@ def run(harness, core, rom, build, label, pokes, tail_frames=60,
     env["RETROSHOT_RAM_POKE"] = ",".join(
         "%04X:%02X" % item for item in sorted(pokes.items()))
     env["RETROSHOT_RAM_POKE_AT"] = "250"
+    if boot_pokes:
+        env["RETROSHOT_RAM_INIT"] = ",".join(
+            "%04X:%02X" % item for item in sorted(boot_pokes.items()))
     # Physical A held then B starts transport.  Most cases use a 60-frame
     # tail, below the 96-tick phrase loop, so the rig triggers exactly once.
     if tail_script is None:
@@ -138,6 +148,25 @@ def main():
                          "tests", "hardware")
     shutil.rmtree(build, ignore_errors=True)
     os.makedirs(build)
+
+    # APPZP is not cleared by crt0 on real hardware. Seed the VBlank guard
+    # dirty before cart startup and prove vbl_install clears it: otherwise
+    # PLAY is visible but every sequencer tick (and phrase row advance) is
+    # rejected. The guard immediately precedes the exported frame counter in
+    # irq.s, so derive its linked address rather than hard-coding zero page.
+    map_path = os.path.splitext(rom)[0] + ".map"
+    with open(map_path, "r", encoding="utf-8") as f:
+        map_text = f.read()
+    match = re.search(r"_frames\s+([0-9A-Fa-f]{6})\s+RLZ", map_text)
+    if not match:
+        fail("could not locate exported _frames in %s" % map_path)
+    vbl_guard = int(match.group(1), 16) - 1
+    ram, _ = run(harness, core, rom, build, "dirty-vbl-guard",
+                 rig_pokes(), tail_frames=24,
+                 boot_pokes={vbl_guard: 0xFF})
+    if ram[W_PROW] < 2:
+        fail("dirty APPZP VBlank guard blocked phrase row advance: row %d" %
+             ram[W_PROW])
 
     # TBS 0 advances exactly one table row for the only triggered note.
     p = rig_pokes(hold=0x0F, table=0)
@@ -212,6 +241,70 @@ def main():
     if ram[V_BASE_NOTE] != 37:
         fail("J27 transposed pass zero to note %d despite mask bit zero "
              "being clear" % ram[V_BASE_NOTE])
+
+    # E's attack nibble is audible even on a patch whose own attack is zero:
+    # executing it restarts attack at the new live rates. E10 reaches peak on
+    # the first tick, while EF0 is still climbing after the same four frames.
+    fast_e, _ = run(harness, core, rom, build, "envelope-command-fast",
+                    rig_pokes(cmd=18, param=0x10, hold=0x0F, env=0),
+                    tail_frames=4)
+    slow_e, _ = run(harness, core, rom, build, "envelope-command-slow",
+                    rig_pokes(cmd=18, param=0xF0, hold=0x0F, env=0),
+                    tail_frames=4)
+    if (fast_e[V_ENV_ATK] != 127 or fast_e[V_ENV_LEVEL] != 0x7F
+            or slow_e[V_ENV_ATK] != 1
+            or not 0 < slow_e[V_ENV_LEVEL] < fast_e[V_ENV_LEVEL]):
+        fail("E attack nibble did not change/restart attack: "
+             "E10 rate/level %d/%d, EF0 %d/%d" %
+             (fast_e[V_ENV_ATK], fast_e[V_ENV_LEVEL],
+              slow_e[V_ENV_ATK], slow_e[V_ENV_LEVEL]))
+
+    # N publishes its low-eight-bit taps replacement only for the current
+    # note. It preserves tap 11 and the track's G/B tap accumulator, while
+    # the following unadorned note republishes the live/patch value.
+    p = rig_pokes(cmd=14, param=0xAA, hold=0x0F)
+    instr = INSTRS + 31 * 16
+    p[instr + 5] = 0x55
+    p[instr + 9] = 1
+    ram, _ = run(harness, core, rom, build, "taps-note-local", p,
+                 tail_frames=4)
+    tap_cur = ram[V_TAP_CUR] | ram[V_TAP_CUR + 1] << 8
+    if tap_cur != 0x155 or ram[V_SH_FEEDBACK] != 0xEA:
+        fail("NAA persisted into tap state or lost tap 11: "
+             "tap_cur $%03X, feedback $%02X" %
+             (tap_cur, ram[V_SH_FEEDBACK]))
+    put(p, PHRASES + 63 * 64 + 4, (37, 31, 0, 0))
+    ram, _ = run(harness, core, rom, build, "taps-next-note-restore", p,
+                 tail_frames=9)
+    if ram[W_PROW] != 1 or ram[V_SH_FEEDBACK] != 0x95:
+        fail("note after N did not restore patch/live taps: "
+             "row %d, feedback $%02X" %
+             (ram[W_PROW], ram[V_SH_FEEDBACK]))
+
+    # P follows patch SWP's period direction: positive bends downward and
+    # negative bends upward. P01 therefore installs -1 and accumulates below
+    # the note across subsequent ticks.
+    ram, _ = run(harness, core, rom, build, "pitch-command-direction",
+                 rig_pokes(cmd=8, param=1, hold=0x0F), tail_frames=4)
+    bend = ram[V_BEND] | ram[V_BEND + 1] << 8
+    if bend & 0x8000:
+        bend -= 0x10000
+    if ram[V_BEND_RATE] != 0xFF or bend >= 0:
+        fail("P01 moved opposite to SWP: rate $%02X, bend %d" %
+             (ram[V_BEND_RATE], bend))
+
+    # R owns its interval independently of natural envelope completion. With
+    # AHD 0/0/0, the first note is already silent before R03 expires; frame
+    # four must nevertheless show the retriggered decay stage at full peak.
+    ram, _ = run(harness, core, rom, build, "retrig-after-envelope",
+                 rig_pokes(cmd=15, param=3, hold=0, env=0),
+                 tail_frames=4)
+    if (ram[V_RT_RATE] != 3 or ram[V_RT_CNT] != 0
+            or ram[V_ENV_PHASE] != 3 or ram[V_ENV_LEVEL] != 0x7F):
+        fail("R03 stopped with the short envelope: rate/count %d/%d, "
+             "phase/level %d/%d" %
+             (ram[V_RT_RATE], ram[V_RT_CNT],
+              ram[V_ENV_PHASE], ram[V_ENV_LEVEL]))
 
     # TABLE follows the selected top-bar track and accents its active macro
     # row. Drill SONG -> CHAIN -> PHRASE -> INSTR, start the phrase there,
@@ -647,9 +740,11 @@ def main():
         fail("screen redraws lost/deferred KIT starts: triggered %r, "
              "started %r" % (triggered, started))
 
-    print("hardware fixes: PASS — sibling-order J variation, wrapping TBS "
-          "note/tick clocks including phrase-A note mode, TABLE-A rejection, "
-          "zero-AHD shortest decay, and "
+    print("hardware fixes: PASS — sibling-order J variation; live E attack, "
+          "note-local N taps, SWP-direction P, envelope-independent R; "
+          "wrapping TBS note/tick clocks including phrase-A note mode; "
+          "TABLE-A rejection; dirty-APPZP row advance; zero-AHD shortest "
+          "decay; "
           "selected-track TABLE playhead, finite table VOL "
           "envelope, HOLD-F sustain/K exit, "
           "pre-row phrase H with H00 chain advance, independent "

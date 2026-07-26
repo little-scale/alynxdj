@@ -23,21 +23,21 @@
 #define CMD_H    5      /* H xx table loop; phrase 00=end, 01-0F=row branch */
 #define CMD_K    6      /* K xx  kill note after xx ticks */
 #define CMD_O    7      /* O xy  pan: L/R levels, 0 hard mute / F full */
-#define CMD_P    8      /* P xx  pitch bend, signed 1/16-semi per tick */
+#define CMD_P    8      /* P xx  signed pitch bend: + down, - up, like SWP */
 #define CMD_V    9      /* V xy  vibrato speed x depth y (1/16 semis) */
 #define CMD_W    10     /* W xx  shorten this row to xx ticks */
 #define CMD_X    11     /* X xx  this note's volume (envelope peak) */
 #define CMD_F    12     /* F xx  finetune, signed 1/16 semis (one-shot) */
 #define CMD_L    13     /* L xx  slide from the previous pitch, xx/16 semi
                                  per tick (needs a note on the row) */
-#define CMD_N    14     /* N xx  live LFSR taps override: bits 0-5 = taps
-                                 0-5, 6 = tap 7, 7 = tap 10 (D11 morph) */
-#define CMD_R    15     /* R xy  retrig every y ticks, peak -8x per fire */
+#define CMD_N    14     /* N xx  this-note low-eight LFSR taps override;
+                                 current tap 11 and G/B state are preserved */
+#define CMD_R    15     /* R xy  retrig every y ticks even after natural
+                                 envelope end; peak -8x per fire */
 #define CMD_S    16     /* S xx  KIT source-rate override, low 2 bits:
                                  0=1x, 1=2x, 2=4x, 3=.5x */
 #define CMD_Z    17     /* Z xx  probability: note plays if rand8 < xx */
-#define CMD_E    18     /* E xy  re-slope the envelope live: ATK x, DCY y
-                                 nibbles (current stage + level untouched) */
+#define CMD_E    18     /* E xy  set ATK x/DCY y and restart live attack */
 #define CMD_T    19     /* T xx  tempo: set the active groove flat to the
                                  hex BPM (flattens swing by design) */
 #define CMD_I    20     /* I xx  iteration: play this note only on phrase
@@ -194,6 +194,7 @@ void __fastcall__ pool_trigger(unsigned char voice, unsigned char kit,
 void __fastcall__ pool_cancel(unsigned char voice);
 extern unsigned char *pcm_head[NDAC];
 extern unsigned char pcm_done[NDAC];
+#pragma zpsym("pcm_done")
 
 /* ComLynx sync (src/sync.c) */
 #define SYNC_OFF 0
@@ -253,6 +254,7 @@ void draw_text(unsigned char cx, unsigned char cy, const char *s,
 void draw_hex8(unsigned char cx, unsigned char cy, unsigned char v,
                unsigned char fg, unsigned char bg);
 extern unsigned char draw_x_offset;
+#pragma zpsym("draw_x_offset")
 void clear_grid(void);
 
 #define PEN_BG      0

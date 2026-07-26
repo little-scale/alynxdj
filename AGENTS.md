@@ -51,12 +51,16 @@ its low two bits select 1×/2×/4×/0.5× without changing the timer, and every
 note/`R` restores the instrument stride. KIT pad selection ignores instrument
 TSP/RATE but still follows phrase/chain note transpose.
 Command values retain their historical/save-format IDs. PHRASE steps through
-the implemented letters alphabetically; TABLE does the same but skips
-phrase-only `A` (D21). Editing a PHRASE/TABLE command pair updates one global
-recall latch, and tapping physical B on an empty command-letter cell inserts
-both remembered bytes without overwriting occupied data. Repeated phrase
-`Axx` targets preserve a TBS 0 playhead; changed targets restart. DCY 0 is
-immediate and HOLD F is the sole indefinite patch sustain (D45).
+all implemented letters alphabetically; TABLE exposes only
+`B C E F G H K N O P R S T V W X` and rejects `A D I J L Z` in both
+directions and command recall (D21). Editing a PHRASE/TABLE command pair
+updates one global recall latch, and tapping physical B on an empty
+command-letter cell inserts both remembered bytes without overwriting
+occupied data. Repeated phrase `Axx` targets preserve a TBS 0 playhead;
+changed targets restart. DCY 0 is immediate and HOLD F is the sole indefinite
+patch sustain (D45). `E` restarts attack at its new live rates, `N` is
+note-local without overwriting G/B tap state, `P` follows SWP's sign
+direction, and `R` continues clocking after natural envelope end (D50).
 `Jxy` follows the sibling mask-first order: x is the
 four-pass mask and y is signed transpose (D41). PAN is universal across
 LFSR/WAV/KIT: byte `xy` gives left/right output level, and existing command
@@ -139,7 +143,12 @@ using a virtual environment.
   cart block 250 and its `AHD1` text is blocks 251–253; MIDI remains 254–255.
   The C stack is 512 bytes and `$D000-$D3FF` is normally two 512-byte rings.
   The 32 bytes beyond the visible framebuffer at `$BFE0-$BFFF` are PADRAM
-  editor state; APPZP also owns compact editor flags and the four PCM heads.
+  editor state; APPZP also owns compact editor flags, the four PCM heads,
+  cart-reader scratch, the VBlank guard/counter, and the draw X offset.
+  APPZP is not zeroed by crt0 on real hardware: every APPZP field that needs
+  a defined boot value must be initialized explicitly. `vbl_install()` must
+  clear the VBlank re-entry guard before enabling timer 2; otherwise a dirty
+  guard leaves the UI alive but suppresses every sequencer tick.
   Entering HELP stops transport and cold-loads its renderer at `$D004` over
   those idle rings; FILES PURGE shares that stopped-only code overlay, and
   its scratch buffers are `$D3B0-$D3FF`. Keep

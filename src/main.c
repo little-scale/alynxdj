@@ -16,6 +16,7 @@
 #define LINE_BYTES  80
 
 extern volatile unsigned int frames;
+#pragma zpsym("frames")
 void vbl_install(void);
 
 #define N(oct, semi) ((unsigned char)(((oct) - 1) * 12 + (semi) + 1))
@@ -85,7 +86,7 @@ void clear_grid(void)
 /* Draw one glyph at char cell (cx, cy); fg/bg are pen numbers. */
 extern unsigned char draw_pump_phase;
 #pragma zpsym("draw_pump_phase")
-unsigned char draw_x_offset;
+extern unsigned char draw_x_offset;
 extern unsigned char sel_active;
 #pragma zpsym("sel_active")
 #define SEL_FIRST_Y (*(volatile unsigned char *)0xC8FE)

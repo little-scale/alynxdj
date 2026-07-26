@@ -18,7 +18,7 @@
 
 BLOCKSIZE = 1024
 
-        .bss
+        .segment "APPZP" : zeropage
 cur_block:  .res 1
 left_lo:    .res 1              ; bytes left in the current block
 left_hi:    .res 1

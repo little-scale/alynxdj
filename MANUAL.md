@@ -281,7 +281,7 @@ voices do not consume this two-voice budget.
 | `B xx` | taps accumulator | nonzero values add signed `xx` to the current LFSR taps (`01` = +1, `FF` = −1), cumulatively wrapping 0–511; `00` restores the active instrument's TAPS |
 | `C xy` | chord | loop +0, +x, +y semitones per tick |
 | `D xx` | delay | trigger after xx ticks |
-| `E xy` | envelope | re-slope live: attack x, decay y (times, like the INSTR fields; current stage and level untouched) |
+| `E xy` | envelope | set live attack x and decay y, then restart the attack stage so both nibbles are immediately audible |
 | `F xx` | finetune | signed offset in 1/16 semitones (one-shot) |
 | `G xx` | glide | reset to the active instrument's stored TAPS, then use signed `xx`: magnitudes 1–7 are ticks per step; magnitude 8+ is magnitude−7 rows per step (`01` = +1/tick, `07` = +1/7 ticks, `08` = +1/row, `0B` = +1/4 rows; negative values reverse direction; `00` = reset and stop; wraps 0–511 without reseeding) |
 | `H xx` | hop | phrase: the marker row is not heard; `H00` ends the current phrase early and starts the next phrase in its chain (a one-phrase chain or standalone phrase loops to row 00), while `H01`–`H0F` jump within the phrase; table: loop to row x |
@@ -289,10 +289,10 @@ voices do not consume this two-voice budget.
 | `J xy` | vary | x is the four-pass mask; transpose this note by signed nibble y on the selected passes — `J17` = +7 on the first of every four passes, `JF2` = +2 every pass |
 | `K xx` | kill | cut the note after xx ticks (00 = instant) |
 | `L xx` | slide | glide into this row's note from the previous pitch, xx/16 semitone per tick |
-| `N xx` | taps | live LFSR-taps morph: bits 0–5 = taps 0–5, 6 = tap 7, 7 = tap 10 |
+| `N xx` | taps | replace the low eight LFSR tap bits for this note only (bits 0–5 = taps 0–5, 6 = tap 7, 7 = tap 10); current tap 11 is preserved and the next note restores the instrument/G/B state |
 | `O xy` | pan | set live Lynx II left/right levels: `0` hard mute, `F` full; the next note restores instrument PAN |
-| `P xx` | pitch | bend, signed, 1/16 semitone per tick |
-| `R xy` | retrig | re-fire the note every y ticks, peak −8·x per fire (KIT refires the sample and restores patch RATE) |
+| `P xx` | pitch | bend by signed 1/16 semitone per tick in the same direction as SWP (`01` bends down, `FF` bends up) |
+| `R xy` | retrig | re-fire every y ticks, peak −8·x per fire; its clock continues after a short envelope has naturally ended (KIT refires the sample and restores patch RATE) |
 | `S xx` | rate | KIT source-speed override: low two bits `0`=1×, `1`=2×, `2`=4×, `3`=0.5×; next note/`R` restores instrument TSP |
 | `T xx` | tempo | set the active groove flat to hex BPM xx (flattens swing — that's the point of T) |
 | `V xy` | vibrato | speed x, nonlinear depth y (1/16-semitone curve; `8` = 10/16, `F` = 60/16) |
@@ -305,13 +305,15 @@ deterministic-variation trio: phrase variation without cloning. Pass
 counts accumulate across the whole arrangement and reset at play-start.
 When editing a PHRASE command field, left/down and right/up move backward and
 forward through the alphabetical order shown above, with empty between `Z`
-and `A`. TABLE uses the same order but skips phrase-only `A`, so its empty
-position sits between `Z` and `B`.
+and `A`. TABLE exposes only commands its macro engine can apply:
+`B C E F G H K N O P R S T V W X`. Its empty position sits between `X`
+and `B`; `A D I J L Z` are skipped in both directions.
 
 After a command letter or value is changed in either screen, ALYNXDJ remembers
 the complete command/value pair globally. Tap B on an empty command-letter
 cell in PHRASE or TABLE to insert both remembered bytes. An occupied cell is
-left unchanged, and TABLE will not insert a remembered `A`.
+left unchanged, and TABLE will not insert a remembered `A`, `D`, `I`, `J`,
+`L`, or `Z`.
 
 ## Tables (TABLE screen)
 
@@ -322,7 +324,8 @@ including successive phrase notes carrying the same `Axx` table override.
 slower and restart at row 0 on a new note. Every mode automatically wraps
 row `0F` to `00`; `H` defines a shorter or non-zero loop point. Attach via
 the instrument's TABLE field or a PHRASE
-`A` command. `A` is not valid inside a table. Table volume may reshape attack/hold, but once decay
+`A` command. `A`, `D`, `I`, `J`, `L`, and `Z` are not valid inside a
+table. Table volume may reshape attack/hold, but once decay
 starts the envelope owns the level and always reaches its normal end.
 The shared remembered command/value pair described above also supplies the
 first edit of an empty TABLE command field; if no pair has been established,

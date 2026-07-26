@@ -27,7 +27,7 @@ as a multi-drop sync bus.
 
 ## Status
 
-**V0.54 — lower-overhead samples and sequencer compatibility polish** (runs
+**V0.56 — hardware row timing and precise command semantics** (runs
 on a real Atari Lynx),
 feature-complete against the design brief with an editor/UX pass on top
 (see [CHANGELOG.md](CHANGELOG.md) for what changed, [PLAN.md](PLAN.md) for
@@ -47,8 +47,9 @@ decision log):
   FFT / cross-correlation in the headless harness
 - **22 sequencer commands** (incl. slow `G` LFSR-tap glide, cumulative
   signed `B` taps automation, and live `Oxy` panning), selected
-  alphabetically in PHRASE and TABLE (`A` is PHRASE-only), with shared
-  last-command/value recall on empty command cells;
+  alphabetically in PHRASE; TABLE exposes its valid
+  `B C E F G H K N O P R S T V W X` subset, with shared
+  last-command/value recall on valid empty command cells;
   in-page instrument selection, row-safe TABLE command deletion, per-instrument
   TBS table clocks, one global groove, full-row block select/cut/paste,
   clipboard, mute/solo, LIVE clip-launcher mode

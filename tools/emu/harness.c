@@ -197,6 +197,18 @@ int main(int argc, char **argv) {
         comlynx_cable(1);
     }
 
+    /* Optional pre-boot dirty-RAM seed. This runs after load_game allocates
+       SYSTEM_RAM but before the first emulated frame executes cart startup,
+       allowing tests to catch state that accidentally relies on zero-filled
+       emulator RAM. */
+    const char *ram_init_spec = getenv("RETROSHOT_RAM_INIT");
+    {
+        uint8_t *ram = retro_get_memory_data(RETRO_MEMORY_SYSTEM_RAM);
+        size_t ramsz = retro_get_memory_size(RETRO_MEMORY_SYSTEM_RAM);
+        if (ram_init_spec && (!ram || !poke_ram(ram_init_spec, ram, ramsz)))
+            return 4;
+    }
+
     /* Optional system-RAM initialization for deterministic test hooks.
        POKE_AT defers it until that frontend frame (after core reset). */
     const char *ram_poke_spec = getenv("RETROSHOT_RAM_POKE");

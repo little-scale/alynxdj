@@ -33,6 +33,7 @@ struct walk eng_walk[NCH];
 #pragma bss-name (pop)
 
 extern volatile unsigned int frames;    /* VBL counter (irq.s) */
+#pragma zpsym("frames")
 
 struct voice {
     unsigned char base_note;    /* chain/instrument-transposed trigger note */
@@ -325,6 +326,18 @@ void __fastcall__ live_taps(struct voice *v)
     v->dirty = 1;
 }
 
+static void envelope_restart(struct voice *v)
+{
+    if (v->e_atk) {
+        v->env_phase = 1;
+        v->env_level = 0;
+    } else {
+        v->env_phase = 2;
+        v->env_level = v->env_peak;
+    }
+    v->dirty = 1;
+}
+
 /* --- executor: one command, phrase or table column --- */
 
 static void exec_cmd(unsigned char ch, unsigned char cmd, unsigned char param)
@@ -378,7 +391,7 @@ static void exec_cmd(unsigned char ch, unsigned char cmd, unsigned char param)
         set_pan(ch, param);
         break;
     case CMD_P:
-        v->bend_rate = (signed char)param;
+        v->bend_rate = (signed char)(0u - param); /* same as patch SWP */
         break;
     case CMD_V:
         v->vib_speed = param >> 4;
@@ -398,10 +411,15 @@ static void exec_cmd(unsigned char ch, unsigned char cmd, unsigned char param)
         v->bend += (signed char)param;
         break;
     case CMD_N:
-        /* absolute taps override (D11): bits 0-5 = taps 0-5, 6 = tap 7,
-         * 7 = tap 10 (8-bit, so no tap 11); also seeds the G sweep base */
-        v->tap_cur = param;
-        live_taps(v);
+        /* Per-note low-byte override: publish N with the current tap-11 bit,
+         * but leave G/B's live 9-bit automation value untouched so the next
+         * note can restore it. */
+        {
+            unsigned char old = (unsigned char)v->tap_cur;
+            *(unsigned char *)&v->tap_cur = param; /* preserve tap-11 byte */
+            live_taps(v);
+            *(unsigned char *)&v->tap_cur = old;
+        }
         v->retime = 1;
         break;
     case CMD_R:
@@ -419,6 +437,8 @@ static void exec_cmd(unsigned char ch, unsigned char cmd, unsigned char param)
     case CMD_E:
         v->e_atk = env_rate[param >> 4];
         v->e_dcy = env_rate[param & 0x0F];
+        if (v->type != IT_KIT)
+            envelope_restart(v);
         break;
     case CMD_T:
         if (param) {
@@ -543,9 +563,8 @@ static void trigger(unsigned char ch, unsigned char note, unsigned char inum)
      * sampling the same sharp half-cycle.  stop_nolock resets it at the
      * transport boundary. */
     v->bend = 0;
-    /* Patch SWP follows the sibling trackers' period-direction convention:
-     * positive values fall, negative values rise.  Row/table P keeps its
-     * established direct signed-pitch convention and overrides this rate. */
+    /* Patch SWP and P follow the sibling trackers' period-direction
+     * convention: positive values fall, negative values rise. */
     v->bend_rate = (in->type <= IT_LEGACY_NOISE) ? -in->swp : 0;
     v->slide_off = 0;
     v->slide_rate = 0;
@@ -1211,10 +1230,9 @@ void engine_tick(void)
             trigger(ch, v->dly_note, v->dly_instr);
             v->dly_in = EMPTY;
         }
-        /* KIT has static trigger gain but no volume envelope, so retrigger
-         * must not be gated by env_phase. Table-WAV/hardware keep the gate. */
-        if (v->rt_rate && (v->env_phase || v->dac_slot < NDAC)
-            && ++v->rt_cnt >= v->rt_rate) {
+        /* R owns its tick clock until the next note/K, even if a short AHD
+         * has already reached silence. */
+        if (v->rt_rate && ++v->rt_cnt >= v->rt_rate) {
             v->rt_cnt = 0;
             if (v->type == IT_KIT && v->dac_slot < NDAC) {
                 unsigned char kb = sd.instrs[v->inum < NINSTR
@@ -1225,19 +1243,14 @@ void engine_tick(void)
                 unsigned char fade = v->rt_fade << 3;
                 v->env_peak = (v->env_peak > fade)
                               ? v->env_peak - fade : 0;
-                if (v->e_atk) {
-                    v->env_phase = 1;
-                    v->env_level = 0;
-                } else {
-                    v->env_phase = 2;
-                    v->env_level = v->env_peak;
-                }
+                envelope_restart(v);
                 v->hold_left = sd.instrs[v->inum < NINSTR
                                          ? v->inum : 0].hold & 0x0F;
                 if (!(sd.instrs[v->inum < NINSTR ? v->inum : 0].hold
                       & 0xF0))
                     v->tpos |= 0x10;    /* TBS 0: retriggers count as notes */
-                v->dirty = 1;
+                if (v->type != IT_WAV)
+                    v->retime = 1;       /* re-enable/reseed a finished LFSR */
             }
         }
         if (v->env_phase) {
@@ -1274,6 +1287,7 @@ void engine_tick(void)
                 v->env_phase = 0;
                 v->env_level = 0;
                 v->kill_in = EMPTY;
+                v->rt_rate = 0;          /* K terminates any repeating R */
                 if (v->dac_slot < NDAC)
                     dac_release(ch);
                 v->dirty = 1;

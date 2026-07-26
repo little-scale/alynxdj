@@ -24,6 +24,10 @@ PHRASE_SIZE = 64
 INSTR_SIZE = 16
 CMD_NEXT = (1, 22, 3, 18, 5, 20, 13, 8, 15, 10, 11, 17,
             4, 14, 7, 16, 19, 0, 12, 9, 21, 6, 2)
+TABLE_COMMAND_CASES = (1, 2, 3, 4, 5, 12, 13, 14,
+                       16, 17, 18, 19, 20, 21, 22)
+TABLE_VALID_COMMANDS = {0, 2, 4, 5, 6, 7, 8, 9, 10,
+                        11, 12, 14, 15, 16, 18, 19, 22}
 
 
 def fail(message):
@@ -948,7 +952,7 @@ def run_command_order_case(harness, core, rom, build, backwards):
     put(pokes, CHAINS, (0, 0))
     for row, cmd in enumerate(range(16)):
         put(pokes, PHRASES + row * 4, (0, 0, cmd, 0x80 + row))
-    for row, cmd in enumerate(range(16, 23)):
+    for row, cmd in enumerate(TABLE_COMMAND_CASES):
         put(pokes, TABLES + row * 4, (0, 0, cmd, 0x40 + row))
 
     env = os.environ.copy()
@@ -964,12 +968,13 @@ def run_command_order_case(harness, core, rom, build, backwards):
             else "1@6,81@4,1@6,0@10,")
     phrase_edits = "".join(edit + (down if row < 15 else "")
                            for row in range(16))
-    table_edits = "".join(edit + (down if row < 6 else "")
-                          for row in range(7))
+    table_edits = "".join(
+        edit + (down if row + 1 < len(TABLE_COMMAND_CASES) else "")
+        for row in range(len(TABLE_COMMAND_CASES)))
     script = ("0@280," + drill * 2 + right * 2 + phrase_edits
               + drill * 2 + right * 2 + table_edits + "0@80")
     subprocess.run(
-        [harness, core, test_rom, ppm, "1800", script], env=env, check=True)
+        [harness, core, test_rom, ppm, "2400", script], env=env, check=True)
 
     with open(ram_path, "rb") as f:
         ram = f.read()
@@ -984,11 +989,11 @@ def run_command_order_case(harness, core, rom, build, backwards):
         if actual != expected[cmd] or ram[PHRASES + row * 4 + 3] != 0x80 + row:
             fail("%s PHRASE command %d stepped to %d, expected %d"
                  % (label, cmd, actual, expected[cmd]))
-    for row, cmd in enumerate(range(16, 23)):
+    for row, cmd in enumerate(TABLE_COMMAND_CASES):
         actual = ram[TABLES + row * 4 + 2]
         table_expected = expected[cmd]
-        if table_expected == 1:
-            table_expected = 0 if backwards else 22
+        while table_expected not in TABLE_VALID_COMMANDS:
+            table_expected = expected[table_expected]
         if (actual != table_expected
                 or ram[TABLES + row * 4 + 3] != 0x40 + row):
             fail("%s TABLE command %d stepped to %d, expected %d"
@@ -1121,7 +1126,8 @@ def main():
           "PHRASE drill follows the selected row's instrument; WAVE number "
           "requires physical A; NEW patch defaults are canonical; "
           "empty boots stay clean; FILES DEMO and overlaid PURGE work; "
-          "PHRASE/TABLE commands step alphabetically, with TABLE skipping A")
+          "PHRASE/TABLE commands step alphabetically, with TABLE skipping "
+          "A/D/I/J/L/Z")
 
 
 if __name__ == "__main__":

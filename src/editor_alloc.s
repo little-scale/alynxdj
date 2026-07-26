@@ -18,9 +18,11 @@
         .import  _edit_instr, _i_row
         .import  _screen, _s_row, _c_row, _p_row, _p_col, _edit_phrase
         .import  _t_row, _t_col, _edit_table
+        .import  _cmd_table_valid
         .import  _draw_song_screen, _draw_chain_screen, _draw_phrase_screen
         .import  _stream_cancel, _trig_kit, _trig_member
-        .import  _dac_mode, _dac_off, _pcm_done
+        .import  _dac_mode, _dac_off
+        .importzp _pcm_done
         .import  popa, popax, incsp2
         .importzp ptr1, ptr2, sp, tmp1, tmp2
 
@@ -56,6 +58,7 @@ VOICE_SIZE   = 49
         .exportzp _live_q_row, _ph_song, _rep_dir, _rep_timer
         .exportzp _a_used, _b_used, _o1_used, _clip_chst
         .exportzp _dac_owner, _dac_stamp, _dac_clock, _stereo_disable
+        .exportzp _draw_x_offset
         .exportzp _live_q, _live_bar, _eng_tick, _row_ticks, _prng
         .exportzp _draw_pump_phase
 _blk_n:          .res 1
@@ -87,6 +90,7 @@ _eng_tick:       .res 1
 _row_ticks:      .res 1
 _prng:           .res 2
 _draw_pump_phase:.res 1
+_draw_x_offset:   .res 1
 
         .segment "MIDICODE"
 
@@ -158,7 +162,7 @@ _command_latch:
         rts
 
 ; A clean physical-B tap inserts the shared remembered pair into an empty
-; command-letter cell.  TABLE deliberately rejects phrase-only A.
+; command-letter cell. TABLE rejects commands its engine cannot apply.
         .segment "CODE"
 _command_insert:
         lda     _screen
@@ -185,8 +189,12 @@ _command_insert:
         ldx     _screen
         cpx     #SCR_TABLE
         bne     @insert_store
-        cmp     #CMD_A
+        cmp     #23
+        bcs     @insert_yes
+        tax
+        lda     _cmd_table_valid,x
         beq     @insert_yes
+        txa
 @insert_store:
         sta     (ptr1),y
         iny

@@ -47,6 +47,12 @@ static const unsigned char cmd_next_order[NCMDS] = {
     CMD_T, CMD_NONE, CMD_F, CMD_V, CMD_J, CMD_K, CMD_C,
 };
 
+/* TABLE has no trigger/pass/portamento context for A/D/I/J/L/Z. */
+const unsigned char cmd_table_valid[NCMDS] = {
+    1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 0, 1, 1, 1, 0, 1, 1, 0, 0, 1,
+};
+
 #pragma rodata-name (push, "HICODE2")
 static const char empty_note[] = "---";
 #pragma rodata-name (pop)
@@ -523,8 +529,8 @@ static void draw_instr_row(unsigned char r, unsigned char cursor_here)
         unsigned char i;
         char b[2];
         v = instr_taps(edit_instr);
-        draw_hex8(8, y, (unsigned char)(v >> 8), fg, bg);
-        draw_hex8(10, y, (unsigned char)v, fg, bg);
+        draw_hex8(8, y, (unsigned char)(v >> 4), fg, bg);
+        draw_hex8(9, y, (unsigned char)v, fg, bg);
         /* Nine solid blocks, in user tap order: 0-5, 7, 10, 11. */
         b[1] = 0;
         for (i = 0; i < 9; ++i) {
@@ -536,8 +542,8 @@ static void draw_instr_row(unsigned char r, unsigned char cursor_here)
     }
     case IF_SEED:
         v = instr_seed();
-        draw_hex8(8, y, (unsigned char)(v >> 8), fg, bg);
-        draw_hex8(10, y, (unsigned char)v, fg, bg);
+        draw_hex8(8, y, (unsigned char)(v >> 4), fg, bg);
+        draw_hex8(9, y, (unsigned char)v, fg, bg);
         break;
     case IF_TABLE:
         if (sd.instrs[edit_instr].table >= NTABLES)
@@ -1189,15 +1195,10 @@ static void edit_table_cell(unsigned char dir)
     case 2:
         if (!tr->cmd && command_insert() == 2)
             break;                      /* first edit repeats cmd + value */
-        if (dir == 0 || dir == 3) {
-            tr->cmd = cmd_next(tr->cmd);
-            if (tr->cmd == CMD_A)
-                tr->cmd = CMD_B;
-        } else {
-            tr->cmd = cmd_prev(tr->cmd);
-            if (tr->cmd == CMD_A)
-                tr->cmd = CMD_NONE;
-        }
+        do {
+            tr->cmd = (dir == 0 || dir == 3)
+                      ? cmd_next(tr->cmd) : cmd_prev(tr->cmd);
+        } while (!cmd_table_valid[tr->cmd]);
         break;
     case 3:
         if (!tr->cmd)
