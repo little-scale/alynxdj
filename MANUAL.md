@@ -89,12 +89,13 @@ swing is preserved. Plus free-chain/phrase counters.
 
 **OPTIONS:** SYNC (ComLynx OFF/OUT/IN/MIDI/IN24), PRELIS (audition-on-edit on/off),
 REPEAT (key-repeat delay), PALETTE (eight colour schemes numbered 0–7,
-ported from SMSGGDJ's COLR presets, applied live; 0 is the default).
+ported from SMSGGDJ's COLR presets, applied live; 1 is the default).
 OPTIONS settings persist in the cart EEPROM alongside the song.
 
-In **MIDI** takeover, the sequencer stays stopped and incoming USB MIDI from a
-ComLynx bridge plays the tracker directly: MIDI channels 1–4 use tracks A–D
-and instruments 00–03. Notes use the normal instrument path, including TSP/RATE,
+In **MIDI** takeover, the sequencer stays stopped and incoming USB or
+opto-isolated TRS/DIN MIDI from a ComLynx bridge plays the tracker directly:
+MIDI channels 1–4 use tracks A–D and instruments 00–03. Notes use the normal
+instrument path, including TSP/RATE,
 SWP/VIB/TRM, tables, envelopes, WAV and KIT routing. Each MIDI channel is
 monophonic. Note Off releases through DECAY (DCY 0 cuts); KIT stops. Velocity
 is currently used only to distinguish Note On from velocity-zero Note Off.
@@ -107,18 +108,19 @@ resolution: centre `mm=40`, minimum `00` is −2 semitones, and maximum `7F` is
 panic, or sync-mode change. It uses the same `F` path as tracker finetune, so
 it follows F's existing instrument-type limits rather than a separate MIDI
 sound path. CC120/123 release a channel and MIDI System Reset (`FF`) is panic.
-Messages must contain their status byte; running status, channels 5–16,
-Program Change, Channel Pressure, and other controllers are ignored. There is
-no heartbeat timeout.
+Messages reaching the Lynx must contain their status byte. The supplied Pico
+bridge expands serial MIDI running status before forwarding it; channels 5–16,
+Program Change, Channel Pressure, and other controllers are ignored by the
+tracker. There is no heartbeat timeout.
 The timer-4 UART IRQ buffers incoming bytes continuously; complete messages are
 drained and applied together at the next 59.9 Hz audio tick, so simultaneous
 channel notes are not serialized through redraw work. This adds a bounded
 0–16.7 ms trigger quantization while keeping screen navigation out of the MIDI
 and audio scheduling path.
 
-In **IN24**, the same Pico bridge supplies MIDI Clock transport. The Pico
-counts standard 24-PPQN USB MIDI Clock and sends the Lynx one pulse per
-tracker row. `FA` Start supplies a row-0 cue when the user has not already
+In **IN24**, the same Pico bridge supplies MIDI Clock transport from the
+selected USB or serial MIDI source. The Pico counts standard 24-PPQN Clock and
+sends the Lynx one pulse per tracker row. `FA` Start supplies a row-0 cue when the user has not already
 cued one and is immediately followed by the first row grant; the next grant
 arrives after six source clocks. This removes the former one-row startup wait
 while keeping subsequent rows at four per quarter note. `FC` Stop halts.
@@ -136,11 +138,13 @@ sounds yet. A MIDI Start/Continue from the Pico supplies the first row pulse
 immediately, starts that cued row, and changes the label to **PLAY**; each
 later divided pulse advances one row. A Start message received while WAIT is
 showing preserves the locally selected row.
-Pico build, wiring, and flashing instructions are in
+Pico build, TRS Type A MIDI input, Chipbridge PCB pinout, Lynx cable, and
+flashing instructions are in
 [`pico-midi-comlynx/README.md`](pico-midi-comlynx/README.md). The required
 2.5 mm TRS plug is **tip = Lynx +5 V (leave disconnected and insulate), ring =
 ComLynx DATA, sleeve = GND**; do not substitute a normal stereo-audio wiring
-assumption.
+assumption. On the PCB cable, connect only Lynx ring to PCB ring and sleeve to
+sleeve; leave both tips disconnected.
 
 The map rows also navigate horizontally: A-held+←/→ moves FILES↔GROOVE
 and OPTIONS↔PROJECT↔WAVE.

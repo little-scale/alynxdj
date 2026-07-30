@@ -9,6 +9,8 @@ set(CMAKE_CXX_STANDARD 17)
 pico_sdk_init()
 
 set(COMLYNX_TX_PIN 2 CACHE STRING "Pico GPIO connected to the ComLynx output stage")
+set(SERIAL_MIDI_RX_PIN 13 CACHE STRING "GPIO for opto-isolated 31.25 kbaud MIDI input; -1 disables it")
+set(STATUS_LED_PIN -1 CACHE STRING "Active-high ready LED GPIO; -1 disables it")
 
 add_executable(alynxdj_midi_comlynx
     main.c
@@ -25,12 +27,15 @@ target_include_directories(alynxdj_midi_comlynx PRIVATE
 
 target_compile_definitions(alynxdj_midi_comlynx PRIVATE
     COMLYNX_TX_PIN=${COMLYNX_TX_PIN}
+    SERIAL_MIDI_RX_PIN=${SERIAL_MIDI_RX_PIN}
+    STATUS_LED_PIN=${STATUS_LED_PIN}
 )
 
 target_link_libraries(alynxdj_midi_comlynx PRIVATE
     pico_stdlib
     pico_unique_id
     hardware_pio
+    hardware_uart
     tinyusb_device
     tinyusb_board
 )

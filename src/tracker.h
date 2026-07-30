@@ -217,6 +217,8 @@ void __fastcall__ sync_set_mode(unsigned char mode);
 void __fastcall__ sync_tx(unsigned char b);
 void sync_poll(void);
 void __fastcall__ sync_test_byte(unsigned char b);
+extern unsigned char vbl_guard;
+#pragma zpsym("vbl_guard")
 void midi_overlay_load(void);
 void help_overlay_load(void);
 #define help_page (*(volatile unsigned char *)0xC8FD)

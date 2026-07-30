@@ -863,6 +863,9 @@ def run_new_defaults_case(harness, core, rom, build):
         if actual != expected:
             fail("NEW instrument %02X defaults are %s, expected %s"
                  % (index, actual.hex(), expected.hex()))
+    if ram[0xC013] != 1:
+        fail("clean EEPROM palette is %02X, expected default 01"
+             % ram[0xC013])
 
 
 def run_demo_case(harness, core, rom, build):
@@ -878,10 +881,13 @@ def run_demo_case(harness, core, rom, build):
     env["RETROSHOT_RAM_OUT"] = ram_path
     to_files = "100@10,120@20,100@10,0@40,"
     down_three = "20@6,0@20,20@6,0@20,20@6,0@20,"
-    confirm_demo = "1@4,0@24,1@4,0@80"
+    # The final live PACK meter walks all 7680 song bytes with VBlank safely
+    # gated. Leave enough wall-clock frames for that pass and its 2 KB helper
+    # reload to finish before inspecting RAM.
+    confirm_demo = "1@4,0@24,1@4,0@500"
     script = "0@280," + to_files + down_three + confirm_demo
     subprocess.run(
-        [harness, core, test_rom, ppm, "700", script], env=env, check=True)
+        [harness, core, test_rom, ppm, "1400", script], env=env, check=True)
     with open(ram_path, "rb") as f:
         ram = f.read()
 
@@ -898,6 +904,11 @@ def run_demo_case(harness, core, rom, build):
     if tuple(ram[CHAINS + 20 * CHAIN_SIZE:
                  CHAINS + 20 * CHAIN_SIZE + 4]) != (20, 0, 20, 0):
         fail("FILES DEMO did not restore the factory chain data")
+    with open(test_rom, "rb") as f:
+        image = f.read()
+    helper = image[64 + 254 * 1024:64 + 256 * 1024 - 3]
+    if ram[0xC100:0xC8FD] != helper:
+        fail("FILES DEMO left the live MIDI/sync helper overwritten")
 
 
 def run_purge_overlay_case(harness, core, rom, build):

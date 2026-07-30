@@ -27,7 +27,7 @@ as a multi-drop sync bus.
 
 ## Status
 
-**V0.57 — hardware-ready MIDI takeover and clock sync** (verified
+**V0.58 — Chipbridge MIDI input and hardware-stable FILES overlays** (verified
 on a real Atari Lynx with the RP2040 bridge),
 feature-complete against the design brief with an editor/UX pass on top
 (see [CHANGELOG.md](CHANGELOG.md) for what changed, [PLAN.md](PLAN.md) for
@@ -69,8 +69,9 @@ decision log):
   autoload, a clean no-save boot, and an explicit FILES demo loader
   ([SAVEFORMAT.md](SAVEFORMAT.md)); **two-unit ComLynx sync** verified in
   a bridged-core harness (0 ms lock), plus receive-only **MIDI takeover**:
-  USB-MIDI channels 1–4 drive tracks A–D / instruments 00–03 through the
-  tracker engine via the included Pico bridge. Incoming messages are applied
+  USB MIDI or opto-isolated TRS Type A MIDI channels 1–4 drive tracks A–D /
+  instruments 00–03 through the tracker engine via the included Pico bridge.
+  Incoming messages are applied
   at the 59.9 Hz audio tick, independently of screen redraws, while the UART
   IRQ continues buffering the rest of a chord. CC74 enters the tracker's
   note-local `N` taps command and Pitch Bend enters its `F` finetune path with
@@ -91,7 +92,7 @@ and upstream PRs (libretro-handy EEPROM fix, cc65 `_UART_TIMER`).
 
 Grab the latest [release](https://github.com/little-scale/alynxdj/releases):
 the production `.lnx` ROM, portable factory sample-bank `.bin`, both standalone
-browser tools, and the Raspberry Pi Pico 1 USB-MIDI/ComLynx bridge UF2. The ROM
+browser tools, and standard Pico plus RP2040-Zero Chipbridge MIDI/ComLynx UF2s. The ROM
 has booted and run on a real Lynx; deterministic software/audio regressions
 use the repo's patched Handy core. Run the ROM in RetroArch or build below.
 
@@ -132,15 +133,22 @@ for the hardware triangle. For KIT, instrument byte 15 is a five-state source
 rate (`FF` 0.5×, `00`–`03` 1×–4×); the viewer presents those states
 instead of signed transpose.
 
-## Pico USB-MIDI bridge
+## Pico USB/TRS-MIDI bridge
 
 [`pico-midi-comlynx/`](pico-midi-comlynx/) contains buildable RP2040 firmware
-for the one-Pico/one-Lynx bridge. It appears to a computer or DAW as
-**ALYNXDJ MIDI Bridge**, forwards MIDI channels 1–4 plus Clock/Start/Continue/
-Stop, emits an immediate row pulse on Start/Continue, divides every six later
-USB MIDI clocks into the following tracker-row pulse, and generates the Lynx's
-62.5-kbaud open-drain 11-bit UART framing in PIO. The same output works with
-the Lynx's `MIDI` and `IN24` modes, with no Pico mode switch and no heartbeat.
+for the one-Pico/one-Lynx bridge. It accepts class-compliant USB MIDI or an
+opto-isolated 31,250-baud serial MIDI receiver, normalizes both through one
+message path, forwards channels 1–4 plus Clock/Start/Continue/Stop, and
+generates the Lynx's 62.5-kbaud open-drain 11-bit UART framing in PIO. Serial
+MIDI supports running status and interleaved real-time messages. The same
+output works with the Lynx's `MIDI` and `IN24` modes, with no Pico mode switch
+and no heartbeat.
+
+`make pico-chipbridge` builds specifically for the Waveshare RP2040-Zero PCB:
+ComLynx is `GP1`, opto-isolated TRS Type A MIDI input is `GP13`, and the ready
+LED is `GP7`. The Lynx cable connects ring-to-ring and sleeve-to-sleeve only.
+Both tips are disconnected and insulated because the Lynx tip supplies +5 V;
+an ordinary tip-to-tip stereo cable must never be used.
 
 `IN` and `IN24` are armed transports: cue a SONG row and press transport to
 show **WAIT**. The first incoming row pulse starts that exact row and changes
@@ -151,9 +159,9 @@ The bridge README includes the 470-ohm + BAT54 prototype circuit, documented
 Jaycar BAT46/BAT48 and 1N5819 substitutes, the preferred buffered alternatives,
 the reason a 1N4148 is not a safe clamp, exact wiring
 (2.5 mm TRS **tip = +5 V/unconnected, ring = DATA, sleeve = GND**),
-build instructions, CC74/Pitch Bend mappings, and the current USB-device
-limitation: it accepts MIDI from a computer/DAW, but does not yet host a USB
-keyboard directly.
+build instructions, Chipbridge pin table, CC74/Pitch Bend mappings, and the
+current USB-device limitation: it accepts MIDI from a computer/DAW, but does
+not yet host a USB keyboard directly.
 
 ## Building
 
@@ -166,6 +174,7 @@ make SAMPLE_BANK=/path/to/custom-samples.bin # inject one portable bank
 make shot     # headless run → build/shot.png + audio WAV capture
 make test     # ROM, sound, editor, HELP, save/viewer, samples, and MIDI/sync
 make pico     # companion RP2040 UF2; requires PICO_SDK_PATH + Arm toolchain
+make pico-chipbridge # RP2040-Zero PCB UF2: GP1 link, GP13 MIDI, GP7 LED
 ```
 
 Factory sample conversion resamples to 5,208.333 Hz, peak-normalizes, then

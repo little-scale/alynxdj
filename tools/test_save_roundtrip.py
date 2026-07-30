@@ -25,6 +25,14 @@ def run(harness, core, rom, ppm, ram, poke=False):
         return f.read()
 
 
+def check_overlay(ram, rom, label):
+    with open(rom, "rb") as f:
+        image = f.read()
+    helper = image[64 + 254 * 1024:64 + 256 * 1024 - 3]
+    if ram[0xC100:0xC8FD] != helper:
+        fail("%s left the live MIDI/sync helper overwritten" % label)
+
+
 def u16(data, address):
     return data[address] | data[address + 1] << 8
 
@@ -54,6 +62,7 @@ def main():
         fail("an empty EEPROM booted into a populated song instead of NEW")
     if not 0 < packed <= 2032:
         fail("packed size %d is outside the 93C86 payload budget" % packed)
+    check_overlay(first, test_rom, "save")
 
     second = run(harness, core, test_rom,
                  os.path.join(build, "save-load.ppm"),
@@ -62,6 +71,7 @@ def main():
         fail("power-cycle load status is %d, expected ST_OK" % second[0xC01D])
     if u16(second, 0xC018) != checksum:
         fail("song checksum changed across the power cycle")
+    check_overlay(second, test_rom, "load")
 
     print("save roundtrip: PASS — %d/2032 bytes, checksum $%04X"
           % (packed, checksum))

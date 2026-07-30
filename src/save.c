@@ -55,6 +55,7 @@ unsigned save_pack(void)
     unsigned remain = sizeof(sd);
     unsigned out = 0;
 
+    ++vbl_guard;                      /* buf temporarily replaces live MIDICODE */
     while (remain) {
         unsigned char run = 1;
         unsigned char v = *src;
@@ -129,6 +130,7 @@ unsigned char save_load(void)
 {
     unsigned len, i, w, v;
 
+    ++vbl_guard;
     if (ee_read(0) != ('A' | ('L' << 8)) || ee_read(1) != ('D' | ('J' << 8)))
         return ST_NODATA;
     len = ee_read(2);

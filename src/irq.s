@@ -7,6 +7,7 @@
 
         .export         _vbl_install
         .exportzp       _frames
+        .exportzp       _vbl_guard
         .export         _pcm_stop
         .export         _dac_stop
         .export         _dac_source_rate_set
@@ -61,7 +62,8 @@ _pcm_ptr: .res 4                ; two ring tails, IRQ-owned
 wav_ptr0: .res 2
 wav_ptr1: .res 2
 _pcm_head: .res 4               ; two ring heads, pump-owned
-in_tick:  .res 1                ; VBL tick re-entrancy guard
+_vbl_guard:
+in_tick:  .res 1                ; VBL re-entry / $C100 overlay guard
 _frames:  .res 2                ; u16 frame counter (read by C)
 _pcm_done: .res 2
 _dac_phase:

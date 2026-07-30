@@ -516,13 +516,13 @@ static void overlay_load(unsigned char block, unsigned char *dst,
 void midi_overlay_load(void)
 {
     unsigned char *dst = (unsigned char *)0xC100;
-    unsigned char chunks = 64;          /* whole $C100-$C8FF overlay window */
 
+    vbl_guard = 64;                     /* also owns the copy countdown */
     cart_seek(254, 0);                  /* final two blocks, after sample bank */
     do {
         cart_read(dst, 32);
         dst += 32;
-    } while (--chunks);
+    } while (--vbl_guard);              /* zero publishes the complete helper */
 }
 
 void help_overlay_load(void)
@@ -578,6 +578,7 @@ void main(void)
     overlay_load(44, (unsigned char *)0xF320, 23); /* HICODE3: $02E0 */
     midi_overlay_load();
     sync_init();
+    ++opt_palette;                      /* sync_init cleared it: default 01 */
     config_load();
     palette_init();
     screen_clear();

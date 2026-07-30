@@ -88,6 +88,8 @@ fixed channel-C/channel-D sample-bus details recorded in M7/M8.**
 | M48 | ✅ **DENSE, SAFE KIT RATE RANGE** — KIT TSP now reads `FF`=0.5× and `00`–`03`=1×–4×, adding exact 3× while moving 4× to `03`. Six-piece frame/render refills sustain that range, and a low-cost IRQ proximity path clamps odd strides and live rate changes at the published head. Duration and zero-underrun rigs cover all five exposed states. A measured 5× implementation repeatedly exhausted the serial-cart stream on the longest factory sample (~26 KB/s demand), so `04` is deliberately rejected rather than exposed as hardware-dependent “sometimes” behavior. Save v6 is structurally unchanged; legacy KIT `$02` now means 3× by explicit pre-adoption policy. | Prefer a dense musical control that remains dependable under the hardware workloads which motivated the lower sample rate |
 | M49 | ✅ **FIRST-HARDWARE MIDI SCHEDULING PASS** — MIDI channels 1–4 now map to zero-based instruments `00`–`03`. The existing timer-4 IRQ ring is drained at the start of the VBlank engine tick instead of the redraw-bound foreground loop, so simultaneous channel messages enter one audio-owned batch, nested UART receive stays enabled during every tracker trigger, and screen paints cannot delay note or clock application. MIDI gains a deterministic 0–16.7 ms trigger quantization instead of unbounded redraw delay. The Pico now follows `FA`/`FB` with an immediate `F8` downbeat, resets its divider, and emits the next row after six source clocks, removing the measured one-row Ableton startup wait without changing steady-state lock. Mapping, four-channel receive, release/panic, and IN/IN24 transport regressions pass; silicon remains the authority for dense chord and redraw stress. | Make the surprisingly functional prototype reliable enough for real performance testing without adding another sound path or RAM buffer |
 | M50 | ✅ **MIDI COMMAND ROUTING + PITCH BEND** — CC74 now scales `0`–`127` across `N00`–`NFF` and enters the public tracker command executor, giving each active LFSR voice the same note-local taps replacement as phrase/table N. Standard Pitch Bend uses its MSB as an absolute ±2-semitone target at the engine's 1/16-semitone resolution, converts successive targets to deltas, and enters the same F-command case; per-channel targets survive retrigger and clear on panic/mode changes. A compact full-status assembly parser recovers enough of the fixed EEPROM/MIDI overlay for this without shrinking the stack, song, or PCM rings. The Pico required no protocol change because it already forwards complete channel messages. Emulator RAM regressions prove N's split feedback/control writes, both bend endpoints, and held-bend retrigger behavior; silicon listening remains the final musical check. | Add one useful timbre controller and conventional pitch expression while preserving the single tracker sound path and standard MIDI byte stream |
+| M51 | ✅ **TRS MIDI + CHIPBRIDGE PCB TARGET** — the RP2040 companion now receives opto-isolated 31,250-baud MIDI on UART0/GP13 as well as USB MIDI. A bounded parser expands running status, preserves interleaved real-time transport, rejects SysEx/System Common, and feeds the existing channel/clock dispatcher so the Lynx protocol remains normalized full-status MIDI. The dedicated Waveshare RP2040-Zero build follows the PCB: ComLynx `DATA1` GP1, TRS MIDI GP13, ready LED GP7, and unused `DATA0` GP0. The documented Lynx adapter carries ring and sleeve only; both tips are disconnected because the Lynx tip is +5 V. Host parser regressions pin recovery and message-boundary behavior. | Give the shared bridge hardware a standards-compliant standalone MIDI input without changing the Lynx ROM protocol |
+| M52 | ✅ **FILES OVERLAY SAFETY + PALETTE 01 DEFAULT** — the VBlank re-entry byte now also guards `$C100-$C8FC` while SAVE/LOAD/PACK owns the live MIDI/sync helper window. Timer 2 remains acknowledged and `frames` continues, but the complete engine tick is deferred until the two-block cart reload counts itself back to zero; FILES → DEMO can no longer branch into packed song bytes. Regressions compare the restored helper byte-for-byte after DEMO, SAVE, and LOAD. A clean or invalid machine config now starts on palette `01`, while a valid saved choice still wins. | Make every shared-overlay lifetime interrupt-safe without spending another byte of the exact RAM map |
 
 Commit at each milestone boundary. Hardware-verify **M6 (LFSR timbres)** and
 **M7 (PCM feed)** early — Handy is a 20-year-old core; its polynomial-counter
@@ -114,7 +116,7 @@ second-opinion core.
 - **64 KB code packing** — SONG and MAIN are exact; HICODE3 has 1 byte;
   HICODE1, HICODE2, and the
   expanded `$C100` cold/live helper overlay are full at `$C8FC`. The C stack remains 512 bytes.
-  HELPCODE has 29 bytes; its three-block compressed text image has 3 bytes
+  HELPCODE has 29 bytes; its three-block compressed text image has 1 byte
   in this build, with the exact margin varying with the build stamp.
   Growth needs measured placement and must
   respect the MIDI/save-buffer and MIDI/phrase-counter overlay lifetimes.
@@ -124,10 +126,10 @@ second-opinion core.
 
 ## Status
 
-**M0–M48 implemented as of 2026-07-25.** The tracker has all eleven screens,
+**M0–M52 implemented as of 2026-07-30.** The tracker has all eleven screens,
 the full command/editor workflow, ComLynx OUT/IN/IN24, packed 93C86 persistence,
-four genuinely symmetric logical/hardware tracks, receive-only USB-MIDI-over-
-ComLynx takeover, LFSR/WAV TSP plus KIT source RATE, universal Lynx II instrument
+four genuinely symmetric logical/hardware tracks, receive-only USB/TRS-MIDI-
+over-ComLynx takeover, LFSR/WAV TSP plus KIT source RATE, universal Lynx II instrument
 PAN, LFSR SWP/sine-VIB/TRM patch modulation, and static KIT
 PCM gain. Two sampled
 voices are the deliberate CPU cap,

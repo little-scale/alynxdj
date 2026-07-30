@@ -13,9 +13,10 @@ BUILD := build
 .DEFAULT_GOAL := all
 ROM   := $(BUILD)/alynxdj.lnx
 CFG   := alynxdj.cfg
-VERSION := v0.57
+VERSION := v0.58
 PYTHON ?= python3
 NODE ?= node
+HOST_CC ?= cc
 FACTORY_SAMPLE_BANK := samples/alynxdj-factory-samples.bin
 SAMPLE_BANK ?= $(FACTORY_SAMPLE_BANK)
 SAMPLE_POOL_CAPACITY := 209920
@@ -131,15 +132,34 @@ test-hardware: $(ROM) $(RETROSHOT)
 test-midi: $(ROM) $(RETROSHOT)
 	$(PYTHON) tools/test_midi_takeover.py $(RETROSHOT) $(EMUCORE) $(ROM)
 
-test: test-bank test-dac test-save test-viewer test-tone test-editor test-help test-hardware test-midi
+test-pico-midi:
+	mkdir -p $(BUILD)/tests/pico-midi
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 \
+		-o $(BUILD)/tests/pico-midi/serial_midi_parser \
+		tools/test_pico_serial_midi.c
+	$(BUILD)/tests/pico-midi/serial_midi_parser
 
-# Companion USB-MIDI-device firmware. Requires a complete Arm embedded
-# toolchain and PICO_SDK_PATH; it is intentionally not part of the ROM build.
+test: test-bank test-dac test-save test-viewer test-tone test-editor test-help test-hardware test-midi test-pico-midi
+
+# Companion USB/TRS-MIDI firmware. Requires a complete Arm embedded toolchain
+# and PICO_SDK_PATH; it is intentionally not part of the ROM build.
 pico:
-	cmake -S pico-midi-comlynx -B $(BUILD)/pico-midi-comlynx -DPICO_BOARD=pico
+	cmake --fresh -S pico-midi-comlynx -B $(BUILD)/pico-midi-comlynx \
+		-DPICO_BOARD=pico -DCOMLYNX_TX_PIN=2 \
+		-DSERIAL_MIDI_RX_PIN=13 -DSTATUS_LED_PIN=-1
 	cmake --build $(BUILD)/pico-midi-comlynx
 	cp $(BUILD)/pico-midi-comlynx/alynxdj_midi_comlynx.uf2 $(BUILD)/alynxdj_midi_comlynx.uf2
 	@echo "wrote $(BUILD)/alynxdj_midi_comlynx.uf2 (Raspberry Pi Pico / RP2040)"
+
+# Chipbridge PCB: Waveshare RP2040-Zero, protected ComLynx ring on GP1,
+# opto-isolated Type-A TRS MIDI input on GP13, active-high ready LED on GP7.
+pico-chipbridge:
+	cmake --fresh -S pico-midi-comlynx -B $(BUILD)/pico-midi-comlynx-chipbridge \
+		-DPICO_BOARD=waveshare_rp2040_zero -DCOMLYNX_TX_PIN=1 \
+		-DSERIAL_MIDI_RX_PIN=13 -DSTATUS_LED_PIN=7
+	cmake --build $(BUILD)/pico-midi-comlynx-chipbridge
+	cp $(BUILD)/pico-midi-comlynx-chipbridge/alynxdj_midi_comlynx.uf2 $(BUILD)/alynxdj_midi_comlynx_chipbridge.uf2
+	@echo "wrote $(BUILD)/alynxdj_midi_comlynx_chipbridge.uf2 (Chipbridge / Waveshare RP2040-Zero)"
 
 # version-only release copy (attach these to GitHub releases)
 dist: $(ROM)
@@ -149,4 +169,4 @@ dist: $(ROM)
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: all factory-samples shot test test-bank test-dac test-save test-tone test-editor test-help test-hardware test-midi pico dist clean
+.PHONY: all factory-samples shot test test-bank test-dac test-save test-tone test-editor test-help test-hardware test-midi test-pico-midi pico pico-chipbridge dist clean

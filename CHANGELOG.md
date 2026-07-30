@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+## v0.58 — 2026-07-30
+
+- Fix FILES → DEMO, SAVE, LOAD, and the live PACK meter racing the VBlank
+  engine tick while `$C100` temporarily contains packed song data instead of
+  MIDI/sync code. VBlank now defers the complete tick until both helper blocks
+  have been restored; frame timing and IRQ acknowledgement continue normally.
+- Make palette `01` the default when no valid OPTIONS config exists. Persisted
+  palette selections still load unchanged.
+- Extend editor and EEPROM regressions to compare the restored live helper
+  byte-for-byte after DEMO, SAVE, and LOAD, and pin the clean palette default.
+- Add opto-isolated 31,250-baud TRS/DIN MIDI input to the RP2040 bridge on
+  GP13. Serial running status and interleaved real-time bytes are normalized
+  through the same channel/clock dispatcher as USB MIDI; SysEx and System
+  Common are safely ignored.
+- Add a dedicated Waveshare RP2040-Zero Chipbridge build with ComLynx output
+  on PCB `DATA1`/GP1, TRS MIDI input on GP13, and the active-high ready LED on
+  GP7. Document the mandatory custom Lynx cable: ring-to-ring and
+  sleeve-to-sleeve, with both tips disconnected and insulated so the Lynx's
+  +5 V tip never reaches PCB `DATA0`/GP0.
+- Add host-side serial parser regressions covering running status, one-byte
+  channel messages, real-time interleaving, System Common, SysEx, and reset.
+
 ## v0.57 — 2026-07-30
 
 - Make four-channel MIDI takeover independent of screen redraw. The timer-4

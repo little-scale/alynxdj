@@ -37,11 +37,17 @@ clock sync: full-status MIDI channels 1–4 route to tracks A–D/instruments
 drains complete messages before voice processing, so redraw cannot delay MIDI
 and serial receive stays live while a multi-channel chord is applied. The Pico
 emits an immediate `IN24` row grant after Start/Continue, then divides USB
-MIDI's 24 PPQN into one pulse per following tracker row. `IN` and `IN24` arm
+or serial MIDI's 24 PPQN into one pulse per following tracker row. `IN` and `IN24` arm
 locally at the cued row as `WAIT`; their first row pulse starts that row and
 changes the transport to `PLAY`. MIDI CC74 enters the shared `N` executor path
 as a note-local LFSR taps byte; Pitch Bend enters shared `F` as a held absolute
 ±2-semitone target at 1/16-semitone resolution. There is no heartbeat.
+The companion bridge also accepts opto-isolated 31,250-baud serial MIDI on
+GP13, expands running status, and routes it through the same dispatcher as USB
+MIDI. Use one MIDI source at a time. The Chipbridge RP2040-Zero build follows
+the PCB exactly: ComLynx `DATA1` = GP1, MIDI RX = GP13, and ready LED = GP7;
+`DATA0`/GP0 is unused. Its Lynx cable is ring-to-ring plus sleeve-to-sleeve
+only, with both tips disconnected and insulated because the Lynx tip is +5 V.
 KIT bank follows D38: it is always `00`–`07`, selecting KIT or viewing an old
 invalid KIT value normalizes it to `00`, and only WAV may display `--`.
 KIT sample banks follow D39: the one supported `PL` format uses rate ID `1`,
@@ -102,7 +108,8 @@ make factory-samples # rebuild samples/alynxdj-factory-samples.bin from WAVs
 make SAMPLE_BANK=/path/custom.bin # validate + inject one portable sample bank
 make shot     # headless Handy run → build/shot.png + build/shot.ppm.wav (audio!)
 make test     # ROM/sample + sound/editor/HELP + EEPROM/viewer + MIDI/sync
-make pico     # Pico USB-MIDI bridge UF2 (PICO_SDK_PATH + full Arm toolchain)
+make pico     # Pico USB/TRS-MIDI bridge UF2 (PICO_SDK_PATH + Arm toolchain)
+make pico-chipbridge # RP2040-Zero: GP1 ComLynx, GP13 MIDI RX, GP7 LED
               # FRAMES=n and BTN=maskHex or BTN=mask@frames,mask@frames,... for input
 make clean
 ```
@@ -161,7 +168,11 @@ using a virtual environment.
   `sample-patch-browser.html` aligned.
 - MIDI/sync, contextual-play, and editor cold code is packed into cart blocks
   254–255 and linked at `$C100-$C8FC`, overlaying the EEPROM pack buffer
-  between SAVE/LOAD calls.
+  between SAVE/LOAD calls. `save_pack()`/runtime `save_load()` must mark the
+  shared VBlank guard before the first buffer access. `midi_overlay_load()`
+  reuses that byte as its 64-chunk countdown, so VBlank acknowledges and
+  advances frames but skips the entire engine tick until both helper blocks
+  are restored; never publish the overlay early.
   The MIDI RX ring overlays phrase pass counters at `$C048-$C087`, valid only
   because takeover stops the sequencer. `IN24` must retain those counters, so
   it has a separate 64-byte IRQ ring over the phrase clipboard at
@@ -204,14 +215,17 @@ using a virtual environment.
   `$C027/$C028` are saturating slot-underrun counters; isolated and sustained
   sample/redraw rigs must complete at `00/00` in `test_hardware_fixes.py`;
   `$C02E/$C02F` count successfully started streams.
-- `pico-midi-comlynx/` is the companion RP2040 USB-device firmware. Its PIO
+- `pico-midi-comlynx/` is the companion RP2040 USB/TRS-MIDI firmware. Its PIO
   output is open-drain (output-low/input only), 62.5 kbaud, start + 8 data +
   fixed-Space ninth + stop. It forwards channel 1–4 messages, divides every
-  six USB `F8` clocks into one row-rate `F8`, emits the first row grant
+  six source `F8` clocks into one row-rate `F8`, emits the first row grant
   immediately after `FA`/`FB`, and forwards `FC/FF`; ordinary forwarded
   channel traffic already includes CC74 and Pitch Bend, so those controls need
-  no Pico-private protocol. It deliberately has no heartbeat and is not a USB
-  host.
+  no Pico-private protocol. UART0 on GP13 accepts an opto-isolated 31.25-kbaud
+  serial MIDI source, expands running status, and shares the USB dispatcher;
+  simultaneous sources are unsupported. `make pico-chipbridge` selects the
+  Waveshare RP2040-Zero plus GP1 ComLynx and GP7 ready LED. It deliberately has
+  no heartbeat and is not a USB host.
 - Handy is dev-speed, not silicon: its LFSR-timbre and DAC-timing fidelity is
   suspect (DESIGN.md Q4) — hardware passes at M6/M7. **Measured 2026-07-16:
   this core renders every FEEDBACK/tap config identically** (static square
@@ -226,7 +240,8 @@ using a virtual environment.
 - Boot starts with `song_clear()` and **autoloads** a valid EEPROM save over
   it; the factory `song_demo()` is loaded only through FILES → DEMO. Use a
   unique ROM basename for save/demo/rig tests to isolate the emulator EEPROM
-  namespace.
+  namespace. With no valid machine config the default palette is `01`; a valid
+  stored OPTIONS palette still overrides it.
 - **ElCheapoSD for Lynx is not song-save compatible:** it contains a physical
   128-byte 93C46 only, while ALYNXDJ requires a 2 KB 93C86. It can run the ROM
   but cannot persist a full song, and its cart API is menu-oriented rather
