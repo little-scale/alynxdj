@@ -33,10 +33,15 @@ high nibble `6`–`7` full, `2`–`5` signed `>>1`, `1` signed `>>2`, and `0`
 mute; its low nibble is ignored and blocked in the UI, while the DAC IRQ
 remains unchanged. D19/D20 add receive-only ComLynx MIDI takeover and
 clock sync: full-status MIDI channels 1–4 route to tracks A–D/instruments
-01–04, while the Pico divides USB MIDI's 24 PPQN into one `IN24` pulse per
-tracker row. `IN` and `IN24` arm locally at the cued row as `WAIT`; their
-first row pulse starts that row and changes the transport to `PLAY`. There is
-no heartbeat.
+00–03. The UART IRQ buffers bytes continuously and the 59.9 Hz engine tick
+drains complete messages before voice processing, so redraw cannot delay MIDI
+and serial receive stays live while a multi-channel chord is applied. The Pico
+emits an immediate `IN24` row grant after Start/Continue, then divides USB
+MIDI's 24 PPQN into one pulse per following tracker row. `IN` and `IN24` arm
+locally at the cued row as `WAIT`; their first row pulse starts that row and
+changes the transport to `PLAY`. MIDI CC74 enters the shared `N` executor path
+as a note-local LFSR taps byte; Pitch Bend enters shared `F` as a held absolute
+±2-semitone target at 1/16-semitone resolution. There is no heartbeat.
 KIT bank follows D38: it is always `00`–`07`, selecting KIT or viewing an old
 invalid KIT value normalizes it to `00`, and only WAV may display `--`.
 KIT sample banks follow D39: the one supported `PL` format uses rate ID `1`,
@@ -166,6 +171,10 @@ using a virtual environment.
   visible block-selection rows. Reloading the full two-block helper window
   resets all three bytes; the selection bounds are ignored while SELECT is
   inactive.
+  MIDI takeover reuses the four otherwise-zero `eng_walk[].active` bytes as
+  absolute Pitch Bend targets; `engine_stop()` clears them on panic/mode
+  changes, and the stopped-sequencer ownership makes this mutually exclusive
+  with hierarchy walking.
   Fixed live bytes occupy `$C004-$C01F`; `$C01E/$C01F` hold the two KIT
   stream gain shifts. Preserve the post-pack
   reloads and these mutual-exclusion rules.
@@ -198,8 +207,11 @@ using a virtual environment.
 - `pico-midi-comlynx/` is the companion RP2040 USB-device firmware. Its PIO
   output is open-drain (output-low/input only), 62.5 kbaud, start + 8 data +
   fixed-Space ninth + stop. It forwards channel 1–4 messages, divides every
-  six USB `F8` clocks into one row-rate `F8`, and forwards `FA/FB/FC/FF`; it
-  deliberately has no heartbeat and is not a USB host.
+  six USB `F8` clocks into one row-rate `F8`, emits the first row grant
+  immediately after `FA`/`FB`, and forwards `FC/FF`; ordinary forwarded
+  channel traffic already includes CC74 and Pitch Bend, so those controls need
+  no Pico-private protocol. It deliberately has no heartbeat and is not a USB
+  host.
 - Handy is dev-speed, not silicon: its LFSR-timbre and DAC-timing fidelity is
   suspect (DESIGN.md Q4) — hardware passes at M6/M7. **Measured 2026-07-16:
   this core renders every FEEDBACK/tap config identically** (static square

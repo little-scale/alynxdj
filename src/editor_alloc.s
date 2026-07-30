@@ -11,10 +11,13 @@
         .export  _editor_zp_clear, _command_latch, _command_insert
         .export  _scale_pcm, _pool_trigger, _pool_cancel
         .export  _instr_taps, _reset_instr_taps, _clock_tap_glide
-        .export  _sel_paint, _set_pan
+        .export  _sel_paint, _set_pan, _palette_apply
         .export  _arm_table_override, _resolve_table_override
+        .export  _midi_byte, _midi_panic, _midi_rebend
         .import  _sd, _voices, _live_taps, _ifield_type, aslax4
-        .import  _track_bit
+        .import  _track_bit, _palettes, _eng_walk, _engine_exec_cmd
+        .import  _engine_midi_note_on, _engine_midi_note_off
+        .import  _engine_midi_panic
         .import  _edit_instr, _i_row
         .import  _screen, _s_row, _c_row, _p_row, _p_col, _edit_phrase
         .import  _t_row, _t_col, _edit_table
@@ -23,7 +26,7 @@
         .import  _stream_cancel, _trig_kit, _trig_member
         .import  _dac_mode, _dac_off
         .importzp _pcm_done
-        .import  popa, popax, incsp2
+        .import  popa, popax, pusha, incsp2
         .importzp ptr1, ptr2, sp, tmp1, tmp2
 
 SONG_BYTES   = $0200
@@ -50,6 +53,15 @@ VOICE_TPOS     = 30
 VOICE_TBLTSP   = 31
 VOICE_INUM   = 32
 VOICE_SIZE   = 49
+CMD_F        = 12
+CMD_N        = 14
+MIDI_STATUS  = $C007
+MIDI_DATA    = $C008
+MIDI_HAVE    = $C009
+MIDI_HELD    = $C00A
+OPT_PALETTE  = $C013
+MIKEY_PAL_G  = $FDA0
+MIKEY_PAL_BR = $FDB0
 
         .segment "APPZP" : zeropage
         .exportzp _blk_n, _sel_active, _sel_anchor
@@ -927,6 +939,226 @@ _reset_instr_taps:
         jmp     _live_taps
 
         .segment "MIDICODE"
+
+; void palette_apply(void)
+; Four {green, blue/red} pairs are contiguous for each eight-byte palette.
+; The C loop cost 143 bytes in this exhausted live overlay; this exact walk
+; performs the same register writes in 30 bytes.
+_palette_apply:
+        lda     OPT_PALETTE
+        asl     a
+        asl     a
+        asl     a
+        tax
+        ldy     #0
+@palette_pair:
+        lda     _palettes,x
+        sta     MIKEY_PAL_G,y
+        inx
+        lda     _palettes,x
+        sta     MIKEY_PAL_BR,y
+        inx
+        iny
+        cpy     #4
+        bne     @palette_pair
+        rts
+
+; Consume one normalized MIDI byte. The Pico always emits a complete status
+; for every message, so rejecting channels 5-16 at their status byte is safe
+; and a following status naturally resynchronizes any damaged stream.
+_midi_byte:
+        sta     tmp1
+        bmi     @midi_status_byte
+        lda     MIDI_STATUS
+        beq     @midi_done
+        and     #$F0
+        cmp     #$C0                    ; ignored one-data Program Change
+        beq     @midi_clear_status
+        cmp     #$D0                    ; ignored one-data Channel Pressure
+        beq     @midi_clear_status
+        lda     MIDI_HAVE
+        bne     @midi_second
+        lda     tmp1
+        sta     MIDI_DATA
+        lda     #1
+        sta     MIDI_HAVE
+@midi_done:
+        rts
+
+@midi_status_byte:
+        cmp     #$FF                    ; System Reset = hard panic
+        bne     :+
+        jmp     _midi_panic
+:
+        cmp     #$F8                    ; realtime may interleave data bytes
+        bcs     @midi_done
+        lda     tmp1
+        and     #$F0
+        cmp     #$80
+        bcc     @midi_clear_status
+        cmp     #$F0
+        bcs     @midi_clear_status
+        lda     tmp1
+        and     #$0F
+        cmp     #4
+        bcs     @midi_clear_status
+        lda     tmp1
+        sta     MIDI_STATUS
+        stz     MIDI_HAVE
+        rts
+
+@midi_clear_status:
+        stz     MIDI_STATUS
+        stz     MIDI_HAVE
+        rts
+
+@midi_second:
+        stz     MIDI_HAVE
+        lda     MIDI_STATUS
+        and     #$F0
+        cmp     #$80
+        beq     @midi_note
+        cmp     #$90
+        beq     @midi_note
+        cmp     #$B0
+        beq     @midi_cc
+        cmp     #$E0
+        beq     @midi_pitch
+        bra     @midi_clear_status
+
+@midi_note:
+        lda     MIDI_DATA
+        cmp     #24                     ; tracker range C1..B8
+        bcc     @midi_clear_status
+        cmp     #120
+        bcs     @midi_clear_status
+        lda     MIDI_STATUS
+        and     #$03
+        tax
+        lda     MIDI_STATUS
+        and     #$F0
+        cmp     #$90
+        bne     @midi_note_off
+        lda     tmp1                    ; zero-velocity Note On = Note Off
+        beq     @midi_note_off
+        lda     MIDI_DATA
+        sta     MIDI_HELD,x
+        stz     MIDI_STATUS
+        txa
+        jsr     pusha
+        lda     MIDI_DATA
+        sec
+        sbc     #23
+        jmp     _engine_midi_note_on
+
+@midi_note_off:
+        lda     MIDI_HELD,x
+        cmp     MIDI_DATA
+        bne     @midi_clear_status      ; stale off cannot cut a newer key
+        lda     #$FF
+        sta     MIDI_HELD,x
+        stz     MIDI_STATUS
+        txa
+        jmp     _engine_midi_note_off
+
+@midi_cc:
+        lda     MIDI_STATUS
+        and     #$03
+        tax
+        lda     MIDI_DATA
+        cmp     #$4A                    ; CC74 = Sound Controller 5 / timbre
+        bne     @midi_cc_release
+        stz     MIDI_STATUS
+        lda     tmp1                    ; 7-bit CC -> full N byte, 00..FF
+        asl     a
+        bit     tmp1                    ; copy source bit 6 into output bit 0
+        bvc     :+
+        inc     a
+:       ldy     #CMD_N
+        jmp     midi_exec_shared
+
+@midi_cc_release:
+        cmp     #$78                    ; CC120 All Sound Off
+        beq     :+
+        cmp     #$7B                    ; CC123 All Notes Off
+        beq     :+
+        jmp     @midi_clear_status
+:       lda     #$FF
+        sta     MIDI_HELD,x
+        stz     MIDI_STATUS
+        txa
+        jmp     _engine_midi_note_off
+
+@midi_pitch:
+        lda     MIDI_STATUS
+        and     #$03
+        tax
+        stz     MIDI_STATUS
+        lda     tmp1                    ; ignore LSB; exact -32..+32 target
+        cmp     #64
+        bcc     @midi_pitch_down
+        sec
+        sbc     #63
+        lsr     a                       ; 64..127 -> 0..+32
+        bra     @midi_pitch_target
+@midi_pitch_down:
+        lsr     a
+        sec
+        sbc     #32                     ; 0..63 -> -32..-1
+@midi_pitch_target:
+        sta     tmp2                    ; new absolute controller target
+        ldy     midi_walk_bend_offset,x
+        sec
+        sbc     _eng_walk,y             ; F receives only target delta
+        sta     tmp1
+        lda     tmp2
+        sta     _eng_walk,y
+        lda     tmp1
+        ldy     #CMD_F
+        jmp     midi_exec_shared
+
+; Clear parser, per-channel key ownership, and live voices. engine_stop()
+; also clears the walk active bytes repurposed as absolute bend targets.
+_midi_panic:
+        stz     MIDI_STATUS
+        stz     MIDI_HAVE
+        ldx     #3
+        lda     #$FF
+:       sta     MIDI_HELD,x
+        dex
+        bpl     :-
+        jmp     _engine_midi_panic
+
+; Reapply an absolute MIDI bend after trigger() resets the note-local F sum.
+; void __fastcall__ midi_rebend(unsigned char track)
+_midi_rebend:
+        tax
+        ldy     midi_walk_bend_offset,x
+        lda     _eng_walk,y
+        beq     @midi_rebend_done
+        ldy     #CMD_F
+        bra     midi_exec_shared
+@midi_rebend_done:
+        rts
+
+; X=track, Y=command, A=parameter. cc65's three-argument convention stacks
+; the first two values and leaves the fast final byte in A.
+midi_exec_shared:
+        pha
+        phy
+        txa
+        jsr     pusha
+        ply
+        tya
+        jsr     pusha
+        pla
+        jmp     _engine_exec_cmd
+
+; MIDI takeover stops the sequencer, so its otherwise-zero walk active bytes
+; are four absolute bend targets. engine_stop() clears them on every panic or
+; mode change without spending another resident routine.
+midi_walk_bend_offset:
+        .byte   0, 7, 14, 21
 
 ; void __fastcall__ clock_tap_glide(struct voice *v)
 ; Count this track's signed G period.  The caller selects tick or row clocks

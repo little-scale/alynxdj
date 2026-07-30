@@ -11,12 +11,18 @@ yet make the Pico a USB host for a keyboard plugged directly into the Pico.
 
 - Channel messages on MIDI channels 1–4 are emitted with a complete status
   byte. On the Lynx, select `OPTIONS > SYNC > MIDI`: the channels drive tracks
-  A–D with instruments 01–04.
+  A–D with instruments 00–03. CC74 controls the active LFSR voice through the
+  tracker's note-local `N` taps command. Standard Pitch Bend controls the same
+  `F` finetune path with an absolute ±2-semitone target held across notes.
+  The bend LSB is below the engine's 1/16-semitone resolution and is ignored.
+  Other unassigned controllers are forwarded but ignored by this Lynx build.
 - The Pico counts MIDI Timing Clock (`F8`) and emits one row-rate `F8` after
   every six source clocks (24 PPQN / four tracker rows per quarter). Start
-  (`FA`), Continue (`FB`) and Stop (`FC`) are forwarded. On the Lynx, select
-  `IN24`: Start supplies a row-0 cue when the user has not already armed a
-  local row, and each received `F8` grants one row.
+  (`FA`) and Continue (`FB`) are followed immediately by an initial `F8`
+  downbeat; the divider then supplies the next `F8` after a complete six-clock
+  row. Stop (`FC`) is forwarded. On the Lynx, select `IN24`: Start supplies a
+  row-0 cue when the user has not already armed a local row, and each received
+  `F8` grants one row.
   Continue currently also restarts at song row 0 because ALYNXDJ does not yet
   implement MIDI Song Position Pointer.
 - System Reset (`FF`) is forwarded as the MIDI-takeover panic command.
@@ -25,8 +31,9 @@ The same firmware stream supports both Lynx modes; no switch on the Pico is
 needed. `MIDI` ignores clock transport, while `IN24` ignores notes.
 
 In `IN24`, cue a SONG row on the Lynx and start its transport first. ALYNXDJ
-shows `WAIT`; the first row pulse starts that exact row and changes the label
-to `PLAY`. A forwarded Start does not replace an already waiting local cue.
+shows `WAIT`; a forwarded Start supplies the first row pulse immediately,
+starts that exact row, and changes the label to `PLAY`. It does not replace an
+already waiting local cue.
 
 ## Prototype wiring: one Pico, one Lynx
 

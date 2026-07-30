@@ -10,6 +10,13 @@ import time
 SONG = 0xD400
 CHAINS = 0xD600
 PHRASES = 0xDA00
+VOICES = 0xF21C
+WALKS = 0xF200
+VOICE_BEND = 8
+VOICE_INUM = 32
+VOICE_FEEDBACK = 39
+VOICE_CONTROL = 41
+VOICE_SIZE = 49
 
 
 def fail(message):
@@ -64,6 +71,35 @@ def run_case(harness, core, rom, build, label, events, held):
     if ram[0xC004] != ram[0xC005] or ram[0xC006]:
         fail("%s left RX queue head/tail/overflow at %d/%d/%d"
              % (label, ram[0xC004], ram[0xC005], ram[0xC006]))
+    if label == "notes":
+        instruments = tuple(
+            ram[VOICES + track * VOICE_SIZE + VOICE_INUM]
+            for track in range(4))
+        if instruments != (0, 1, 2, 3):
+            fail("MIDI instruments %r, expected zero-based (0, 1, 2, 3)"
+                 % (instruments,))
+    elif label == "controllers":
+        # Pitch Bend's MSB is converted to the same signed 1/16-semitone
+        # accumulator used by tracker F.  Track A is retriggered after its
+        # +31 target: the absolute controller target must be reapplied.
+        bends = tuple(int.from_bytes(
+            ram[VOICES + track * VOICE_SIZE + VOICE_BEND:
+                VOICES + track * VOICE_SIZE + VOICE_BEND + 2],
+            "little", signed=True) for track in range(2))
+        if bends != (32, -32):
+            fail("Pitch Bend accumulators %r, expected (+32, -32)" % (bends,))
+        targets = (ram[WALKS], ram[WALKS + 7])
+        if targets != (0x20, 0xE0):
+            fail("Pitch Bend targets %r, expected (0x20, 0xE0)" % (targets,))
+
+        # CC74=127 maps to NFF on track C.  N is note-local: it changes the
+        # live feedback/control shadow but does not overwrite tap_cur.
+        voice_c = VOICES + 2 * VOICE_SIZE
+        if ram[voice_c + VOICE_FEEDBACK] != 0x7F:
+            fail("CC74 did not route NFF to LFSR feedback (got %02X)"
+                 % ram[voice_c + VOICE_FEEDBACK])
+        if not (ram[voice_c + VOICE_CONTROL] & 0x80):
+            fail("CC74 NFF did not enable the split tap-7 control bit")
 
 
 def run_clock_case(harness, core, rom, build):
@@ -182,13 +218,28 @@ def main():
     run_case(harness, core, rom, build, "panic",
              ((450, 0x90), (451, 64), (452, 100), (460, 0xFF)),
              (0xFF, 0xFF, 0xFF, 0xFF))
+
+    # CC74 takes the exact N-command route; Pitch Bend takes the exact
+    # additive F-command route. The first data byte of Pitch Bend is the
+    # standard LSB and is intentionally ignored at this resolution.
+    controller_events = (
+        (450, 0x90), (451, 60), (452, 100),
+        (455, 0xE0), (456, 0x7F), (457, 0x7F),
+        (460, 0x90), (461, 62), (462, 100),  # held bend survives retrigger
+        (465, 0x91), (466, 61), (467, 100),
+        (470, 0xE1), (471, 0x00), (472, 0x00),
+        (475, 0x92), (476, 64), (477, 100),
+        (480, 0xB2), (481, 0x4A), (482, 0x7F),
+    )
+    run_case(harness, core, rom, build, "controllers", controller_events,
+             (62, 61, 64, 0xFF))
     run_cued_case(harness, core, rom, build, "in-wait", 2, 0x01, False)
     run_cued_case(harness, core, rom, build, "in-play", 2, 0x01, True)
     run_cued_case(harness, core, rom, build, "in24-wait", 4, 0xF8, False)
     run_cued_case(harness, core, rom, build, "in24-play", 4, 0xF8, True)
     run_clock_case(harness, core, rom, build)
-    print("MIDI bridge: 4-channel takeover; IN/IN24 WAIT; row-clock "
-          "Start/Clock/Stop OK")
+    print("MIDI bridge: 4-channel takeover; CC74->N; Pitch Bend->F; "
+          "IN/IN24 WAIT; row-clock Start/Clock/Stop OK")
 
 
 if __name__ == "__main__":

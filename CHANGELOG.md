@@ -2,6 +2,37 @@
 
 ## Unreleased
 
+## v0.57 — 2026-07-30
+
+- Make four-channel MIDI takeover independent of screen redraw. The timer-4
+  UART IRQ continues capturing complete messages while the 59.9 Hz engine
+  tick drains them before voice work, so simultaneous notes are buffered
+  instead of being swallowed and navigation no longer interrupts MIDI audio.
+  The resulting trigger latency is bounded to the next engine tick
+  (0–16.7 ms).
+- Map MIDI channels 1–4 to tracks A–D and zero-based instruments `00`–`03`,
+  matching the tracker UI.
+- Route MIDI CC74 through the existing `N` command executor. Values `0`–`127`
+  span `N00`–`NFF`, providing a note-local live LFSR taps control whose next
+  note restores the instrument/G/B state.
+- Route standard MIDI Pitch Bend through the existing `F` finetune executor.
+  Its MSB gives an absolute ±2-semitone target at 1/16-semitone resolution;
+  each channel retains that target across note retriggers and clears it on
+  panic or sync-mode change.
+- Remove the one-row MIDI-clock startup delay. The Pico bridge emits an
+  immediate row grant after Start/Continue, then resumes one row per six MIDI
+  clocks. A locally cued `IN24` transport therefore changes from `WAIT` to
+  `PLAY` on the downbeat while keeping steady-state four-rows-per-quarter
+  timing.
+- Replace the compiler-heavy MIDI message parser with a compact full-status
+  assembly parser, retaining the complete song, 512-byte stack, two PCM rings,
+  and save format v6. Extend the MIDI/IN24 regression suite for four-channel
+  receive, CC74, both Pitch Bend endpoints, held-bend retrigger, panic, and
+  transport.
+- Verify the complete MIDI pass on Atari Lynx hardware using a XIAO RP2040
+  bridge, including simultaneous-channel buffering, redraw-safe playback,
+  CC74, Pitch Bend, and immediate IN24 startup.
+
 ## v0.56 — 2026-07-26
 
 - Fix phrase playback failing to advance rows on real hardware when uninitialized

@@ -340,7 +340,8 @@ static void envelope_restart(struct voice *v)
 
 /* --- executor: one command, phrase or table column --- */
 
-static void exec_cmd(unsigned char ch, unsigned char cmd, unsigned char param)
+void engine_exec_cmd(unsigned char ch, unsigned char cmd,
+                     unsigned char param)
 {
     struct voice *v = &voices[ch];
 
@@ -500,7 +501,7 @@ static void table_step(unsigned char ch)
         v->tbl_tsp = tr->tsp;
     }
     if (tr->cmd && tr->cmd != CMD_H && tr->cmd != CMD_A)
-        exec_cmd(ch, tr->cmd, tr->param);
+        engine_exec_cmd(ch, tr->cmd, tr->param);
     if (row < PHRASE_ROWS - 1)
         ++row;
     else
@@ -923,7 +924,7 @@ static void row_start(unsigned char ch)
     } else if (s->cmd && s->cmd != CMD_D && s->cmd != CMD_H
                && s->cmd != CMD_Z && s->cmd != CMD_I && s->cmd != CMD_J
                && s->cmd != CMD_A)
-        exec_cmd(ch, s->cmd, s->param);
+        engine_exec_cmd(ch, s->cmd, s->param);
 }
 
 static void stop_nolock(void)
@@ -1095,19 +1096,19 @@ void engine_audition(unsigned char note, unsigned char inum)
 
 /* MIDI takeover is deliberately a thin live-key layer over the tracker
  * trigger.  Displayed MIDI channels 1-4 select physical tracks A-D and
- * displayed instruments 01-04 respectively.  Velocity is intentionally
- * left to the bridge for now: KIT DAC voices have no cheap per-voice gain,
- * so accepting it here would make the four instrument types inconsistent. */
+ * displayed instruments 00-03 respectively.  These entry points are called
+ * from sync_poll() at the start of the VBlank engine tick.  Keeping them in
+ * that audio-owned context avoids racing the sequencer without masking the
+ * UART IRQ while the remaining bytes of a chord are still arriving. */
 #pragma code-name (push, "MIDICODE")
 void __fastcall__ engine_midi_note_on(unsigned char track,
                                       unsigned char note)
 {
     if (track >= NCH || note < NOTE_MIN || note > NOTE_MAX)
         return;
-    __asm__("sei");
-    trigger(track, note, track + 1);
+    trigger(track, note, track);
+    midi_rebend(track);
     flush(track);
-    __asm__("cli");
 }
 
 void __fastcall__ engine_midi_note_off(unsigned char track)
@@ -1116,7 +1117,6 @@ void __fastcall__ engine_midi_note_off(unsigned char track)
 
     if (track >= NCH)
         return;
-    __asm__("sei");
     v = &voices[track];
     if (v->type == IT_KIT) {
         dac_release(track);
@@ -1133,7 +1133,6 @@ void __fastcall__ engine_midi_note_off(unsigned char track)
         v->dirty = 1;
         flush(track);
     }
-    __asm__("cli");
 }
 
 void engine_midi_panic(void)
@@ -1148,7 +1147,7 @@ void __fastcall__ engine_audition_cmd(unsigned char cmd, unsigned char param)
 {
     if (cmd && cmd != CMD_D && cmd != CMD_Z && cmd != CMD_H && cmd != CMD_L) {
         __asm__("sei");
-        exec_cmd(0, cmd, param);
+        engine_exec_cmd(0, cmd, param);
         __asm__("cli");
     }
 }
@@ -1174,6 +1173,12 @@ void engine_init(void)
 void engine_tick(void)
 {
     unsigned char ch;
+
+    /* Drain ComLynx inside the audio-owned tick, not the redraw-bound main
+     * loop.  UART/DAC IRQs are allowed to nest around this C call, so a
+     * four-channel MIDI chord remains buffered while each tracker trigger is
+     * applied and screen painting cannot defer notes or external row clocks. */
+    sync_poll();
 
     /* Sync slaves arm at the selected row.  The first external pulse starts
      * that row; later pulses advance before starting the next one. */

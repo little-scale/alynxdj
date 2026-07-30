@@ -93,32 +93,49 @@ ported from SMSGGDJ's COLR presets, applied live; 0 is the default).
 OPTIONS settings persist in the cart EEPROM alongside the song.
 
 In **MIDI** takeover, the sequencer stays stopped and incoming USB MIDI from a
-ComLynx bridge plays the tracker directly: MIDI channels 1–4 use tracks 1–4
-and instruments 01–04. Notes use the normal instrument path, including TSP/RATE,
+ComLynx bridge plays the tracker directly: MIDI channels 1–4 use tracks A–D
+and instruments 00–03. Notes use the normal instrument path, including TSP/RATE,
 SWP/VIB/TRM, tables, envelopes, WAV and KIT routing. Each MIDI channel is
 monophonic. Note Off releases through DECAY (DCY 0 cuts); KIT stops. Velocity
 is currently used only to distinguish Note On from velocity-zero Note Off.
-CC120/123 release a channel and MIDI System Reset (`FF`) is panic. Messages
-must contain their status byte; running status, channels 5–16, Program Change,
-pitch bend and other controllers are ignored. There is no heartbeat timeout.
+CC74 (`Bn 4A vv`) scales `vv` from `00`–`7F` across tracker command
+`N00`–`NFF`. It therefore changes the active LFSR voice's low taps for this
+note only; the next note restores the instrument/G/B state. Standard Pitch
+Bend (`En ll mm`) uses the MSB at the tracker's native 1/16-semitone
+resolution: centre `mm=40`, minimum `00` is −2 semitones, and maximum `7F` is
++2 semitones. The bend target is held across new notes until another bend,
+panic, or sync-mode change. It uses the same `F` path as tracker finetune, so
+it follows F's existing instrument-type limits rather than a separate MIDI
+sound path. CC120/123 release a channel and MIDI System Reset (`FF`) is panic.
+Messages must contain their status byte; running status, channels 5–16,
+Program Change, Channel Pressure, and other controllers are ignored. There is
+no heartbeat timeout.
+The timer-4 UART IRQ buffers incoming bytes continuously; complete messages are
+drained and applied together at the next 59.9 Hz audio tick, so simultaneous
+channel notes are not serialized through redraw work. This adds a bounded
+0–16.7 ms trigger quantization while keeping screen navigation out of the MIDI
+and audio scheduling path.
 
 In **IN24**, the same Pico bridge supplies MIDI Clock transport. The Pico
 counts standard 24-PPQN USB MIDI Clock and sends the Lynx one pulse per
-tracker row (every six source clocks). `FA` Start supplies a row-0 cue when
-the user has not already cued one, each received `F8` grants one row, and
-`FC` Stop halts. `FB` Continue currently behaves like Start because Song
-Position Pointer is not implemented. Groove and `W` row timing are ignored
-while externally clocked. The original **IN** mode remains the row-byte
-protocol for another Lynx; use **IN24** for a DAW or USB-MIDI clock source.
+tracker row. `FA` Start supplies a row-0 cue when the user has not already
+cued one and is immediately followed by the first row grant; the next grant
+arrives after six source clocks. This removes the former one-row startup wait
+while keeping subsequent rows at four per quarter note. `FC` Stop halts.
+`FB` Continue currently behaves like Start because Song Position Pointer is
+not implemented. Groove and `W` row timing are ignored while externally
+clocked. The original **IN** mode remains the row-byte protocol for another
+Lynx; use **IN24** for a DAW or USB-MIDI clock source.
 Incoming IN24 traffic uses the phrase clipboard
 as its receive buffer, so entering/using the mode invalidates a previously
 copied phrase.
 
 With either **IN** or **IN24** selected, first move the SONG cursor to the row
 you want and start transport normally. The top bar says **WAIT** and nothing
-sounds yet. The first incoming row pulse starts that cued row and changes the
-label to **PLAY**; each later pulse advances one row. A Start message received
-while WAIT is showing preserves the locally selected row.
+sounds yet. A MIDI Start/Continue from the Pico supplies the first row pulse
+immediately, starts that cued row, and changes the label to **PLAY**; each
+later divided pulse advances one row. A Start message received while WAIT is
+showing preserves the locally selected row.
 Pico build, wiring, and flashing instructions are in
 [`pico-midi-comlynx/README.md`](pico-midi-comlynx/README.md). The required
 2.5 mm TRS plug is **tip = Lynx +5 V (leave disconnected and insulate), ring =

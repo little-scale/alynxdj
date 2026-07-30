@@ -159,6 +159,9 @@ void engine_play_chain(unsigned char track, unsigned char chain);
 void engine_play_phrase(unsigned char track, unsigned char phrase);
 void engine_audition(unsigned char note, unsigned char inum);
 void __fastcall__ engine_audition_cmd(unsigned char cmd, unsigned char param);
+void engine_exec_cmd(unsigned char track, unsigned char cmd,
+                     unsigned char param);
+void __fastcall__ midi_rebend(unsigned char track);
 void __fastcall__ engine_midi_note_on(unsigned char track,
                                       unsigned char note);
 void __fastcall__ engine_midi_note_off(unsigned char track);

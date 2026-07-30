@@ -30,7 +30,7 @@ void vbl_install(void);
  * NEON/KIDD/MINT): its bg/fg anchor bg/text here, with a muted dim and a
  * brighter accent (cursor/playheads) synthesized per scheme. */
 #define NPALETTES 8
-static const unsigned char palettes[NPALETTES][4][2] = {
+const unsigned char palettes[NPALETTES][4][2] = {
     { {0x0,0x00}, {0xD,0xDD}, {0x6,0x66}, {0xF,0xFF} },  /* 0 WHT  mono   */
     { {0xF,0xFF}, {0x1,0x11}, {0x8,0x88}, {0x0,0x00} },  /* 1 WB   invert */
     { {0x0,0x00}, {0x8,0x0D}, {0x4,0x06}, {0xB,0x3F} },  /* 2 AMBR crt    */
@@ -40,17 +40,6 @@ static const unsigned char palettes[NPALETTES][4][2] = {
     { {0x5,0xE1}, {0xE,0x2F}, {0x9,0x77}, {0xF,0x7F} },  /* 6 KIDD sky    */
     { {0x4,0x40}, {0xE,0xA6}, {0x8,0x62}, {0xF,0xDA} },  /* 7 MINT teal   */
 };
-#pragma code-name (push, "MIDICODE")
-void palette_apply(void)
-{
-    unsigned char i;
-    for (i = 0; i < 4; ++i) {
-        MIKEY.palette[i]      = palettes[opt_palette][i][0];
-        MIKEY.palette[i + 16] = palettes[opt_palette][i][1];
-    }
-}
-#pragma code-name (pop)
-
 static void palette_init(void)
 {
     unsigned char i;
@@ -613,7 +602,6 @@ void main(void)
 
     for (;;) {
         unsigned char f = (unsigned char)frames;
-        sync_poll();                    /* MIDI is serviced between frames */
         if (f == last)
             continue;
         last = f;

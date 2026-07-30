@@ -59,8 +59,9 @@ static void usb_midi_packet(const uint8_t packet[4])
     uint8_t kind;
     uint8_t length;
 
-    /* USB-MIDI event packets carry a complete channel status.  Restrict live
-     * traffic to the four Lynx tracks but preserve the ordinary MIDI bytes. */
+    /* USB-MIDI event packets carry a complete channel status. Restrict live
+     * traffic to the four Lynx tracks but preserve the ordinary MIDI bytes,
+     * including CC74 and Pitch Bend consumed through tracker N/F on Lynx. */
     if (status >= 0x80 && status <= 0xEF) {
         if ((status & 0x0F) >= 4)
             return;
@@ -70,16 +71,25 @@ static void usb_midi_packet(const uint8_t packet[4])
         return;
     }
 
-    /* Reduce USB MIDI's 24 clocks/quarter to four tracker rows/quarter.  The
-     * Lynx therefore receives one F8 row grant for every six source clocks.
-     * MIDI takeover ignores these real-time bytes, while IN24 ignores notes,
-     * so no bridge-side mode switch or heartbeat is needed. */
+    /* Reduce USB MIDI's 24 clocks/quarter to four tracker rows/quarter.  After
+     * the immediate Start/Continue grant, the Lynx receives each following
+     * F8 row grant after six source clocks. MIDI takeover ignores these
+     * real-time bytes, while IN24 ignores notes, so no bridge-side mode switch
+     * or heartbeat is needed. */
     if (status == 0xF8) {
         if (++clock_phase >= 6) {
             clock_phase = 0;
             (void)queue_byte(status);
         }
-    } else if (status == 0xFA || status == 0xFB || status == 0xFC) {
+    } else if (status == 0xFA || status == 0xFB) {
+        /* Start/Continue is the downbeat.  Emit its first row grant now;
+         * waiting for the divider to collect six later clocks adds exactly
+         * one tracker row of startup latency.  The reset phase makes the
+         * next divided F8 arrive one complete row after this one. */
+        clock_phase = 0;
+        if (!queue_byte(status) || !queue_byte(0xF8))
+            queue_recover();
+    } else if (status == 0xFC) {
         clock_phase = 0;
         (void)queue_byte(status);
     } else if (status == 0xFF) {

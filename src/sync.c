@@ -2,8 +2,9 @@
  *
  * OFF/OUT/IN retain the deliberately small one-byte row-sync protocol.
  * IN24 consumes row-rate Timing Clock plus Start/Continue/Stop bytes.  The
- * Pico divides USB MIDI's 24-PPQN clock by six before transmission, leaving
- * the Lynx with the same deliberately small one-pulse-per-row job as IN.
+ * Pico emits an immediate downbeat grant after Start/Continue, then divides
+ * USB MIDI's 24-PPQN clock by six before each following row, leaving the Lynx
+ * with the same deliberately small one-pulse-per-row job as IN.
  * MIDI is an exclusive, receive-only live mode: normalized USB-MIDI channel
  * messages from a bridge drive tracks A-D through the ordinary instrument
  * trigger path.  The bridge always emits a complete status byte (no running
@@ -11,8 +12,11 @@
  *
  * MIDI traffic can contain a chord inside one video frame, whereas Mikey has
  * only one receive holding register.  In MIDI mode the timer-4 UART interrupt
- * therefore captures bytes in a 64-byte ring.  That ring overlays play_cnt at
- * $C048: takeover stops the sequencer, so the two uses are mutually exclusive.
+ * therefore captures bytes in a 64-byte ring.  engine_tick() drains the ring
+ * before voice work while the IRQ remains nestable, so redraw never owns MIDI
+ * latency and later chord bytes are received during earlier tracker triggers.
+ * The ring overlays play_cnt at $C048: takeover stops the sequencer, so the
+ * two uses are mutually exclusive.
  */
 #include <lynx.h>
 #include <string.h>
@@ -53,19 +57,10 @@
 #pragma code-name (pop)
 #pragma code-name (push, "MIDICODE")
 
-static void midi_clear(void)
-{
-    unsigned char ch;
-    midi_status = midi_have = 0;
-    for (ch = 0; ch < NCH; ++ch)
-        midi_held[ch] = EMPTY;
-}
-
-static void midi_panic(void)
-{
-    midi_clear();
-    engine_midi_panic();
-}
+/* The complete-message parser and panic reset are assembly-sized because
+ * this live overlay shares the EEPROM pack window byte-for-byte. */
+void __fastcall__ midi_byte(unsigned char b);
+void midi_panic(void);
 
 static void sync_clock_byte(unsigned char b)
 {
@@ -84,64 +79,6 @@ static void sync_clock_byte(unsigned char b)
         sync_row_pending = 0;
         engine_stop();
         break;
-    }
-}
-
-/* Consume one normalized MIDI byte.  Velocity is transported for ordinary
- * MIDI compatibility, but v1 only distinguishes zero from nonzero. */
-static void midi_byte(unsigned char b)
-{
-    unsigned char kind, ch, note;
-
-    if (b & 0x80) {
-        if (b == 0xFF) {             /* MIDI System Reset = hard panic */
-            midi_panic();
-            return;
-        }
-        if (b >= 0xF8)               /* realtime may sit between MIDI bytes */
-            return;
-        kind = b & 0xF0;
-        if (kind >= 0x80 && kind <= 0xE0) {
-            midi_status = b;
-            midi_have = 0;
-        } else
-            midi_status = 0;        /* realtime/system bytes are ignored */
-        return;
-    }
-    if (!midi_status)
-        return;
-    kind = midi_status & 0xF0;
-    ch = midi_status & 0x0F;
-    if (kind == 0xC0 || kind == 0xD0) {
-        midi_status = 0;             /* consume ignored one-data messages */
-        return;
-    }
-    if (!midi_have) {
-        midi_data = b;
-        midi_have = 1;
-        return;
-    }
-    midi_status = midi_have = 0;     /* full status required next time */
-    if (ch >= NCH)
-        return;
-
-    if (kind == 0x80 || kind == 0x90) {
-        note = midi_data;
-        if (note < 24 || note > 119) /* tracker range C1..B8 */
-            return;
-        if (kind == 0x90 && b) {
-            midi_held[ch] = note;
-            engine_midi_note_on(ch, note - 23);
-        } else if (midi_held[ch] == note) {
-            midi_held[ch] = EMPTY;   /* stale Note Off cannot cut a new key */
-            engine_midi_note_off(ch);
-        }
-    } else if (kind == 0xB0
-               && (midi_data == 0x78 || midi_data == 0x7B)) {
-        /* CC120 All Sound Off / CC123 All Notes Off.  Both release the one
-         * monophonic voice on this channel; $FF remains the hard global cut. */
-        midi_held[ch] = EMPTY;
-        engine_midi_note_off(ch);
     }
 }
 

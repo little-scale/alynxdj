@@ -27,8 +27,8 @@ as a multi-drop sync bus.
 
 ## Status
 
-**V0.56 — hardware row timing and precise command semantics** (runs
-on a real Atari Lynx),
+**V0.57 — hardware-ready MIDI takeover and clock sync** (verified
+on a real Atari Lynx with the RP2040 bridge),
 feature-complete against the design brief with an editor/UX pass on top
 (see [CHANGELOG.md](CHANGELOG.md) for what changed, [PLAN.md](PLAN.md) for
 the milestone table, [DESIGN.md](DESIGN.md) for the design contract and
@@ -69,9 +69,14 @@ decision log):
   autoload, a clean no-save boot, and an explicit FILES demo loader
   ([SAVEFORMAT.md](SAVEFORMAT.md)); **two-unit ComLynx sync** verified in
   a bridged-core harness (0 ms lock), plus receive-only **MIDI takeover**:
-  USB-MIDI channels 1–4 drive tracks A–D / instruments 01–04 through the
-  tracker engine via the included Pico bridge. **IN24** also follows standard
-  MIDI Start/Stop, with the Pico dividing 24-PPQN clock to one pulse per row
+  USB-MIDI channels 1–4 drive tracks A–D / instruments 00–03 through the
+  tracker engine via the included Pico bridge. Incoming messages are applied
+  at the 59.9 Hz audio tick, independently of screen redraws, while the UART
+  IRQ continues buffering the rest of a chord. CC74 enters the tracker's
+  note-local `N` taps command and Pitch Bend enters its `F` finetune path with
+  a held ±2-semitone range. **IN24** also follows standard
+  MIDI Start/Stop, with Start granting the downbeat immediately and the Pico
+  then dividing 24-PPQN clock to one pulse per following row
 
 Hardware song persistence requires a **2 KB 93C86** (physical or emulated).
 The BennVenn **ElCheapoSD for Lynx contains a 128-byte 93C46 only**: it runs
@@ -132,21 +137,23 @@ instead of signed transpose.
 [`pico-midi-comlynx/`](pico-midi-comlynx/) contains buildable RP2040 firmware
 for the one-Pico/one-Lynx bridge. It appears to a computer or DAW as
 **ALYNXDJ MIDI Bridge**, forwards MIDI channels 1–4 plus Clock/Start/Continue/
-Stop, divides every six USB MIDI clocks into one tracker-row pulse, and
-generates the Lynx's 62.5-kbaud open-drain 11-bit UART framing in PIO. The
-same output works with the Lynx's `MIDI` and `IN24` modes, with no Pico mode
-switch and no heartbeat.
+Stop, emits an immediate row pulse on Start/Continue, divides every six later
+USB MIDI clocks into the following tracker-row pulse, and generates the Lynx's
+62.5-kbaud open-drain 11-bit UART framing in PIO. The same output works with
+the Lynx's `MIDI` and `IN24` modes, with no Pico mode switch and no heartbeat.
 
 `IN` and `IN24` are armed transports: cue a SONG row and press transport to
 show **WAIT**. The first incoming row pulse starts that exact row and changes
-the label to **PLAY**; later pulses advance it normally.
+the label to **PLAY**; for `IN24`, Start/Continue supplies that first pulse
+immediately. Later pulses advance it normally.
 
 The bridge README includes the 470-ohm + BAT54 prototype circuit, documented
 Jaycar BAT46/BAT48 and 1N5819 substitutes, the preferred buffered alternatives,
 the reason a 1N4148 is not a safe clamp, exact wiring
 (2.5 mm TRS **tip = +5 V/unconnected, ring = DATA, sleeve = GND**),
-build instructions, and the current USB-device limitation: it accepts MIDI
-from a computer/DAW, but does not yet host a USB keyboard directly.
+build instructions, CC74/Pitch Bend mappings, and the current USB-device
+limitation: it accepts MIDI from a computer/DAW, but does not yet host a USB
+keyboard directly.
 
 ## Building
 
