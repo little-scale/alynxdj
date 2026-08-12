@@ -163,6 +163,11 @@ build instructions, Chipbridge pin table, CC74/Pitch Bend mappings, and the
 current USB-device limitation: it accepts MIDI from a computer/DAW, but does
 not yet host a USB keyboard directly.
 
+The shared RP2040-Zero PCB, electrical interface, and adapter designs are
+maintained by **[Chipbridge](https://github.com/little-scale/chipbridge)**.
+ALYNXDJ retains the Lynx-specific Pico firmware and ComLynx protocol in this
+repository.
+
 ## Building
 
 ```sh
