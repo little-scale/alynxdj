@@ -132,6 +132,9 @@ test-hardware: $(ROM) $(RETROSHOT)
 test-midi: $(ROM) $(RETROSHOT)
 	$(PYTHON) tools/test_midi_takeover.py $(RETROSHOT) $(EMUCORE) $(ROM)
 
+test-sync: $(ROM) $(EMUDIR)/duoshot
+	$(PYTHON) tools/test_lynx_sync.py $(EMUDIR)/duoshot $(EMUCORE) $(ROM)
+
 test-pico-midi:
 	mkdir -p $(BUILD)/tests/pico-midi
 	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 \
@@ -139,7 +142,7 @@ test-pico-midi:
 		tools/test_pico_serial_midi.c
 	$(BUILD)/tests/pico-midi/serial_midi_parser
 
-test: test-bank test-dac test-save test-viewer test-tone test-editor test-help test-hardware test-midi test-pico-midi
+test: test-bank test-dac test-save test-viewer test-tone test-editor test-help test-hardware test-midi test-sync test-pico-midi
 
 # Companion USB/TRS-MIDI firmware. Requires a complete Arm embedded toolchain
 # and PICO_SDK_PATH; it is intentionally not part of the ROM build.
@@ -169,4 +172,4 @@ dist: $(ROM)
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: all factory-samples shot test test-bank test-dac test-save test-tone test-editor test-help test-hardware test-midi test-pico-midi pico pico-chipbridge dist clean
+.PHONY: all factory-samples shot test test-bank test-dac test-save test-tone test-editor test-help test-hardware test-midi test-sync test-pico-midi pico pico-chipbridge dist clean

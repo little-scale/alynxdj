@@ -67,8 +67,10 @@ decision log):
   cannot hold sample starts or refills behind a complete framebuffer paint
 - Packed save + machine config in the cart's 93C86 EEPROM with valid-save
   autoload, a clean no-save boot, and an explicit FILES demo loader
-  ([SAVEFORMAT.md](SAVEFORMAT.md)); **two-unit ComLynx sync** verified in
-  a bridged-core harness (0 ms lock), plus receive-only **MIDI takeover**:
+  ([SAVEFORMAT.md](SAVEFORMAT.md)); **two-unit ComLynx sync** verified between
+  two Lynx II consoles and in a bridged-core harness. Legacy Start is the
+  downbeat grant, removing the hardware-found one-row IN startup offset.
+  Receive-only **MIDI takeover** is also included:
   USB MIDI or opto-isolated TRS Type A MIDI channels 1–4 drive tracks A–D /
   instruments 00–03 through the tracker engine via the included Pico bridge.
   Incoming messages are applied
@@ -81,12 +83,14 @@ decision log):
 
 Hardware song persistence requires a **2 KB 93C86** (physical or emulated).
 The BennVenn **ElCheapoSD for Lynx contains a 128-byte 93C46 only**: it runs
-the ROM, but cannot store an ALYNXDJ song. Use a cart that supports 93C86
-(such as an EEPROM-emulating Lynx GameDrive) or an emulator for persistent
-songs. A 128-byte ElCheapo `.sav` cannot be padded into a valid save.
+the ROM, but cannot store an ALYNXDJ song. The **RetroHQ Lynx GameDrive is
+hardware-verified for ALYNXDJ save, load, and boot persistence** because it
+provides the required EEPROM capacity. A 128-byte ElCheapo `.sav` cannot be
+padded into a valid save.
 
-Remaining to 1.0: the focused real-hardware audio/cart/ComLynx-cable pass
-and upstream PRs (libretro-handy EEPROM fix, cc65 `_UART_TIMER`).
+Remaining to 1.0: the focused real-hardware audio pass and upstream PRs
+(libretro-handy EEPROM fix, cc65 `_UART_TIMER`). Lynx-to-Lynx sync and RetroHQ
+GameDrive non-volatile song saving are now verified on hardware.
 
 ## Download
 
@@ -152,8 +156,9 @@ an ordinary tip-to-tip stereo cable must never be used.
 
 `IN` and `IN24` are armed transports: cue a SONG row and press transport to
 show **WAIT**. The first incoming row pulse starts that exact row and changes
-the label to **PLAY**; for `IN24`, Start/Continue supplies that first pulse
-immediately. Later pulses advance it normally.
+the label to **PLAY**. For Lynx-to-Lynx `IN`, the OUT unit's single Start byte
+is that first grant; for `IN24`, Start/Continue is immediately followed by its
+first clock grant. Later pulses advance normally.
 
 The bridge README includes the 470-ohm + BAT54 prototype circuit, documented
 Jaycar BAT46/BAT48 and 1N5819 substitutes, the preferred buffered alternatives,

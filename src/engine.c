@@ -959,8 +959,7 @@ static void play_common(void)
 {
     memset(play_cnt, 0, sizeof(play_cnt));  /* I/J counts reset (ported) */
     eng_tick = 0;
-    sync_row_pending = 0;
-    eng_waiting = (sync_mode == SYNC_IN || sync_mode == SYNC_IN24);
+    sync_play_start();
     eng_gpos = 0;
     eng_groove = 0;
     live_bar = 0;                       /* LIVE grid */
@@ -1007,7 +1006,6 @@ void engine_play_context(unsigned char row, unsigned char cpos,
         w->prow = prow & 0x0F;
     }
     eng_mode = MODE_SONG;
-    sync_tx(SYNC_OP_START);
     __asm__("cli");
 }
 

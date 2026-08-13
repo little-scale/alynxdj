@@ -77,7 +77,8 @@ point at the exact commit from which the shipped ROM was built.**
    ```
    Release notes should lead with the theme, summarize the main behavior
    changes, list all six downloads, state the save-format version, and retain
-   the 2 KB 93C86 persistence caveat.
+   the 2 KB 93C86 persistence caveat. Name the RetroHQ Lynx GameDrive as
+   hardware-verified and the 128-byte ElCheapoSD as save-incompatible.
 9. **Verify the public release:** confirm it is neither draft nor prerelease,
    contains all six assets, every remote digest matches the local digest, and
    the tag resolves to the release commit.

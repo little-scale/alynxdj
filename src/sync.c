@@ -1,6 +1,9 @@
 /* ComLynx transport + MIDI takeover (DESIGN.md §11).
  *
- * OFF/OUT/IN retain the deliberately small one-byte row-sync protocol.
+ * OFF/OUT/IN retain the deliberately small one-byte row-sync protocol.  A
+ * legacy START byte is also the first row grant: sending START then ROW as
+ * two adjacent bytes would overrun the polled one-byte Mikey receiver before
+ * the slave's next VBlank.  Later rows still use one ROW byte each.
  * IN24 consumes row-rate Timing Clock plus Start/Continue/Stop bytes.  The
  * Pico emits an immediate downbeat grant after Start/Continue, then divides
  * USB MIDI's 24-PPQN clock by six before each following row, leaving the Lynx
@@ -148,6 +151,15 @@ void __fastcall__ sync_tx(unsigned char b)
 #pragma code-name (pop)
 #pragma code-name (push, "MIDICODE")
 
+/* Shared by every local transport entry point. Keeping the WAIT setup and
+ * OUT's one-byte downbeat together avoids mode-specific start omissions. */
+void sync_play_start(void)
+{
+    sync_row_pending = 0;
+    eng_waiting = (sync_mode == SYNC_IN || sync_mode == SYNC_IN24);
+    sync_tx(SYNC_OP_START);
+}
+
 void sync_poll(void)
 {
     unsigned char b;
@@ -197,8 +209,15 @@ void sync_poll(void)
                 ++sync_row_pending;
             break;
         case SYNC_OP_START:
+            /* START is the downbeat as well as transport.  Preserve a local
+             * cue, otherwise load song row 0, then grant that selected row in
+             * this same engine tick.  This avoids the historical full-row
+             * wait for OUT's first ordinary ROW byte. */
+            sync_row_pending = 0;
             if (!eng_waiting)        /* preserve an explicitly cued row */
                 engine_play_song(0);
+            if (eng_mode != MODE_STOP)
+                sync_row_pending = 1;
             break;
         case SYNC_OP_STOP:  engine_stop(); break;
         }

@@ -29,7 +29,10 @@ the cell array.
 93C46 (64 words / 128 bytes) and cannot implement this format. Its exposed
 API is not general-purpose SD filesystem access, so there is no transparent
 larger-file fallback available to a running game. A 93C86-capable physical or
-emulating cart is required for on-device ALYNXDJ song persistence.
+emulating cart is required for on-device ALYNXDJ song persistence. The
+**RetroHQ Lynx GameDrive is hardware-verified**: ALYNXDJ can save a song, load
+it again, and recover it non-volatilely when the cart supplies the full EEPROM
+image. This confirms the firmware's 2 KB EEPROM path on real Lynx hardware.
 
 **Capacity:** 1016 payload words / **2032 bytes**. Cells 0–3 are the song
 header and cells 1020–1023 are reserved for machine config, so song payload

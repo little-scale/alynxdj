@@ -215,6 +215,7 @@ void sync_init(void);
 void sync_irq_enable(void);
 void __fastcall__ sync_set_mode(unsigned char mode);
 void __fastcall__ sync_tx(unsigned char b);
+void sync_play_start(void);
 void sync_poll(void);
 void __fastcall__ sync_test_byte(unsigned char b);
 extern unsigned char vbl_guard;

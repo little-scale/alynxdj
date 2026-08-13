@@ -90,6 +90,8 @@ fixed channel-C/channel-D sample-bus details recorded in M7/M8.**
 | M50 | ✅ **MIDI COMMAND ROUTING + PITCH BEND** — CC74 now scales `0`–`127` across `N00`–`NFF` and enters the public tracker command executor, giving each active LFSR voice the same note-local taps replacement as phrase/table N. Standard Pitch Bend uses its MSB as an absolute ±2-semitone target at the engine's 1/16-semitone resolution, converts successive targets to deltas, and enters the same F-command case; per-channel targets survive retrigger and clear on panic/mode changes. A compact full-status assembly parser recovers enough of the fixed EEPROM/MIDI overlay for this without shrinking the stack, song, or PCM rings. The Pico required no protocol change because it already forwards complete channel messages. Emulator RAM regressions prove N's split feedback/control writes, both bend endpoints, and held-bend retrigger behavior; silicon listening remains the final musical check. | Add one useful timbre controller and conventional pitch expression while preserving the single tracker sound path and standard MIDI byte stream |
 | M51 | ✅ **TRS MIDI + CHIPBRIDGE PCB TARGET** — the RP2040 companion now receives opto-isolated 31,250-baud MIDI on UART0/GP13 as well as USB MIDI. A bounded parser expands running status, preserves interleaved real-time transport, rejects SysEx/System Common, and feeds the existing channel/clock dispatcher so the Lynx protocol remains normalized full-status MIDI. The dedicated Waveshare RP2040-Zero build follows the PCB: ComLynx `DATA1` GP1, TRS MIDI GP13, ready LED GP7, and unused `DATA0` GP0. The documented Lynx adapter carries ring and sleeve only; both tips are disconnected because the Lynx tip is +5 V. Host parser regressions pin recovery and message-boundary behavior. | Give the shared bridge hardware a standards-compliant standalone MIDI input without changing the Lynx ROM protocol |
 | M52 | ✅ **FILES OVERLAY SAFETY + PALETTE 01 DEFAULT** — the VBlank re-entry byte now also guards `$C100-$C8FC` while SAVE/LOAD/PACK owns the live MIDI/sync helper window. Timer 2 remains acknowledged and `frames` continues, but the complete engine tick is deferred until the two-block cart reload counts itself back to zero; FILES → DEMO can no longer branch into packed song bytes. Regressions compare the restored helper byte-for-byte after DEMO, SAVE, and LOAD. A clean or invalid machine config now starts on palette `01`, while a valid saved choice still wins. | Make every shared-overlay lifetime interrupt-safe without spending another byte of the exact RAM map |
+| M53 | ✅ **LYNX-TO-LYNX STARTUP ALIGNMENT — HARDWARE VERIFIED** — first two-console testing confirmed the physical OUT→IN link and steady row sync, while exposing a one-row startup offset introduced by WAIT semantics: OUT began locally on START but IN waited for the first boundary ROW. Legacy `$02` START now doubles as IN's downbeat grant for SONG, CHAIN, PHRASE, contextual, and LIVE starts; later `$01` bytes are unchanged. The two-core regression reproduces the old permanent one-row difference and now requires identical musical playheads; the corrected build was subsequently confirmed flawless between two Lynx II units. | Align the first cued row without risking a back-to-back byte overrun in Mikey's polled one-byte receiver |
+| M54 | ✅ **RETROHQ GAMEDRIVE PERSISTENCE — HARDWARE VERIFIED** — a real Lynx running ALYNXDJ from the RetroHQ Lynx GameDrive successfully saves a song, loads it again, and retains it non-volatilely when the cart presents the complete EEPROM backing size. This closes the hardware side of the 2 KB 93C86 persistence design: compatible cart emulation works, while the 128-byte ElCheapoSD remains physically too small. | Distinguish firmware/save-format correctness from the storage capacity exposed by each flashcart |
 
 Commit at each milestone boundary. Hardware-verify **M6 (LFSR timbres)** and
 **M7 (PCM feed)** early — Handy is a 20-year-old core; its polynomial-counter
@@ -102,7 +104,8 @@ second-opinion core.
   the current factory image already uses 1265/2032 packed bytes. Keep the
   FILES meter and PURGE workflow honest; never truncate. Physical carts must
   actually provide/emulate a 93C86; the 128-byte-93C46-only ElCheapoSD can run
-  ALYNXDJ but cannot persist its songs.
+  ALYNXDJ but cannot persist its songs. The RetroHQ Lynx GameDrive is the
+  hardware-verified compatible option.
 - **PCM IRQ jitter/cost (Q2)** — 2 KIT voices at 5.208 kHz are approximately
   12 % CPU in IRQs on a
   4 MHz 6502; display DMA steals make jitter worse. Mitigate: asm handler,
@@ -126,13 +129,12 @@ second-opinion core.
 
 ## Status
 
-**M0–M52 implemented as of 2026-07-30.** The tracker has all eleven screens,
+**M0–M54 implemented as of 2026-08-10.** The tracker has all eleven screens,
 the full command/editor workflow, ComLynx OUT/IN/IN24, packed 93C86 persistence,
 four genuinely symmetric logical/hardware tracks, receive-only USB/TRS-MIDI-
 over-ComLynx takeover, LFSR/WAV TSP plus KIT source RATE, universal Lynx II instrument
 PAN, LFSR SWP/sine-VIB/TRM patch modulation, and static KIT
 PCM gain. Two sampled
 voices are the deliberate CPU cap,
-not fixed channel roles. Remaining 1.0 work is the focused two-stream/LFSR/
-ComLynx-cable silicon pass, control-hint polish, and the upstream Handy/cc65
-fixes.
+not fixed channel roles. Remaining 1.0 work is the focused two-stream/LFSR
+silicon pass, control-hint polish, and the upstream Handy/cc65 fixes.

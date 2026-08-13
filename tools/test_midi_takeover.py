@@ -161,10 +161,14 @@ def run_cued_case(harness, core, rom, build, label, mode, pulse, start):
     script = ("0@280,100@10,110@20,100@10,0@30," + edit * mode
               + to_song + down * 5
               + "100@4,101@4,100@4,0@180")
-    # A source commonly sends Start immediately before its first clock.  The
-    # armed local cue must win over that default-row-0 request.
+    # The armed local cue must win over Start's default-row-0 request. Legacy
+    # Lynx IN treats its one-byte Start as the downbeat itself because its
+    # polled Mikey receiver cannot safely accept adjacent Start+Row bytes.
+    # IN24 remains IRQ-buffered and therefore receives Start then Clock.
     start_byte = 0x02 if mode == 2 else 0xFA
-    events = ((600, start_byte), (620, pulse)) if start else ()
+    events = ((600, start_byte),) if start else ()
+    if start and mode == 4:
+        events += ((620, pulse),)
     env = os.environ.copy()
     env["RETROSHOT_RAM_OUT"] = ram_path
     add_song_fixture(env, 5, 0)

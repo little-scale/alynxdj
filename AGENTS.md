@@ -42,6 +42,9 @@ locally at the cued row as `WAIT`; their first row pulse starts that row and
 changes the transport to `PLAY`. MIDI CC74 enters the shared `N` executor path
 as a note-local LFSR taps byte; Pitch Bend enters shared `F` as a held absolute
 ±2-semitone target at 1/16-semitone resolution. There is no heartbeat.
+For legacy Lynx-to-Lynx OUT/IN, D55 makes the single `$02` START byte the
+downbeat/first-row grant; later rows use `$01`. Do not send START+ROW adjacent:
+legacy IN is polled and Mikey has only a one-byte receive holding register.
 The companion bridge also accepts opto-isolated 31,250-baud serial MIDI on
 GP13, expands running status, and routes it through the same dispatcher as USB
 MIDI. Use one MIDI source at a time. The Chipbridge RP2040-Zero build follows
@@ -246,6 +249,8 @@ using a virtual environment.
   128-byte 93C46 only, while ALYNXDJ requires a 2 KB 93C86. It can run the ROM
   but cannot persist a full song, and its cart API is menu-oriented rather
   than general SD file access. A 128-byte `.sav` cannot be padded or migrated.
+  The **RetroHQ Lynx GameDrive is hardware-verified** for SAVE, LOAD, and
+  non-volatile ALYNXDJ song recovery with the complete EEPROM backing size.
 
 ## The reference projects (read before designing anything)
 

@@ -65,7 +65,8 @@ Python tools require `requirements.txt` (NumPy + Pillow). Use
 - `tools/emu/duoshot` runs **two bridged core instances** (ComLynx
   cross-wired TX→RX) for two-unit sync tests: needs two *file copies* of
   the dylib (dlopen dedups identical paths). Per-unit scripts, WAV/PPM/RAM
-  outputs. Verified: OUT→IN lock at −1.4 ms envelope lag.
+  outputs. The OUT `$02` START byte is also IN's first-row grant; later rows
+  use `$01`, avoiding an unsafe back-to-back pair at Mikey's polled receiver.
 - **cc65 lynx.h bug:** `_UART_TIMER` points at $FD14 = **timer 5**; timer 4
   (the real UART clock) is $FD10 — use explicit addresses (src/sync.c).
 - BTN mask bits (RetroPad→Lynx, probed at M2): `$100`=A, `$1`=B, `$400`=Opt1,
@@ -104,6 +105,9 @@ Python tools require `requirements.txt` (NumPy + Pillow). Use
 - Boot **autoloads** a valid EEPROM save over `song_demo()`. Prefer a unique
   ROM basename for demo/rig tests so its emulator-side `.eeprom` namespace is
   clean without deleting another run's persistence.
+- The RetroHQ Lynx GameDrive is hardware-verified for SAVE, LOAD, and
+  non-volatile song recovery when it presents the full 2 KB EEPROM backing.
+  The 128-byte ElCheapoSD remains too small for ALYNXDJ persistence.
 
 ## The reference projects (read before designing anything)
 

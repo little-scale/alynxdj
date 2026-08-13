@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Fix Lynx-to-Lynx sync starting the IN unit one complete tracker row behind
+  OUT. In the legacy one-byte protocol, `START` now doubles as the downbeat
+  grant; later rows still use one `ROW` byte each. This avoids an unsafe
+  adjacent `START` + `ROW` pair at Mikey's polled one-byte receive register.
+- Send transport Start from SONG/context, CHAIN, PHRASE, and LIVE playback,
+  and add a bridged two-core regression that keeps OUT and IN musical
+  playheads on the same row. The corrected start and continuing sync have
+  been verified as flawless between two Lynx II units.
+- Hardware-verify non-volatile song SAVE and LOAD using the RetroHQ Lynx
+  GameDrive with the full EEPROM backing size. This confirms that ALYNXDJ's
+  2 KB persistence path works on a real Lynx when the cart provides the
+  required capacity; the 128-byte ElCheapoSD limitation remains unchanged.
+
 ## v0.58 — 2026-07-30
 
 - Fix FILES → DEMO, SAVE, LOAD, and the live PACK meter racing the VBlank

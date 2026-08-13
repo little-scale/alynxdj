@@ -127,17 +127,22 @@ while keeping subsequent rows at four per quarter note. `FC` Stop halts.
 `FB` Continue currently behaves like Start because Song Position Pointer is
 not implemented. Groove and `W` row timing are ignored while externally
 clocked. The original **IN** mode remains the row-byte protocol for another
-Lynx; use **IN24** for a DAW or USB-MIDI clock source.
+Lynx. Its single `START` byte is also its first row grant, so an armed IN unit
+starts its cued row with the OUT unit; each later `ROW` byte advances once.
+This deliberately avoids a back-to-back `START` + `ROW` pair because legacy IN
+polls Mikey's one-byte receive register. Use **IN24** for a DAW or USB-MIDI
+clock source.
 Incoming IN24 traffic uses the phrase clipboard
 as its receive buffer, so entering/using the mode invalidates a previously
 copied phrase.
 
 With either **IN** or **IN24** selected, first move the SONG cursor to the row
 you want and start transport normally. The top bar says **WAIT** and nothing
-sounds yet. A MIDI Start/Continue from the Pico supplies the first row pulse
-immediately, starts that cued row, and changes the label to **PLAY**; each
-later divided pulse advances one row. A Start message received while WAIT is
-showing preserves the locally selected row.
+sounds yet. In Lynx-to-Lynx IN, the OUT unit's Start byte starts that cued row;
+in IN24, MIDI Start/Continue from the Pico is immediately followed by the first
+row pulse. Either path changes the label to **PLAY**, and later grants advance
+one row. A Start received while WAIT is showing preserves the locally selected
+row.
 Pico build, TRS Type A MIDI input, Chipbridge PCB pinout, Lynx cable, and
 flashing instructions are in
 [`pico-midi-comlynx/README.md`](pico-midi-comlynx/README.md). The required
@@ -456,6 +461,9 @@ menu loaders rather than general file access, so the tracker cannot bypass the
 small EEPROM and write a larger song file directly. A 128-byte `.sav` from
 that cart contains no recoverable ALYNXDJ payload; do not pad it. Carts that
 emulate a 93C86, and the patched Handy core, support the complete save image.
+The **RetroHQ Lynx GameDrive is confirmed compatible on hardware**: SAVE,
+LOAD, and non-volatile song recovery all work when it provides the required
+2,048-byte EEPROM backing.
 
 **NEW** wipes the whole song back to a blank slate (it does not touch the
 EEPROM — your last save survives until you SAVE over it). It asks for a
