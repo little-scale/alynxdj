@@ -5,6 +5,13 @@ It accepts either class-compliant USB MIDI from a computer/DAW or conventional
 31,250-baud MIDI through an opto-isolated TRS/DIN receiver, then forwards MIDI
 channels 1–4 and MIDI real-time transport to one Atari Lynx over ComLynx.
 
+This directory is the canonical source for ALYNXDJ's RP2040 firmware,
+including the GG→Lynx translator. The matching physical hardware is maintained
+in the separate [Chipbridge repository](https://github.com/little-scale/chipbridge):
+[main PCB](https://github.com/little-scale/chipbridge/tree/main/hardware/main),
+[Game Gear adapter](https://github.com/little-scale/chipbridge/tree/main/hardware/adapters/game-gear),
+and [connector wiring](https://github.com/little-scale/chipbridge/blob/main/docs/WIRING.md).
+
 It is deliberately send-only and has no heartbeat or timeout. It does **not**
 yet make the Pico a USB host for a keyboard plugged directly into the Pico.
 
@@ -232,3 +239,56 @@ drive if building manually.
 
 The descriptor uses TinyUSB's example VID for prototype development. Obtain a
 proper USB VID/PID before distributing bridge hardware commercially.
+
+## Game Gear lead to Lynx follow image
+
+`make pico-gg-sync` builds
+`build/alynxdj_gg_sync_chipbridge.uf2`, a dedicated image for this fixed path:
+
+```text
+Game Gear + existing Chipbridge GG adapter
+  -> existing TRS cable
+  -> PCB TRS_MIDI_IN / 6N138 / GP13
+  -> RP2040 row reconstruction
+  -> PCB CONSOLE_DATA ring / GP1
+  -> safe custom Lynx cable
+  -> Lynx ComLynx ring
+```
+
+There is no wiring change. In particular, the GG remains on the PCB's MIDI
+input socket and the Lynx cable remains ring-to-ring plus sleeve-to-sleeve,
+with both tips disconnected as documented above.
+
+**Hardware status:** the complete unchanged GG/TRS → 6N138/GP13 → RP2040 →
+GP1/ComLynx path was verified working on hardware on 27 August 2026. This is a
+functional verification, not a formal long-duration electrical qualification.
+The PCB has one 220-ohm series resistor in the 6N138 LED path. With nominal
+5 V opposing GG data levels, the path can draw roughly 17 mA after the
+opto/diode drop; the antiparallel protection diode conducts for the opposite
+polarity. Firmware cannot change that load, and an authoritative GG parallel
+port output-current limit has not been established here.
+
+Use it as follows:
+
+1. Flash `alynxdj_gg_sync_chipbridge.uf2`; the GP7 LED lights when ready.
+2. Connect and power the existing GG adapter/TRS path and the documented Lynx
+   cable. Do not hot-plug either data cable.
+3. On ALYNXDJ select `SYNC IN`, cue the desired row, and start transport so it
+   reads `WAIT`.
+4. On SMSGGDJ select `SYNC OUT`, then start the GG.
+
+The electrical detail matters: the unchanged GG adapter places counter bit 1
+on the Type-A MIDI ring and bit 0 on its tip. The 6N138 output on GP13 therefore
+goes low only for counter state `10`, yielding a one-row low pulse once every
+four rows. Firmware uses both pulse edges as exact boundaries, measures the
+row/cycle period, and schedules the two hidden boundaries. The GG's invisible
+first row is recovered by a delayed catch-up byte rather than an unsafe
+back-to-back ComLynx `START`+`ROW` pair.
+
+This conversion is exact when GG rows have equal durations. The single
+optocoupler signal does not contain enough information to reproduce arbitrary
+per-row groove swing or `W` timing; those become an even grid at the measured
+four-row average. SMSGGDJ's two-bit `OUT` also has no separate Stop state after
+this differential collapse, so the bridge sends Stop after a bounded period
+without a marker. These are information limits of the fixed input path, not
+Lynx-side timing limits.

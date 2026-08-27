@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- Add a dedicated Chipbridge Game Gear-to-Lynx sync UF2. It accepts unchanged
+  SMSGGDJ `SYNC OUT` through the PCB's opto-isolated Type-A TRS MIDI socket on
+  GP13, reconstructs the two row boundaries hidden by the differential
+  receiver, and emits ALYNXDJ's legacy `START/ROW/STOP` stream through the
+  existing protected ComLynx GP1 output. No GG, adapter, cable, or Lynx ROM
+  change is required.
+- Add host regressions for the differential counter decoder, startup catch-up,
+  hidden-row timing, input chatter, and inferred stop. Equal-length source
+  rows are exact; arbitrary swing cannot be reconstructed after the fixed
+  one-bit optocoupler path collapses the GG's four counter states.
+- Hardware-verify the complete unchanged SMSGGDJ Game Gear/TRS → Chipbridge
+  optocoupler → ALYNXDJ ComLynx path. ALYNXDJ now explicitly owns the
+  translator firmware and build target while linking to the separate
+  Chipbridge PCB, GG adapter, and connector documentation.
 - Fix Lynx-to-Lynx sync starting the IN unit one complete tracker row behind
   OUT. In the legacy one-byte protocol, `START` now doubles as the downbeat
   grant; later rows still use one `ROW` byte each. This avoids an unsafe

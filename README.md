@@ -96,7 +96,8 @@ GameDrive non-volatile song saving are now verified on hardware.
 
 Grab the latest [release](https://github.com/little-scale/alynxdj/releases):
 the production `.lnx` ROM, portable factory sample-bank `.bin`, both standalone
-browser tools, and standard Pico plus RP2040-Zero Chipbridge MIDI/ComLynx UF2s. The ROM
+browser tools, standard Pico and RP2040-Zero MIDI/ComLynx UF2s, plus the
+dedicated Chipbridge GG→Lynx sync UF2. The ROM
 has booted and run on a real Lynx; deterministic software/audio regressions
 use the repo's patched Handy core. Run the ROM in RetroArch or build below.
 
@@ -154,6 +155,21 @@ LED is `GP7`. The Lynx cable connects ring-to-ring and sleeve-to-sleeve only.
 Both tips are disconnected and insulated because the Lynx tip supplies +5 V;
 an ordinary tip-to-tip stereo cable must never be used.
 
+`make pico-gg-sync` builds a separate **SMSGGDJ Game Gear lead → ALYNXDJ
+Lynx follow** image for that same PCB. The GG adapter and its TRS cable remain
+unchanged and connect to `TRS_MIDI_IN`; the existing safe Lynx cable remains
+on `CONSOLE_DATA`. Use `SYNC OUT` on SMSGGDJ and arm `SYNC IN` on ALYNXDJ
+until it shows `WAIT`, then start the GG. The fixed optocoupler path exposes
+one of the GG counter's four states, so the bridge measures that marker and
+reconstructs an equal row grid. Flat/equal-length grooves lock as intended;
+per-row swing and `W` changes are averaged and cannot be recovered exactly
+without changing the physical input. Stop is inferred from missing markers.
+This complete path was hardware-verified on 27 August 2026 with the unchanged
+GG adapter/TRS connection and works correctly in practice. That functional
+test is not a formal long-term electrical qualification: unlike the protected
+console input, the PCB MIDI receiver places its 220-ohm optocoupler path
+between the two GG data outputs whenever their levels differ.
+
 `IN` and `IN24` are armed transports: cue a SONG row and press transport to
 show **WAIT**. The first incoming row pulse starts that exact row and changes
 the label to **PLAY**. For Lynx-to-Lynx `IN`, the OUT unit's single Start byte
@@ -168,10 +184,14 @@ build instructions, Chipbridge pin table, CC74/Pitch Bend mappings, and the
 current USB-device limitation: it accepts MIDI from a computer/DAW, but does
 not yet host a USB keyboard directly.
 
-The shared RP2040-Zero PCB, electrical interface, and adapter designs are
-maintained by **[Chipbridge](https://github.com/little-scale/chipbridge)**.
-ALYNXDJ retains the Lynx-specific Pico firmware and ComLynx protocol in this
-repository.
+ALYNXDJ is the canonical owner of the GG→Lynx translator source, tests,
+documentation, and UF2 build target in [`pico-midi-comlynx/`](pico-midi-comlynx/).
+The physical designs remain in **[Chipbridge](https://github.com/little-scale/chipbridge)**:
+the [main RP2040-Zero PCB](https://github.com/little-scale/chipbridge/tree/main/hardware/main),
+[Game Gear adapter](https://github.com/little-scale/chipbridge/tree/main/hardware/adapters/game-gear),
+and [shared connector wiring](https://github.com/little-scale/chipbridge/blob/main/docs/WIRING.md).
+Changes to the translation protocol belong here; PCB and adapter changes belong
+in Chipbridge.
 
 ## Building
 
@@ -185,6 +205,7 @@ make shot     # headless run → build/shot.png + audio WAV capture
 make test     # ROM, sound, editor, HELP, save/viewer, samples, and MIDI/sync
 make pico     # companion RP2040 UF2; requires PICO_SDK_PATH + Arm toolchain
 make pico-chipbridge # RP2040-Zero PCB UF2: GP1 link, GP13 MIDI, GP7 LED
+make pico-gg-sync # unchanged GG/TRS -> Chipbridge -> ALYNXDJ IN translator
 ```
 
 Factory sample conversion resamples to 5,208.333 Hz, peak-normalizes, then

@@ -51,6 +51,14 @@ MIDI. Use one MIDI source at a time. The Chipbridge RP2040-Zero build follows
 the PCB exactly: ComLynx `DATA1` = GP1, MIDI RX = GP13, and ready LED = GP7;
 `DATA0`/GP0 is unused. Its Lynx cable is ring-to-ring plus sleeve-to-sleeve
 only, with both tips disconnected and insulated because the Lynx tip is +5 V.
+The separate D56 `pico-gg-sync` image keeps that hardware fixed: SMSGGDJ OUT
+enters the Type-A MIDI optocoupler on GP13, whose differential ring/bit1 and
+tip/bit0 input exposes only counter state 2. It measures the one-low/three-high
+marker, reconstructs an equal row grid, and emits legacy START/ROW/STOP on GP1.
+Flat GG rows are exact; arbitrary swing cannot survive the one-bit collapse.
+The complete unchanged path is hardware-verified as of 2026-08-27. This repo
+owns the translator firmware and tests; the cross-linked Chipbridge repo owns
+the PCB, GG adapter, and shared connector hardware.
 KIT bank follows D38: it is always `00`–`07`, selecting KIT or viewing an old
 invalid KIT value normalizes it to `00`, and only WAV may display `--`.
 KIT sample banks follow D39: the one supported `PL` format uses rate ID `1`,
@@ -113,6 +121,7 @@ make shot     # headless Handy run → build/shot.png + build/shot.ppm.wav (audi
 make test     # ROM/sample + sound/editor/HELP + EEPROM/viewer + MIDI/sync
 make pico     # Pico USB/TRS-MIDI bridge UF2 (PICO_SDK_PATH + Arm toolchain)
 make pico-chipbridge # RP2040-Zero: GP1 ComLynx, GP13 MIDI RX, GP7 LED
+make pico-gg-sync # fixed GG adapter/TRS input -> ALYNXDJ IN translator
               # FRAMES=n and BTN=maskHex or BTN=mask@frames,mask@frames,... for input
 make clean
 ```

@@ -142,7 +142,15 @@ test-pico-midi:
 		tools/test_pico_serial_midi.c
 	$(BUILD)/tests/pico-midi/serial_midi_parser
 
-test: test-bank test-dac test-save test-viewer test-tone test-editor test-help test-hardware test-midi test-sync test-pico-midi
+test-pico-gg-sync:
+	mkdir -p $(BUILD)/tests/pico-gg-sync
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -O2 \
+		-Ipico-midi-comlynx \
+		-o $(BUILD)/tests/pico-gg-sync/gg_row_sync \
+		pico-midi-comlynx/gg_row_sync.c tools/test_gg_row_sync.c
+	$(BUILD)/tests/pico-gg-sync/gg_row_sync
+
+test: test-bank test-dac test-save test-viewer test-tone test-editor test-help test-hardware test-midi test-sync test-pico-midi test-pico-gg-sync
 
 # Companion USB/TRS-MIDI firmware. Requires a complete Arm embedded toolchain
 # and PICO_SDK_PATH; it is intentionally not part of the ROM build.
@@ -164,6 +172,16 @@ pico-chipbridge:
 	cp $(BUILD)/pico-midi-comlynx-chipbridge/alynxdj_midi_comlynx.uf2 $(BUILD)/alynxdj_midi_comlynx_chipbridge.uf2
 	@echo "wrote $(BUILD)/alynxdj_midi_comlynx_chipbridge.uf2 (Chipbridge / Waveshare RP2040-Zero)"
 
+# Chipbridge cross-console build: GP13 sees SMSGGDJ OUT through the unchanged
+# differential TRS MIDI receiver; GP1 sends reconstructed row sync to ALYNXDJ.
+pico-gg-sync:
+	cmake --fresh -S pico-midi-comlynx -B $(BUILD)/pico-gg-sync-chipbridge \
+		-DPICO_BOARD=waveshare_rp2040_zero -DGG_SYNC_MODE=ON \
+		-DCOMLYNX_TX_PIN=1 -DGG_SYNC_INPUT_PIN=13 -DSTATUS_LED_PIN=7
+	cmake --build $(BUILD)/pico-gg-sync-chipbridge
+	cp $(BUILD)/pico-gg-sync-chipbridge/alynxdj_gg_sync.uf2 $(BUILD)/alynxdj_gg_sync_chipbridge.uf2
+	@echo "wrote $(BUILD)/alynxdj_gg_sync_chipbridge.uf2 (SMSGGDJ OUT -> ALYNXDJ IN)"
+
 # version-only release copy (attach these to GitHub releases)
 dist: $(ROM)
 	cp $(ROM) $(BUILD)/alynxdj_$(subst .,_,$(VERSION)).lnx
@@ -172,4 +190,4 @@ dist: $(ROM)
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: all factory-samples shot test test-bank test-dac test-save test-tone test-editor test-help test-hardware test-midi test-sync test-pico-midi pico pico-chipbridge dist clean
+.PHONY: all factory-samples shot test test-bank test-dac test-save test-tone test-editor test-help test-hardware test-midi test-sync test-pico-midi test-pico-gg-sync pico pico-chipbridge pico-gg-sync dist clean
