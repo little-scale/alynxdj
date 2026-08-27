@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.59 — 2026-08-27
+
 - Add a dedicated Chipbridge Game Gear-to-Lynx sync UF2. It accepts unchanged
   SMSGGDJ `SYNC OUT` through the PCB's opto-isolated Type-A TRS MIDI socket on
   GP13, reconstructs the two row boundaries hidden by the differential
