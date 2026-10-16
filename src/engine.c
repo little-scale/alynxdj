@@ -273,14 +273,13 @@ static unsigned char transpose_note(unsigned char note, signed char tsp)
 #pragma code-name (pop)
 
 /* effective pitch in 1/16 semis -> program sh_bkup (+ctl if clock moved) */
-static void pitch_update(unsigned char ch)
+static void __fastcall__ pitch_update(struct voice *v)
 {
-    struct voice *v = &voices[ch];
     int p;
     unsigned char n, frac, b0, b1, clk, ctl;
     signed char vib = 0;
 
-    if (v->type == IT_KIT || v->dac_slot < NDAC || v->env_phase == 0)
+    if (v->dac_slot < NDAC)
         return;
     if (v->vib_depth)
         vib = vibrato_value(v);
@@ -345,6 +344,10 @@ void engine_exec_cmd(unsigned char ch, unsigned char cmd,
 {
     struct voice *v = &voices[ch];
 
+    /* Commands are sparse compared with engine ticks.  One shared dirty
+     * request keeps one-shot pitch/level changes audible without duplicating
+     * this store in every executor case. */
+    v->dirty = 1;
     switch (cmd) {
     case CMD_C:
         if (param) {
@@ -406,7 +409,6 @@ void engine_exec_cmd(unsigned char ch, unsigned char cmd,
         v->env_peak = (param <= 0x7F) ? param : 0x7F;
         if (v->env_phase == 2 || (v->env_phase == 1 && !v->e_atk))
             v->env_level = v->env_peak;
-        v->dirty = 1;
         break;
     case CMD_F:
         v->bend += (signed char)param;
@@ -477,8 +479,6 @@ static void table_step(unsigned char ch)
     struct tablerow *tr;
     unsigned char table, row, tbs, count;
 
-    if (v->table == EMPTY)              /* caller already gates env_phase */
-        return;
     row = v->tpos & 0x0F;
     tbs = sd.instrs[v->inum < NINSTR ? v->inum : 0].hold >> 4;
     count = v->tpos >> 4;
@@ -511,9 +511,9 @@ static void table_step(unsigned char ch)
 
 /* --- trigger --- */
 
-static void trigger(unsigned char ch, unsigned char note, unsigned char inum)
+static void __fastcall__ trigger(unsigned char ch, unsigned char note,
+                                 unsigned char inum, struct voice *v)
 {
-    struct voice *v = &voices[ch];
     struct instr *in = &sd.instrs[inum < NINSTR ? inum : 0];
     unsigned char slot, old_table = v->table, old_tpos = v->tpos;
 
@@ -631,8 +631,9 @@ static void trigger(unsigned char ch, unsigned char note, unsigned char inum)
         v->sh_shifthi = (in->seed_hi & 0x0F) << 4;  /* OTHER bits 7-4 */
     }
     v->sh_pan = in->pan;
-    v->sh_bkup = 0;                     /* pitch_update programs it */
-    pitch_update(ch);
+    /* Resolve pitch once after any same-event phrase command.  The old path
+     * resolved here and repeated the full calculation in engine_tick(). */
+    v->sh_bkup = 0;
     v->sh_ctl |= AUD_ENABLE_COUNT | AUD_ENABLE_RELOAD;
     v->retime = 1;
     v->dirty = 1;
@@ -640,9 +641,8 @@ static void trigger(unsigned char ch, unsigned char note, unsigned char inum)
 
 /* --- envelope / flush (unchanged discipline) --- */
 
-static void envelope(unsigned char ch)
+static void __fastcall__ envelope(struct voice *v)
 {
-    struct voice *v = &voices[ch];
     unsigned char l = v->env_level;
 
     switch (v->env_phase) {
@@ -696,10 +696,9 @@ static unsigned char lfsr_level(struct voice *v)
 }
 #pragma code-name (pop)
 
-static void flush(unsigned char ch)
+static void __fastcall__ flush(unsigned char ch, struct voice *v)
 {
     volatile struct _mikey_audio *h = CHAN[ch];
-    struct voice *v = &voices[ch];
 
     if (v->dac_slot < NDAC) {
         v->dirty = 0;
@@ -851,10 +850,9 @@ static unsigned char rand8(void)
 
 /* row start for one track: peek (D delay, Z roll, L capture, phrase H),
  * trigger, phrase command */
-static void row_start(unsigned char ch)
+static void __fastcall__ row_start(unsigned char ch, struct voice *v)
 {
     struct walk *w = &eng_walk[ch];
-    struct voice *v = &voices[ch];
     struct step *s;
     unsigned char n;
     int prev_pitch;
@@ -912,10 +910,13 @@ static void row_start(unsigned char ch)
         }
         return;
     }
-    prev_pitch = (int)v->base_note * 16 + v->bend + v->slide_off;
+    /* L alone needs the pre-trigger pitch.  Avoid this 16-bit expression on
+     * every ordinary note row; cc65 otherwise emits several stack helpers. */
+    if (s->cmd == CMD_L && n)
+        prev_pitch = (int)v->base_note * 16 + v->bend + v->slide_off;
     if (n) {
         arm_table_override(s);
-        trigger(ch, n, s->instr);
+        trigger(ch, n, s->instr, v);
     }
     if (s->cmd == CMD_L && n) {
         /* glide in from wherever the voice just was */
@@ -1086,8 +1087,7 @@ void __fastcall__ engine_live_queue(unsigned char track, unsigned char chain)
 void engine_audition(unsigned char note, unsigned char inum)
 {
     __asm__("sei");
-    trigger(0, note, inum);
-    flush(0);
+    trigger(0, note, inum, &voices[0]);
     __asm__("cli");
 }
 #pragma code-name (pop)
@@ -1102,11 +1102,15 @@ void engine_audition(unsigned char note, unsigned char inum)
 void __fastcall__ engine_midi_note_on(unsigned char track,
                                       unsigned char note)
 {
+    struct voice *v;
+
     if (track >= NCH || note < NOTE_MIN || note > NOTE_MAX)
         return;
-    trigger(track, note, track);
+    v = &voices[track];
+    trigger(track, note, track, v);
     midi_rebend(track);
-    flush(track);
+    pitch_update(v);
+    flush(track, v);
 }
 
 void __fastcall__ engine_midi_note_off(unsigned char track)
@@ -1129,7 +1133,7 @@ void __fastcall__ engine_midi_note_off(unsigned char track)
             v->env_level = 0;
         }
         v->dirty = 1;
-        flush(track);
+        flush(track, v);
     }
 }
 
@@ -1171,6 +1175,7 @@ void engine_init(void)
 void engine_tick(void)
 {
     unsigned char ch;
+    struct voice *v;
 
     /* Drain ComLynx inside the audio-owned tick, not the redraw-bound main
      * loop.  UART/DAC IRQs are allowed to nest around this C call, so a
@@ -1201,11 +1206,9 @@ void engine_tick(void)
      * complete tick period.  Raw signed magnitudes 1..7 occupy 01..07 and
      * F9..FF. */
     if (eng_playing && !eng_waiting) {
-        for (ch = 0; ch < NCH; ++ch) {
-            struct voice *v = &voices[ch];
+        for (ch = 0, v = voices; ch < NCH; ++ch, ++v) {
             unsigned char r = (unsigned char)v->tap_rate;
-            if (v->env_phase && r
-                && (r <= 7 || r >= 0xF9))
+            if (v->env_phase && r && (r <= 7 || r >= 0xF9))
                 clock_tap_glide(v);
         }
     }
@@ -1213,24 +1216,21 @@ void engine_tick(void)
     if (eng_playing && !eng_waiting && eng_tick == 0) {
         unsigned char g = sd.grooves[eng_groove][eng_gpos];
         row_ticks = g ? g : 6;
-        for (ch = 0; ch < NCH; ++ch) {
-            struct voice *v = &voices[ch];
+        for (ch = 0, v = voices; ch < NCH; ++ch, ++v) {
             unsigned char r = (unsigned char)v->tap_rate;
-            /* Magnitudes 8+ use complete sequencer rows, with 8 mapping to
-             * one row.  As above, clock before row_start() so a newly
-             * encountered G begins a fresh full period at patch TAPS. */
+            /* Magnitudes 8+ use complete sequencer rows.  Clock before
+             * row_start() so a new G begins at patch TAPS for a full period. */
             if (v->env_phase && r > 7 && r < 0xF9)
                 clock_tap_glide(v);
-            row_start(ch);
+            row_start(ch, v);
         }
     }
 
-    for (ch = 0; ch < NCH; ++ch) {
-        struct voice *v = &voices[ch];
+    for (ch = 0, v = voices; ch < NCH; ++ch, ++v) {
 
         /* delayed trigger countdown (dly_note guards the boot BSS state) */
         if (v->dly_in != EMPTY && v->dly_note && v->dly_in-- == 0) {
-            trigger(ch, v->dly_note, v->dly_instr);
+            trigger(ch, v->dly_note, v->dly_instr, v);
             v->dly_in = EMPTY;
         }
         /* R owns its tick clock until the next note/K, even if a short AHD
@@ -1257,7 +1257,8 @@ void engine_tick(void)
             }
         }
         if (v->env_phase) {
-            table_step(ch);
+            if (v->table != EMPTY)
+                table_step(ch);
             if (v->bend_rate)
                 v->bend += v->bend_rate;
             if (v->slide_off) {                  /* L: home in on the note */
@@ -1280,8 +1281,14 @@ void engine_tick(void)
             if (v->chord_len > 1
                 && ++v->chord_pos >= v->chord_len)
                 v->chord_pos = 0;
-            pitch_update(ch);
-            envelope(ch);
+            /* Static LFSR notes need no pitch work after their trigger.
+             * dirty requests one final resolve after a note or one-shot
+             * command; the remaining predicates are genuinely continuous
+             * pitch sources. */
+            if (v->dirty || v->bend_rate || v->slide_off
+                || v->vib_depth || v->chord_len > 1 || v->table != EMPTY)
+                pitch_update(v);
+            envelope(v);
         }
         /* K also applies to envelope-less KIT samples. */
         if (v->kill_in != EMPTY
@@ -1301,7 +1308,7 @@ void engine_tick(void)
             && v->env_phase == 0) {
             dac_release(ch);
         }
-        flush(ch);
+        flush(ch, v);
     }
 
     if (!eng_playing)

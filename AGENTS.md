@@ -15,7 +15,7 @@ later hardware). The ROM and project name is **ALYNXDJ**.
 
 **DESIGN.md is the contract** (with a §0 decision log — read it before design
 decisions, don't re-litigate settled ones); **PLAN.md** holds the milestone
-history through M48. Key settled decisions: 4 identical
+history through M56. Key settled decisions: 4 identical
 tracks each playing LFSR/WAV/KIT (D1/D35), cc65 C editor + ca65 asm
 driver/IRQ/render (D2), 59.9 Hz VBlank engine tick with no region split (D3),
 flat RAM song block but **packed/RLE EEPROM save — 2 KB 93C86 is the whole
@@ -172,7 +172,13 @@ using a virtual environment.
   APPZP is not zeroed by crt0 on real hardware: every APPZP field that needs
   a defined boot value must be initialized explicitly. `vbl_install()` must
   clear the VBlank re-entry guard before enabling timer 2; otherwise a dirty
-  guard leaves the UI alive but suppresses every sequencer tick.
+  guard leaves the UI alive but suppresses every sequencer tick. During an
+  active engine call that byte is `$80` plus a saturating low-seven-bit VBlank
+  backlog; nested timer-2 IRQs acknowledge and count elapsed ticks, and the
+  outer handler catches them up before returning. This scheduling correction
+  is verified on real Atari Lynx hardware as of 2026-10-16. Positive values
+  remain the deliberate SAVE/LOAD/MIDI-overlay exclusion states and do not
+  queue ticks.
   Entering HELP stops transport and cold-loads its renderer at `$D004` over
   those idle rings; FILES PURGE shares that stopped-only code overlay, and
   its scratch buffers are `$D3B0-$D3FF`. Keep

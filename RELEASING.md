@@ -14,9 +14,10 @@ point at the exact commit from which the shipped ROM was built.**
    `CHANGELOG.md` section, and update the README Status line.
 4. **Run the complete suite twice where it matters.** Test the proposed source,
    then build and test the exact clean commit that will receive the tag.
-5. **Ship the complete six-file bundle.** The ROM, portable factory samples,
-   both standalone browser tools, standard Pico bridge firmware, and
-   RP2040-Zero Chipbridge firmware are the supported release set.
+5. **Ship the complete seven-file bundle.** The ROM, portable factory samples,
+   both standalone browser tools, standard Pico bridge firmware, RP2040-Zero
+   Chipbridge MIDI firmware, and Chipbridge GG→Lynx sync firmware are the
+   supported release set.
 
 ## Steps
 
@@ -43,19 +44,21 @@ point at the exact commit from which the shipped ROM was built.**
    ```
    Confirm `build/buildid.h` contains the release commit hash with no `+`.
    `make dist` writes `build/alynxdj_vX_Y.lnx`.
-5. **Prepare the six assets:**
+5. **Prepare the seven assets:**
    - `build/alynxdj_vX_Y.lnx`
    - `samples/alynxdj-factory-samples.bin`
    - `sample-patch-browser.html`
    - `song-file-viewer.html`
    - `build/alynxdj_midi_comlynx.uf2`
    - `build/alynxdj_midi_comlynx_chipbridge.uf2`
+   - `build/alynxdj_gg_sync_chipbridge.uf2`
 
-   Build both UF2s with `make pico pico-chipbridge` when their source changed.
+   Build all three UF2s with `make pico pico-chipbridge pico-gg-sync` when
+   their source changed.
    If the Pico source is byte-for-byte unchanged and the SDK/toolchain is
    unavailable, a previous published UF2 may be reused only after confirming
    the source diff is empty and its SHA-256 matches the published asset.
-6. **Record SHA-256 digests** for all six local assets.
+6. **Record SHA-256 digests** for all seven local assets.
 7. **Create and push the annotated tag:**
    ```sh
    git tag -a vX.Y -m "ALYNXDJ vX.Y — <one-line theme>"
@@ -71,16 +74,17 @@ point at the exact commit from which the shipped ROM was built.**
        song-file-viewer.html \
        build/alynxdj_midi_comlynx.uf2 \
        build/alynxdj_midi_comlynx_chipbridge.uf2 \
+       build/alynxdj_gg_sync_chipbridge.uf2 \
        --verify-tag \
        --title "ALYNXDJ vX.Y — <theme>" \
        --notes-file build/release-vX.Y.md
    ```
    Release notes should lead with the theme, summarize the main behavior
-   changes, list all six downloads, state the save-format version, and retain
+   changes, list all seven downloads, state the save-format version, and retain
    the 2 KB 93C86 persistence caveat. Name the RetroHQ Lynx GameDrive as
    hardware-verified and the 128-byte ElCheapoSD as save-incompatible.
 9. **Verify the public release:** confirm it is neither draft nor prerelease,
-   contains all six assets, every remote digest matches the local digest, and
+   contains all seven assets, every remote digest matches the local digest, and
    the tag resolves to the release commit.
 
 ## Optional diagnostic assets

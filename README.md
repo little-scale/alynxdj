@@ -27,8 +27,8 @@ as a multi-drop sync bus.
 
 ## Status
 
-**V0.58 — Chipbridge MIDI input and hardware-stable FILES overlays** (verified
-on a real Atari Lynx with the RP2040 bridge),
+**v0.60 — hardware-verified four-voice LFSR timing recovery** (verified on a
+real Atari Lynx),
 feature-complete against the design brief with an editor/UX pass on top
 (see [CHANGELOG.md](CHANGELOG.md) for what changed, [PLAN.md](PLAN.md) for
 the milestone table, [DESIGN.md](DESIGN.md) for the design contract and
@@ -36,8 +36,9 @@ decision log):
 
 - Full SONG → CHAIN → PHRASE hierarchy, **all eleven screens** + map,
   including a nine-page on-console HELP reference above TABLE and a
-  selected-track TABLE play indicator; engine tick in the VBlank IRQ
-  (tempo is render-independent)
+  selected-track TABLE play indicator; engine tick in the VBlank IRQ. Busy
+  VBlanks are queued and caught up instead of discarded, so aligned dense
+  four-channel LFSR rows no longer accumulate tempo loss
 - All three voice types, with the **12-bit LFSR fully exposed** (raw taps
   + seed per instrument), LFSR/WAV transpose plus KIT source RATE in TSP,
   LFSR SWP/free-running
@@ -88,9 +89,10 @@ hardware-verified for ALYNXDJ save, load, and boot persistence** because it
 provides the required EEPROM capacity. A 128-byte ElCheapo `.sav` cannot be
 padded into a valid save.
 
-Remaining to 1.0: the focused real-hardware audio pass and upstream PRs
-(libretro-handy EEPROM fix, cc65 `_UART_TIMER`). Lynx-to-Lynx sync and RetroHQ
-GameDrive non-volatile song saving are now verified on hardware.
+Remaining to 1.0: the focused two-stream/sample-timbre hardware pass and
+upstream PRs (libretro-handy EEPROM fix, cc65 `_UART_TIMER`). Lynx-to-Lynx
+sync and RetroHQ GameDrive non-volatile song saving are verified on hardware,
+as is the dense four-voice LFSR timing path.
 
 ## Download
 

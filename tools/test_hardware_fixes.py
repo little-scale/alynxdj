@@ -168,6 +168,26 @@ def main():
         fail("dirty APPZP VBlank guard blocked phrase row advance: row %d" %
              ram[W_PROW])
 
+    # Four aligned LFSR triggers are the worst ordinary synth-only row.  The
+    # VBlank guard used to discard the next timer event while that row was
+    # still resolving, slowing this exact rig from five phrase passes to
+    # four.  A busy engine now records and catches up that elapsed tick.
+    p = rig_pokes(hold=0x0F)
+    phrase = PHRASES + 63 * 64
+    for row in range(16):
+        put(p, phrase + row * 4, (37, 31, 0, 0))
+    for track in range(4):
+        p[SONG + track] = 31
+    ram, _ = run(harness, core, rom, build, "four-lfsr-budget", p,
+                 tail_frames=600)
+    if ram[0xC048 + 63] < 20:
+        fail("four aligned LFSR voices lost music ticks: only %d completed "
+             "track-phrase passes (expected at least 20)" %
+             ram[0xC048 + 63])
+    prows = [ram[WALK0 + track * 7 + 6] for track in range(4)]
+    if any(row != prows[0] for row in prows[1:]):
+        fail("four aligned LFSR tracks drifted apart: %r" % prows)
+
     # TBS 0 advances exactly one table row for the only triggered note.
     p = rig_pokes(hold=0x0F, table=0)
     put(p, TABLES, bytes(64))
@@ -743,7 +763,8 @@ def main():
     print("hardware fixes: PASS — sibling-order J variation; live E attack, "
           "note-local N taps, SWP-direction P, envelope-independent R; "
           "wrapping TBS note/tick clocks including phrase-A note mode; "
-          "TABLE-A rejection; dirty-APPZP row advance; zero-AHD shortest "
+          "TABLE-A rejection; dirty-APPZP row advance; aligned four-LFSR "
+          "VBlank budget; zero-AHD shortest "
           "decay; "
           "selected-track TABLE playhead, finite table VOL "
           "envelope, HOLD-F sustain/K exit, "

@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## v0.60 — 2026-10-16
+
+- Fix cumulative tempo slowdown on dense four-channel LFSR passages. A
+  VBlank arriving while the previous engine tick was still resolving is now
+  acknowledged and queued for immediate catch-up instead of being silently
+  discarded; SAVE/LOAD overlay exclusion remains intentionally non-queued.
+  The corrected timing is verified on real Atari Lynx hardware.
+- Refactor the LFSR hot path to carry voice pointers through aligned row
+  triggers, calculate note pitch once after same-row commands, skip empty
+  tables, and avoid static per-tick pitch work.
+- Add a four-track, every-row LFSR budget regression. Over the same capture it
+  now completes at least 20 aligned track-phrase passes where the old handler
+  completed only 16, while the full hardware-fix suite remains green.
+
 ## v0.59 — 2026-08-27
 
 - Add a dedicated Chipbridge Game Gear-to-Lynx sync UF2. It accepts unchanged

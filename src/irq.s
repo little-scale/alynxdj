@@ -525,16 +525,29 @@ handler:
         bne     :+
         inc     _frames+1
 :       lda     in_tick
-        bne     @out
-        inc     in_tick
+        beq     @tick
+        bpl     @out                    ; positive = SAVE/LOAD overlay guard
+        cmp     #$FF                    ; saturate after 127 pending ticks
+        beq     @out
+        inc     in_tick                 ; high bit = active, low 7 = backlog
+        bra     @out
+@tick:  lda     #$80
+        sta     in_tick
         ldx     #zpspace-1
 @save:  lda     sp,x
         sta     zpbuf,x
         dex
         bpl     @save
+@run:
         cli                     ; let DAC IRQs nest during the C engine tick
         jsr     _engine_tick
         sei
+        lda     in_tick
+        cmp     #$80
+        beq     @done
+        dec     in_tick                 ; catch up a VBlank seen while busy
+        bra     @run
+@done:
         ldx     #zpspace-1
 @rest:  lda     zpbuf,x
         sta     sp,x

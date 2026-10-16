@@ -93,6 +93,7 @@ fixed channel-C/channel-D sample-bus details recorded in M7/M8.**
 | M53 | ✅ **LYNX-TO-LYNX STARTUP ALIGNMENT — HARDWARE VERIFIED** — first two-console testing confirmed the physical OUT→IN link and steady row sync, while exposing a one-row startup offset introduced by WAIT semantics: OUT began locally on START but IN waited for the first boundary ROW. Legacy `$02` START now doubles as IN's downbeat grant for SONG, CHAIN, PHRASE, contextual, and LIVE starts; later `$01` bytes are unchanged. The two-core regression reproduces the old permanent one-row difference and now requires identical musical playheads; the corrected build was subsequently confirmed flawless between two Lynx II units. | Align the first cued row without risking a back-to-back byte overrun in Mikey's polled one-byte receiver |
 | M54 | ✅ **RETROHQ GAMEDRIVE PERSISTENCE — HARDWARE VERIFIED** — a real Lynx running ALYNXDJ from the RetroHQ Lynx GameDrive successfully saves a song, loads it again, and retains it non-volatilely when the cart presents the complete EEPROM backing size. This closes the hardware side of the 2 KB 93C86 persistence design: compatible cart emulation works, while the 128-byte ElCheapoSD remains physically too small. | Distinguish firmware/save-format correctness from the storage capacity exposed by each flashcart |
 | M55 | ✅ **FIXED-HARDWARE GG→LYNX CHIPBRIDGE TRANSLATOR — HARDWARE VERIFIED** — a dedicated RP2040-Zero UF2 accepts unchanged SMSGGDJ `OUT` from the existing GG adapter/cable through the PCB's Type-A MIDI 6N138 on GP13 and emits ALYNXDJ's legacy `$02/$01/$03` transport through protected ComLynx GP1. The differential receiver exposes only counter state 2, so a debounced phase tracker measures the one-row pulse/four-row recurrence and reconstructs two hidden equal-grid boundaries; a delayed startup catch-up avoids Mikey's one-byte overrun. Host tests pin marker decoding, predicted rows, chatter rejection, and silence Stop; the complete unchanged physical path was confirmed working on 2026-08-27. Exact arbitrary swing is explicitly impossible after the fixed one-bit collapse and remains documented rather than guessed. ALYNXDJ owns the firmware; Chipbridge owns the cross-linked hardware. | Reuse the assembled Chipbridge and both existing console adapters without changing either console or cable |
+| M56 | ✅ **FOUR-VOICE LFSR TIMING RECOVERY — HARDWARE VERIFIED** — root-cause a synth-only hardware slowdown as VBlank re-entry rejection, not rendering or PCM: four aligned default-LFSR note rows exceeded one 16.7 ms window and silently discarded about 14% of engine ticks. The IRQ guard now distinguishes positive SAVE/LOAD overlay exclusion from a high-bit active engine plus saturating low-bit backlog, acknowledging every real VBlank and catching up elapsed music ticks before returning to foreground. The LFSR hot path pointer-walks voice state, resolves note pitch only once after same-row commands, skips empty tables, avoids ordinary-note slide arithmetic, and bypasses static pitch recomputation. The new 600-frame stress regression advances from 16 to at least 20 completed track-phrase passes with all four tracks aligned; the complete hardware-fix suite remains green and no song/save behavior changes. The corrected build was subsequently confirmed free of the reported synth-only slowdown on real Atari Lynx hardware on 2026-10-16. | Heavy but valid synth rows no longer reduce the song's average tempo |
 
 Commit at each milestone boundary. Hardware-verify **M6 (LFSR timbres)** and
 **M7 (PCM feed)** early — Handy is a 20-year-old core; its polynomial-counter
@@ -130,12 +131,13 @@ second-opinion core.
 
 ## Status
 
-**M0–M55 implemented as of 2026-08-27.** The tracker has all eleven screens,
+**M0–M56 implemented as of 2026-10-16.** The tracker has all eleven screens,
 the full command/editor workflow, ComLynx OUT/IN/IN24, packed 93C86 persistence,
 four genuinely symmetric logical/hardware tracks, receive-only USB/TRS-MIDI-
 over-ComLynx takeover, LFSR/WAV TSP plus KIT source RATE, universal Lynx II instrument
 PAN, LFSR SWP/sine-VIB/TRM patch modulation, and static KIT
 PCM gain. Two sampled
 voices are the deliberate CPU cap,
-not fixed channel roles. Remaining 1.0 work is the focused two-stream/LFSR
+not fixed channel roles. Dense four-track LFSR timing is hardware-verified;
+remaining 1.0 work is the focused two-stream/sample-timbre
 silicon pass, control-hint polish, and the upstream Handy/cc65 fixes.
